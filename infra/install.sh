@@ -187,6 +187,15 @@ NODE_ID=$(hostname -s)
 EOF
   chown "$GISILA_USER:$GISILA_USER" /etc/gisila/.env
   chmod 0640 /etc/gisila/.env
+else
+  # On upgrades the file already exists — ensure SUPERUSER vars are present.
+  if ! grep -q 'SUPERUSER_EMAIL' /etc/gisila/.env; then
+    echo "SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null || echo localhost)" \
+      >> /etc/gisila/.env
+    echo "SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')" \
+      >> /etc/gisila/.env
+    echo "    added SUPERUSER_EMAIL/SUPERUSER_PASSWORD to existing .env"
+  fi
 fi
 
 # ── 9. /etc/gisila/database.yaml ──────────────────────────────────────────────
@@ -215,6 +224,15 @@ echo "==> Running migrations"
 cd "$REPO_DIR/backend"
 GISILA_DATABASE_FILE=/etc/gisila/database.yaml \
   dart run gisila_orm:migrate up --config /etc/gisila/database.yaml
+
+# ── 10b. Seed initial superuser ───────────────────────────────────────────────
+# Load the env file so SUPERUSER_EMAIL / SUPERUSER_PASSWORD are available, then
+# run the server's seed-only mode.  This is idempotent: if a superuser already
+# exists the seed is skipped automatically.
+echo "==> Seeding initial superuser"
+set -a; source /etc/gisila/.env; set +a
+GISILA_DATABASE_FILE=/etc/gisila/database.yaml \
+  gisila-panel --seed-superuser || true
 
 # ── 11. Nginx vhost ───────────────────────────────────────────────────────────
 echo "==> Installing nginx panel vhost"

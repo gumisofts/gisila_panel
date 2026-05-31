@@ -9,6 +9,14 @@ import 'package:shelf_hotreload/shelf_hotreload.dart';
 
 Future<void> main(List<String> args) async {
   await init();
+
+  // --seed-superuser: create the initial admin account and exit.
+  // Called by install.sh right after the migration, before the server starts.
+  if (args.contains('--seed-superuser')) {
+    await seedSuperuser();
+    return;
+  }
+
   final port = int.parse(env.getOrElse('PORT', () => '8000'));
   final isDev = args.contains('--dev') || args.contains('dev');
 

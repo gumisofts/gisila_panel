@@ -100,14 +100,24 @@ Future<Handler> application() async {
   return app.buildHandler();
 }
 
-/// Seeds the initial superuser from env vars if no users exist yet.
+/// Public entry point called by `gisila-panel --seed-superuser` during
+/// installation, and used as a safety net on every normal server startup.
+Future<void> seedSuperuser() async {
+  final database = await Database.connect(databaseConfig);
+  try {
+    await _seedSuperuser(database);
+  } finally {
+    await database.close();
+  }
+}
+
+/// Seeds the initial superuser from env vars if no superuser exists yet.
 ///
 /// Environment variables:
 ///   SUPERUSER_EMAIL    — e-mail for the initial superuser
 ///   SUPERUSER_PASSWORD — password for the initial superuser
 ///
-/// If either variable is missing the seed is skipped (the operator must set
-/// them before the first boot, or create the account through another means).
+/// If either variable is missing the seed is skipped.
 Future<void> _seedSuperuser(Database database) async {
   final email = env['SUPERUSER_EMAIL'];
   final password = env['SUPERUSER_PASSWORD'];
