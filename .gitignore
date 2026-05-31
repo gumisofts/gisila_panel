@@ -1,0 +1,14 @@
+.dart_tool/
+build/
+.packages
+.pub-cache/
+*.exe
+.env
+.env.local
+node_modules/
+dist/
+public/
+src/
+test/
+types/
+utils/
