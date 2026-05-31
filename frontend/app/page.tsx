@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/compat/link";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/compat/navigation";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/api";
 import {

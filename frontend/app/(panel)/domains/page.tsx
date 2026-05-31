@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/compat/link";
 import useSWR from "swr";
 import { Globe } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";

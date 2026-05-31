@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusDot } from "@/components/ui/status-dot";
-import { api, fetcher, getToken } from "@/lib/api";
+import { api, fetcher, getToken, getWsBase } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { BuildLog, Deployment, ListResponse } from "@/lib/types";
 import {
@@ -70,11 +70,7 @@ function detectStage(logs: BuildLog[]): StageId {
   return "provision";
 }
 
-// ── WS_URL ────────────────────────────────────────────────────────────────────
-const WS_BASE =
-  (process.env.NEXT_PUBLIC_WS_URL ??
-    process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, "ws") ??
-    "ws://localhost:8000") + "/ws";
+const WS_BASE = getWsBase();
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
 function Stepper({

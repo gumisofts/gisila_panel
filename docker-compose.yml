@@ -13,8 +13,10 @@
 # Services exposed on the host:
 #   - Postgres            localhost:5455
 #   - Redis               localhost:6380
-#   - Dart API            http://localhost:8000   (docs at /docs, admin at /admin)
-#   - Next.js frontend    http://localhost:3000
+#   - Dart API + Panel UI http://localhost:8000   (panel at /, docs at /docs, admin at /admin)
+#
+# The frontend is built by the `frontend-build` service (Vite) into
+# backend/web/, and served directly by the Dart API server.
 #
 # The whole `gisila_tools/` workspace is bind-mounted into each container,
 # so editing any file (in this repo OR in the sibling gisila / gisila_orm /
@@ -170,31 +172,25 @@ services:
         dart pub get
         exec dart run bin/worker.dart
 
-  # ────────────────────────────── Next.js frontend ───────────────────────────
+  # ──────────────────── Frontend build (Vite → backend/web/) ────────────────
+  # Builds the React SPA into backend/web/ which the Dart API serves directly.
+  # Runs `vite build --watch` so changes in frontend/ are rebuilt automatically.
 
-  frontend:
+  frontend-build:
     image: node:20-alpine
-    container_name: gisila-frontend
+    container_name: gisila-frontend-build
     restart: unless-stopped
     working_dir: /workspace/gisila-panel/frontend
-    ports:
-      - "3000:3000"
     environment:
-      # Browser-visible — must be the host-reachable URL.
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_WS_URL: ws://localhost:8000
-      # Server-side (used by Next.js rewrites for SSR). Inside the docker
-      # network the API is reachable at `api:8000`.
-      INTERNAL_API_URL: http://api:8000
-      # Hot-reload fix for Docker bind mounts.
-      WATCHPACK_POLLING: "true"
+      # In dev the browser calls the API directly; env vars are baked into the
+      # JS bundle at build time by Vite.
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+      # Enable polling so file-watch works inside Docker bind mounts.
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ..:/workspace
       - frontend_node_modules:/workspace/gisila-panel/frontend/node_modules
-      - frontend_next_cache:/workspace/gisila-panel/frontend/.next
-    depends_on:
-      api: { condition: service_started }
     command:
       - /bin/sh
       - -c
@@ -202,11 +198,12 @@ services:
         set -e
         corepack enable
         corepack prepare pnpm@9 --activate
-        if [ ! -d node_modules/next ]; then
+        if [ ! -d node_modules/vite ]; then
           echo "==> installing frontend deps"
           pnpm install --frozen-lockfile=false
         fi
-        exec pnpm dev --hostname 0.0.0.0 --port 3000
+        echo "==> building panel UI (watching)"
+        exec pnpm build --watch
 
 volumes:
   pg_data:
@@ -219,4 +216,3 @@ volumes:
   gisila_doc_dart_tool:
   gisila_studio_dart_tool:
   frontend_node_modules:
-  frontend_next_cache:

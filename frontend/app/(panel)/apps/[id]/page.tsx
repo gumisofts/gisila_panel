@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams } from "@/compat/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Play, RotateCw, Square, Rocket } from "lucide-react";

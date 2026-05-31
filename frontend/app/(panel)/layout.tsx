@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Outlet } from "react-router-dom";
+import { useRouter } from "@/compat/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { getToken } from "@/lib/api";
 
-export default function PanelLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function PanelLayout() {
   const router = useRouter();
   useEffect(() => {
     if (!getToken()) router.replace("/login");
@@ -22,7 +19,7 @@ export default function PanelLayout({
       <div className="flex flex-1 flex-col">
         <Topbar />
         <main className="flex-1 overflow-x-hidden bg-background/30">
-          {children}
+          <Outlet />
         </main>
       </div>
     </div>

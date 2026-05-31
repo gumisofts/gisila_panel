@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:gisila_doc/gisila_doc.dart';
 import 'package:gisila_orm/gisila.dart' hide PostgresErrorMapper;
+import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
@@ -86,9 +89,46 @@ Future<Handler> application() async {
 
       router.mount('/ws', live_logs.logsRouter(database: database).call);
       router.mount('/admin', adminHandler());
-      router.mount('/', docsHandler(spec));
+      router.mount('/docs', docsHandler(spec));
+      router.mount('/', _panelUiHandler());
     },
   );
 
   return app.buildHandler();
+}
+
+/// Serves the compiled panel UI from the `web/` directory.
+/// Falls back to `index.html` for any path not matching a static asset so
+/// that client-side React Router navigation works correctly.
+Handler _panelUiHandler() {
+  final webDir = Directory('web');
+  if (!webDir.existsSync()) {
+    return (Request req) => Response.ok(
+          '<html><body>'
+          '<h2>Panel UI not built</h2>'
+          '<p>Run <code>pnpm build</code> inside <code>frontend/</code> first, '
+          'or start the <code>frontend-build</code> service.</p>'
+          '</body></html>',
+          headers: {'content-type': 'text/html; charset=utf-8'},
+        );
+  }
+
+  final fileHandler = createStaticHandler(
+    webDir.path,
+    defaultDocument: 'index.html',
+  );
+
+  return (Request req) async {
+    final response = await fileHandler(req);
+    if (response.statusCode == 404) {
+      final index = File('${webDir.path}/index.html');
+      if (index.existsSync()) {
+        return Response.ok(
+          index.readAsBytesSync(),
+          headers: {'content-type': 'text/html; charset=utf-8'},
+        );
+      }
+    }
+    return response;
+  };
 }

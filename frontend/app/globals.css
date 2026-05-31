@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Geist font CSS variables — loaded via Google Fonts in index.html */
+:root {
+  --font-geist-sans: "Geist", system-ui, sans-serif;
+  --font-geist-mono: "Geist Mono", ui-monospace, monospace;
+}
+
 /*
   Design tokens — zinc neutrals + blue accent.
   Modelled after professional dev-tool dashboards (Linear, Vercel, Railway).

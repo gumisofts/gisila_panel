@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # One-command dev environment for gisila-panel.
 #
-# Brings up Postgres, Redis, the Dart API + worker, and the Next.js
-# frontend in containers — no Dart, Node, or pnpm needed on the host.
+# Brings up Postgres, Redis, the Dart API + worker, and the Vite frontend
+# builder in containers — no Dart, Node, or pnpm needed on the host.
+#
+# The panel UI is built by the `frontend-build` service (Vite) into
+# backend/web/ and served directly by the Dart API on http://localhost:8000.
 #
 # Usage:
 #   scripts/dev.sh             # foreground (Ctrl-C to stop)
@@ -23,7 +26,6 @@ ensure_mount_targets() {
     backend/.dart_tool
     agent/.dart_tool
     frontend/node_modules
-    frontend/.next
     ../gisila/.dart_tool
     ../gisila_orm/.dart_tool
     ../gisila_doc/.dart_tool
@@ -42,7 +44,7 @@ fix_root_owned_targets() {
   host_gid=$(id -g)
   local bad=()
   for d in backend/.dart_tool agent/.dart_tool frontend/node_modules \
-           frontend/.next ../gisila/.dart_tool ../gisila_orm/.dart_tool \
+           ../gisila/.dart_tool ../gisila_orm/.dart_tool \
            ../gisila_doc/.dart_tool ../gisila_studio/.dart_tool; do
     [ -e "$d" ] || continue
     if [ ! -O "$d" ]; then

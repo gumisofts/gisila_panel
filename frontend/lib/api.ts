@@ -1,7 +1,15 @@
-"use client";
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// ── WebSocket base URL ────────────────────────────────────────────────────────
+// In dev VITE_WS_URL=ws://localhost:8000 is set in .env.
+// In production (panel served from the same Dart origin) it is derived
+// automatically from the current page location.
+export function getWsBase(): string {
+  const configured = import.meta.env.VITE_WS_URL;
+  if (configured) return `${configured}/ws`;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws`;
+}
 
 // ── Case conversion ──────────────────────────────────────────────────────────
 // The Dart backend serialises all model fields in snake_case. The TypeScript
@@ -28,12 +36,10 @@ function deepCamelCase(value: unknown): unknown {
 export const TOKEN_KEY = "gisila.token";
 
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string | null) {
-  if (typeof window === "undefined") return;
   if (token == null) localStorage.removeItem(TOKEN_KEY);
   else localStorage.setItem(TOKEN_KEY, token);
 }

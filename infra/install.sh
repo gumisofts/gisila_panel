@@ -11,10 +11,9 @@
 #   3. Initialises the Postgres database and role.
 #   4. Compiles the API, worker, and agent to native binaries and installs
 #      them under /usr/local/bin/.
-#   5. Builds the Next.js frontend (standalone) and installs it to
-#      /srv/gisila/ui/.
+#   5. Builds the Vite frontend into backend/web/ (served by the Dart API).
 #   6. Drops the strict sudoers rule so `gisila` can run `gisila-agent` as root.
-#   7. Installs systemd units for the API, worker, and UI.
+#   7. Installs systemd units for the API and worker.
 #   8. Writes config (/etc/gisila/.env, /etc/gisila/database.yaml).
 #   9. Runs the schema migration.
 #  10. Writes the panel's own Nginx vhost and starts everything.
@@ -133,28 +132,20 @@ mkdir -p "$REPO_DIR/agent/build"
 dart compile exe bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
 install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 
-# ── 5. Frontend — build & deploy ─────────────────────────────────────────────
-echo "==> Building Next.js frontend"
+# ── 5. Frontend — build into backend/web/ ────────────────────────────────────
+# The Dart API serves the panel UI directly from backend/web/.
+# No separate Node.js server or systemd unit is needed.
+echo "==> Building panel UI (Vite → backend/web/)"
 cd "$REPO_DIR/frontend"
-# --prefer-frozen-lockfile uses committed versions but allows pnpm to record
-# build-script approvals (onlyBuiltDependencies) without treating it as an error.
 pnpm install --prefer-frozen-lockfile
 pnpm build
 
-# The standalone build produces a minimal Node server bundle.
-# Layout under .next/standalone/:
-#   server.js            — the entry point
-#   .next/static/        — compiled JS/CSS chunks (must be copied in)
-#   public/              — static assets (must be copied in)
-UI_DEST="/srv/gisila/ui"
-echo "==> Deploying frontend to $UI_DEST"
-install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$UI_DEST"
-
-rsync -a --delete "$REPO_DIR/frontend/.next/standalone/"    "$UI_DEST/"
-rsync -a --delete "$REPO_DIR/frontend/.next/static/"        "$UI_DEST/.next/static/"
-rsync -a --delete "$REPO_DIR/frontend/public/"              "$UI_DEST/public/"
-
-chown -R "$GISILA_USER:$GISILA_USER" "$UI_DEST"
+# Deploy the built assets to /srv/gisila/web/ where the API server can find
+# them (WorkingDirectory=/srv/gisila in gisila-panel.service).
+echo "==> Deploying panel UI assets to $GISILA_HOME/web"
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$GISILA_HOME/web"
+rsync -a --delete "$REPO_DIR/backend/web/" "$GISILA_HOME/web/"
+chown -R "$GISILA_USER:$GISILA_USER" "$GISILA_HOME/web"
 
 # ── 6. sudoers rule ───────────────────────────────────────────────────────────
 echo "==> Installing sudoers rule"
@@ -165,11 +156,10 @@ visudo -cf /etc/sudoers.d/gisila
 echo "==> Installing systemd units"
 install -m 0644 "$REPO_DIR/infra/gisila-panel.service"  /etc/systemd/system/
 install -m 0644 "$REPO_DIR/infra/gisila-worker.service" /etc/systemd/system/
-install -m 0644 "$REPO_DIR/infra/gisila-ui.service"     /etc/systemd/system/
 install -m 0644 "$REPO_DIR/infra/gisila-apps.target"    /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable gisila-apps.target
-systemctl enable gisila-panel.service gisila-worker.service gisila-ui.service
+systemctl enable gisila-panel.service gisila-worker.service
 
 # ── 8. /etc/gisila/.env ───────────────────────────────────────────────────────
 echo "==> Writing /etc/gisila/.env"
@@ -235,20 +225,19 @@ systemctl enable --now nginx
 systemctl reload nginx
 
 # ── 12. Start panel services ──────────────────────────────────────────────────
-echo "==> Starting gisila-panel, gisila-worker, and gisila-ui"
-systemctl restart gisila-panel.service gisila-worker.service gisila-ui.service
+echo "==> Starting gisila-panel and gisila-worker"
+systemctl restart gisila-panel.service gisila-worker.service
 sleep 3
 systemctl status --no-pager \
-  gisila-panel.service gisila-worker.service gisila-ui.service || true
+  gisila-panel.service gisila-worker.service || true
 
 echo
 echo "✓ Gisila Panel installed successfully."
 echo
 IP=$(hostname -I | awk '{print $1}')
-echo "  UI:     http://$IP  (or your configured domain)"
-echo "  API:    http://$IP:8000  (internal — Dart backend)"
-echo "  Docs:   http://$IP:8000/docs"
-echo "  Admin:  http://$IP:8000/admin"
+echo "  Panel:  http://$IP  (or your configured domain)"
+echo "  Docs:   http://$IP/docs"
+echo "  Admin:  http://$IP/admin"
 echo
 echo "  Credentials are in /etc/gisila/.env (STUDIO_USERNAME / STUDIO_PASSWORD)."
 echo

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/compat/link";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";

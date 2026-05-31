@@ -4,12 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Pause, Play, Trash2 } from "lucide-react";
-import { getToken } from "@/lib/api";
+import { getToken, getWsBase } from "@/lib/api";
 
-const WS_URL =
-  (process.env.NEXT_PUBLIC_WS_URL ??
-    process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, "ws") ??
-    "ws://localhost:8000") + "/ws";
+const WS_URL = getWsBase();
 
 interface LogLine {
   ts: string;
