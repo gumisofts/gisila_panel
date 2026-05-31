@@ -60,6 +60,14 @@ class ServiceWorker {
         'errorMessage': null,
       });
     } catch (e) {
+      // Attempt best-effort rollback so we don't leave a partially-installed
+      // service on the host.
+      try {
+        await _runAgent(['service', 'uninstall', '--type', svc.serviceType]);
+      } catch (rollbackErr) {
+        logger.w(
+            'service_worker: rollback uninstall failed (ignored): $rollbackErr');
+      }
       await _patch(svc.id!, {
         'status': 'failed',
         'errorMessage': e.toString(),
@@ -117,18 +125,17 @@ class ServiceWorker {
   Future<void> _uninstall(ManagedService svc) async {
     try {
       await _runAgent(['service', 'uninstall', '--type', svc.serviceType]);
-      // Hard-delete the record once the host-side removal succeeded.
-      await Query<ManagedService>(ManagedServiceTable.metadata)
-          .where(ManagedServiceTable.id.eq(svc.id!))
-          .delete()
-          .run(database.context());
     } catch (e) {
-      await _patch(svc.id!, {
-        'status': 'failed',
-        'errorMessage': e.toString(),
-      });
-      rethrow;
+      // Log but do not re-throw: the agent may fail when nothing was actually
+      // installed (e.g., a previous install failed before the package landed).
+      // The intent of uninstall is removal, so we always delete the record.
+      logger.w('service_worker: agent uninstall error (continuing): $e');
     }
+    // Hard-delete the record regardless of whether the agent succeeded.
+    await Query<ManagedService>(ManagedServiceTable.metadata)
+        .where(ManagedServiceTable.id.eq(svc.id!))
+        .delete()
+        .run(database.context());
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

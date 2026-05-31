@@ -65,6 +65,22 @@ class PostgresWorker {
         'errorMessage': null,
       });
     } catch (e) {
+      // Attempt best-effort rollback to avoid leaving a partially-installed
+      // PostgreSQL package on the host.
+      final instance = await _findInstance(instanceId);
+      if (instance != null) {
+        try {
+          await _runAgent([
+            'postgres',
+            'uninstall-instance',
+            '--version',
+            '${instance.version}',
+          ]);
+        } catch (rollbackErr) {
+          logger.w(
+              'postgres_worker: rollback uninstall failed (ignored): $rollbackErr');
+        }
+      }
       await _patchInstance(instanceId, {
         'status': 'failed',
         'errorMessage': e.toString(),
@@ -74,28 +90,27 @@ class PostgresWorker {
   }
 
   Future<void> _uninstallInstance(int instanceId) async {
-    try {
-      final instance = await _findInstance(instanceId);
-      if (instance == null) return;
+    final instance = await _findInstance(instanceId);
+    if (instance == null) return;
 
+    try {
       await _runAgent([
         'postgres',
         'uninstall-instance',
         '--version',
         '${instance.version}',
       ]);
-
-      await Query<PostgresInstance>(PostgresInstanceTable.metadata)
-          .where(PostgresInstanceTable.id.eq(instanceId))
-          .delete()
-          .run(database.context());
     } catch (e) {
-      await _patchInstance(instanceId, {
-        'status': 'failed',
-        'errorMessage': e.toString(),
-      });
-      rethrow;
+      // Log but do not re-throw: the package may not be installed if a previous
+      // install attempt failed. The intent is removal, so always delete the record.
+      logger.w('postgres_worker: agent uninstall-instance error (continuing): $e');
     }
+
+    // Hard-delete the instance record regardless of agent result.
+    await Query<PostgresInstance>(PostgresInstanceTable.metadata)
+        .where(PostgresInstanceTable.id.eq(instanceId))
+        .delete()
+        .run(database.context());
   }
 
   Future<void> _startInstance(int instanceId) async {
@@ -187,11 +202,11 @@ class PostgresWorker {
   }
 
   Future<void> _dropDatabase(int instanceId, int databaseId) async {
-    try {
-      final instance = await _findInstance(instanceId);
-      final db = await _findDatabase(databaseId);
-      if (instance == null || db == null) return;
+    final instance = await _findInstance(instanceId);
+    final db = await _findDatabase(databaseId);
+    if (instance == null || db == null) return;
 
+    try {
       await _runAgent([
         'postgres',
         'drop-db',
@@ -202,18 +217,17 @@ class PostgresWorker {
         '--role',
         db.roleName,
       ]);
-
-      await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
-          .where(PostgresDatabaseTable.id.eq(databaseId))
-          .delete()
-          .run(database.context());
     } catch (e) {
-      await _patchDatabase(databaseId, {
-        'status': 'failed',
-        'errorMessage': e.toString(),
-      });
-      rethrow;
+      // Log but do not re-throw: the database may not exist on the server if
+      // creation previously failed. Always delete the record.
+      logger.w('postgres_worker: agent drop-db error (continuing): $e');
     }
+
+    // Hard-delete the database record regardless of agent result.
+    await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
+        .where(PostgresDatabaseTable.id.eq(databaseId))
+        .delete()
+        .run(database.context());
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

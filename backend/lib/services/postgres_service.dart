@@ -51,7 +51,16 @@ class PostgresService extends Service {
             .where(PostgresInstanceTable.version.eq(version))
             .first(_db.context());
     if (existing != null) {
-      throw HttpException(409, 'PostgreSQL $version is already installed.');
+      if (existing.status == 'failed') {
+        // A previous install attempt failed — remove the stale record so we
+        // can start fresh.
+        await Query<PostgresInstance>(PostgresInstanceTable.metadata)
+            .where(PostgresInstanceTable.id.eq(existing.id!))
+            .delete()
+            .run(_db.context());
+      } else {
+        throw HttpException(409, 'PostgreSQL $version is already installed.');
+      }
     }
 
     final resolvedPort = port ?? _defaultPorts[version] ?? (5432 + version);
@@ -176,6 +185,17 @@ class PostgresService extends Service {
 
   Future<void> dropDatabase(int id) async {
     final db = await findDatabase(id);
+
+    // If the database was never successfully created, remove the record directly
+    // without involving the agent — there is nothing to drop on the server.
+    if (db.status == 'failed' || db.status == 'pending') {
+      await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
+          .where(PostgresDatabaseTable.id.eq(id))
+          .delete()
+          .run(_db.context());
+      return;
+    }
+
     final instance = await findInstance(db.instanceId);
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to drop a database.');
