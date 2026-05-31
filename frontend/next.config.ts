@@ -10,6 +10,7 @@ const SSR_API =
   "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async rewrites() {
     return [
       {

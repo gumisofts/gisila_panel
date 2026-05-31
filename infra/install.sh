@@ -6,14 +6,18 @@
 #
 # What this does (idempotent — safe to re-run):
 #   1. Installs system packages (postgres, redis, nginx, certbot, apparmor,
-#      git, build-essential, unzip, the Dart SDK).
+#      git, build-essential, unzip, the Dart SDK, Node.js 22 LTS, pnpm).
 #   2. Creates the `gisila` system user and /srv/gisila/ layout.
-#   3. Compiles the API, worker, and agent to native binaries and installs
+#   3. Initialises the Postgres database and role.
+#   4. Compiles the API, worker, and agent to native binaries and installs
 #      them under /usr/local/bin/.
-#   4. Drops the strict sudoers rule so `gisila` can run `gisila-agent` as root.
-#   5. Installs systemd units for the API and worker.
-#   6. Initialises the Postgres database and runs the schema migration.
-#   7. Writes the panel's own Nginx vhost and starts everything.
+#   5. Builds the Next.js frontend (standalone) and installs it to
+#      /srv/gisila/ui/.
+#   6. Drops the strict sudoers rule so `gisila` can run `gisila-agent` as root.
+#   7. Installs systemd units for the API, worker, and UI.
+#   8. Writes config (/etc/gisila/.env, /etc/gisila/database.yaml).
+#   9. Runs the schema migration.
+#  10. Writes the panel's own Nginx vhost and starts everything.
 # =============================================================================
 set -euo pipefail
 
@@ -49,6 +53,18 @@ fi
 
 # Ensure dart is on PATH for this script.
 export PATH="/usr/lib/dart/bin:$PATH"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "==> Installing Node.js 22 LTS"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  apt-get install -y -qq nodejs
+fi
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "==> Installing pnpm"
+  corepack enable
+  corepack prepare pnpm@latest --activate
+fi
 
 # ── 2. System user + directories ─────────────────────────────────────────────
 echo "==> Creating gisila user and directories"
@@ -117,21 +133,43 @@ mkdir -p "$REPO_DIR/agent/build"
 dart compile exe bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
 install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 
-# ── 5. sudoers rule ───────────────────────────────────────────────────────────
+# ── 5. Frontend — build & deploy ─────────────────────────────────────────────
+echo "==> Building Next.js frontend"
+cd "$REPO_DIR/frontend"
+pnpm install --frozen-lockfile
+pnpm build
+
+# The standalone build produces a minimal Node server bundle.
+# Layout under .next/standalone/:
+#   server.js            — the entry point
+#   .next/static/        — compiled JS/CSS chunks (must be copied in)
+#   public/              — static assets (must be copied in)
+UI_DEST="/srv/gisila/ui"
+echo "==> Deploying frontend to $UI_DEST"
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$UI_DEST"
+
+rsync -a --delete "$REPO_DIR/frontend/.next/standalone/"    "$UI_DEST/"
+rsync -a --delete "$REPO_DIR/frontend/.next/static/"        "$UI_DEST/.next/static/"
+rsync -a --delete "$REPO_DIR/frontend/public/"              "$UI_DEST/public/"
+
+chown -R "$GISILA_USER:$GISILA_USER" "$UI_DEST"
+
+# ── 6. sudoers rule ───────────────────────────────────────────────────────────
 echo "==> Installing sudoers rule"
 install -m 0440 "$REPO_DIR/infra/sudoers.d_gisila" /etc/sudoers.d/gisila
 visudo -cf /etc/sudoers.d/gisila
 
-# ── 6. systemd units ─────────────────────────────────────────────────────────
+# ── 7. systemd units ─────────────────────────────────────────────────────────
 echo "==> Installing systemd units"
 install -m 0644 "$REPO_DIR/infra/gisila-panel.service"  /etc/systemd/system/
 install -m 0644 "$REPO_DIR/infra/gisila-worker.service" /etc/systemd/system/
+install -m 0644 "$REPO_DIR/infra/gisila-ui.service"     /etc/systemd/system/
 install -m 0644 "$REPO_DIR/infra/gisila-apps.target"    /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable gisila-apps.target
-systemctl enable gisila-panel.service gisila-worker.service
+systemctl enable gisila-panel.service gisila-worker.service gisila-ui.service
 
-# ── 7. /etc/gisila/.env ───────────────────────────────────────────────────────
+# ── 8. /etc/gisila/.env ───────────────────────────────────────────────────────
 echo "==> Writing /etc/gisila/.env"
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /etc/gisila
 if [[ ! -f /etc/gisila/.env ]]; then
@@ -157,7 +195,7 @@ EOF
   chmod 0640 /etc/gisila/.env
 fi
 
-# ── 8. /etc/gisila/database.yaml ──────────────────────────────────────────────
+# ── 9. /etc/gisila/database.yaml ──────────────────────────────────────────────
 echo "==> Writing /etc/gisila/database.yaml"
 cat > /etc/gisila/database.yaml <<EOF
 default: default
@@ -178,13 +216,13 @@ EOF
 chown "$GISILA_USER:$GISILA_USER" /etc/gisila/database.yaml
 chmod 0640 /etc/gisila/database.yaml
 
-# ── 9. Database migration ─────────────────────────────────────────────────────
+# ── 10. Database migration ────────────────────────────────────────────────────
 echo "==> Running migrations"
 cd "$REPO_DIR/backend"
 GISILA_DATABASE_FILE=/etc/gisila/database.yaml \
   dart run gisila_orm:migrate up --config /etc/gisila/database.yaml
 
-# ── 10. Nginx vhost ───────────────────────────────────────────────────────────
+# ── 11. Nginx vhost ───────────────────────────────────────────────────────────
 echo "==> Installing nginx panel vhost"
 install -m 0644 "$REPO_DIR/infra/nginx-panel.conf" \
   /etc/nginx/sites-available/gisila-panel
@@ -194,18 +232,21 @@ nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-# ── 11. Start panel services ──────────────────────────────────────────────────
-echo "==> Starting gisila-panel and gisila-worker"
-systemctl restart gisila-panel.service gisila-worker.service
-sleep 2
-systemctl status --no-pager gisila-panel.service gisila-worker.service || true
+# ── 12. Start panel services ──────────────────────────────────────────────────
+echo "==> Starting gisila-panel, gisila-worker, and gisila-ui"
+systemctl restart gisila-panel.service gisila-worker.service gisila-ui.service
+sleep 3
+systemctl status --no-pager \
+  gisila-panel.service gisila-worker.service gisila-ui.service || true
 
 echo
 echo "✓ Gisila Panel installed successfully."
 echo
-echo "  API:    http://$(hostname -I | awk '{print $1}'):8000"
-echo "  Docs:   http://$(hostname -I | awk '{print $1}'):8000/docs"
-echo "  Admin:  http://$(hostname -I | awk '{print $1}'):8000/admin"
+IP=$(hostname -I | awk '{print $1}')
+echo "  UI:     http://$IP  (or your configured domain)"
+echo "  API:    http://$IP:8000  (internal — Dart backend)"
+echo "  Docs:   http://$IP:8000/docs"
+echo "  Admin:  http://$IP:8000/admin"
 echo
 echo "  Credentials are in /etc/gisila/.env (STUDIO_USERNAME / STUDIO_PASSWORD)."
 echo

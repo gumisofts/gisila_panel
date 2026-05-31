@@ -35,40 +35,40 @@ class User with Preloadable {
   });
 
   factory User.fromRow(Map<String, dynamic> row) => User(
-        id: row['id'] as int?,
-        firstName: row['first_name'] as String?,
-        lastName: row['last_name'] as String?,
-        email: row['email'] as String?,
-        password: row['password'] as String?,
-        isActive: row['is_active'] as bool?,
-        isStaff: row['is_staff'] as bool?,
-        isSuperuser: row['is_superuser'] as bool?,
-        isEmailVerified: row['is_email_verified'] as bool?,
-        avatarUrl: row['avatar_url'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-        updatedAt: row['updated_at'] == null
-            ? null
-            : (row['updated_at'] is DateTime
-                ? row['updated_at'] as DateTime
-                : DateTime.parse(row['updated_at'].toString())),
-      );
+    id: row['id'] as int?,
+    firstName: row['first_name'] as String?,
+    lastName: row['last_name'] as String?,
+    email: row['email'] as String?,
+    password: row['password'] as String?,
+    isActive: row['is_active'] as bool?,
+    isStaff: row['is_staff'] as bool?,
+    isSuperuser: row['is_superuser'] as bool?,
+    isEmailVerified: row['is_email_verified'] as bool?,
+    avatarUrl: row['avatar_url'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'first_name': firstName,
-        'last_name': lastName,
-        'email': email,
-        'password': password,
-        'is_active': isActive,
-        'is_staff': isStaff,
-        'is_superuser': isSuperuser,
-        'is_email_verified': isEmailVerified,
-        'avatar_url': avatarUrl,
-        'created_at': createdAt,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'first_name': firstName,
+    'last_name': lastName,
+    'email': email,
+    'password': password,
+    'is_active': isActive,
+    'is_staff': isStaff,
+    'is_superuser': isSuperuser,
+    'is_email_verified': isEmailVerified,
+    'avatar_url': avatarUrl,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
 
   factory User.fromJson(Map<String, dynamic> json) => User.fromRow(json);
 
@@ -95,21 +95,20 @@ class User with Preloadable {
     String? avatarUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) =>
-      User(
-        id: id ?? this.id,
-        firstName: firstName ?? this.firstName,
-        lastName: lastName ?? this.lastName,
-        email: email ?? this.email,
-        password: password ?? this.password,
-        isActive: isActive ?? this.isActive,
-        isStaff: isStaff ?? this.isStaff,
-        isSuperuser: isSuperuser ?? this.isSuperuser,
-        isEmailVerified: isEmailVerified ?? this.isEmailVerified,
-        avatarUrl: avatarUrl ?? this.avatarUrl,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => User(
+    id: id ?? this.id,
+    firstName: firstName ?? this.firstName,
+    lastName: lastName ?? this.lastName,
+    email: email ?? this.email,
+    password: password ?? this.password,
+    isActive: isActive ?? this.isActive,
+    isStaff: isStaff ?? this.isStaff,
+    isSuperuser: isSuperuser ?? this.isSuperuser,
+    isEmailVerified: isEmailVerified ?? this.isEmailVerified,
+    avatarUrl: avatarUrl ?? this.avatarUrl,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   static final Relation<User, Team> ownedTeams = HasManyRelation<User, Team>(
     parentTable: 'users',
@@ -121,21 +120,21 @@ class User with Preloadable {
 
   static final Relation<User, TeamMember> teamMemberships =
       HasManyRelation<User, TeamMember>(
-    parentTable: 'users',
-    childTable: 'team_members',
-    name: 'teamMemberships',
-    childForeignKey: 'user_id',
-    childMeta: TeamMemberTable.metadata,
-  );
+        parentTable: 'users',
+        childTable: 'team_members',
+        name: 'teamMemberships',
+        childForeignKey: 'user_id',
+        childMeta: TeamMemberTable.metadata,
+      );
 
   static final Relation<User, ApiToken> apiTokens =
       HasManyRelation<User, ApiToken>(
-    parentTable: 'users',
-    childTable: 'api_tokens',
-    name: 'apiTokens',
-    childForeignKey: 'user_id',
-    childMeta: ApiTokenTable.metadata,
-  );
+        parentTable: 'users',
+        childTable: 'api_tokens',
+        name: 'apiTokens',
+        childForeignKey: 'user_id',
+        childMeta: ApiTokenTable.metadata,
+      );
 
   static final Relation<User, SshKey> sshKeys = HasManyRelation<User, SshKey>(
     parentTable: 'users',
@@ -147,30 +146,30 @@ class User with Preloadable {
 
   static final Relation<User, Deployment> triggeredDeployments =
       HasManyRelation<User, Deployment>(
-    parentTable: 'users',
-    childTable: 'deployments',
-    name: 'triggeredDeployments',
-    childForeignKey: 'triggered_by_id',
-    childMeta: DeploymentTable.metadata,
-  );
+        parentTable: 'users',
+        childTable: 'deployments',
+        name: 'triggeredDeployments',
+        childForeignKey: 'triggered_by_id',
+        childMeta: DeploymentTable.metadata,
+      );
 
   static final Relation<User, AppEvent> appEvents =
       HasManyRelation<User, AppEvent>(
-    parentTable: 'users',
-    childTable: 'app_events',
-    name: 'appEvents',
-    childForeignKey: 'actor_id',
-    childMeta: AppEventTable.metadata,
-  );
+        parentTable: 'users',
+        childTable: 'app_events',
+        name: 'appEvents',
+        childForeignKey: 'actor_id',
+        childMeta: AppEventTable.metadata,
+      );
 
   static final Relation<User, AuditLog> auditEntries =
       HasManyRelation<User, AuditLog>(
-    parentTable: 'users',
-    childTable: 'audit_logs',
-    name: 'auditEntries',
-    childForeignKey: 'actor_id',
-    childMeta: AuditLogTable.metadata,
-  );
+        parentTable: 'users',
+        childTable: 'audit_logs',
+        name: 'auditEntries',
+        childForeignKey: 'actor_id',
+        childMeta: AuditLogTable.metadata,
+      );
 
   /// Preloaded ownedTeams; empty list when not preloaded.
   List<Team> get ownedTeamsList =>
@@ -293,24 +292,24 @@ class Team with Preloadable {
   });
 
   factory Team.fromRow(Map<String, dynamic> row) => Team(
-        id: row['id'] as int?,
-        name: row['name'] as String,
-        slug: row['slug'] as String?,
-        ownerId: row['owner_id'] as int,
-        plan: row['plan'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    name: row['name'] as String,
+    slug: row['slug'] as String?,
+    ownerId: row['owner_id'] as int,
+    plan: row['plan'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'name': name,
-        'slug': slug,
-        'owner_id': ownerId,
-        'plan': plan,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'name': name,
+    'slug': slug,
+    'owner_id': ownerId,
+    'plan': plan,
+    'created_at': createdAt,
+  };
 
   factory Team.fromJson(Map<String, dynamic> json) => Team.fromRow(json);
 
@@ -331,15 +330,14 @@ class Team with Preloadable {
     int? ownerId,
     String? plan,
     DateTime? createdAt,
-  }) =>
-      Team(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        slug: slug ?? this.slug,
-        ownerId: ownerId ?? this.ownerId,
-        plan: plan ?? this.plan,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => Team(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    slug: slug ?? this.slug,
+    ownerId: ownerId ?? this.ownerId,
+    plan: plan ?? this.plan,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<Team, User> owner = BelongsToRelation<Team, User>(
     parentTable: 'teams',
@@ -351,30 +349,30 @@ class Team with Preloadable {
 
   static final Relation<Team, TeamMember> members =
       HasManyRelation<Team, TeamMember>(
-    parentTable: 'teams',
-    childTable: 'team_members',
-    name: 'members',
-    childForeignKey: 'team_id',
-    childMeta: TeamMemberTable.metadata,
-  );
+        parentTable: 'teams',
+        childTable: 'team_members',
+        name: 'members',
+        childForeignKey: 'team_id',
+        childMeta: TeamMemberTable.metadata,
+      );
 
   static final Relation<Team, Project> projects =
       HasManyRelation<Team, Project>(
-    parentTable: 'teams',
-    childTable: 'projects',
-    name: 'projects',
-    childForeignKey: 'team_id',
-    childMeta: ProjectTable.metadata,
-  );
+        parentTable: 'teams',
+        childTable: 'projects',
+        name: 'projects',
+        childForeignKey: 'team_id',
+        childMeta: ProjectTable.metadata,
+      );
 
   static final Relation<Team, AuditLog> auditEntries =
       HasManyRelation<Team, AuditLog>(
-    parentTable: 'teams',
-    childTable: 'audit_logs',
-    name: 'auditEntries',
-    childForeignKey: 'team_id',
-    childMeta: AuditLogTable.metadata,
-  );
+        parentTable: 'teams',
+        childTable: 'audit_logs',
+        name: 'auditEntries',
+        childForeignKey: 'team_id',
+        childMeta: AuditLogTable.metadata,
+      );
 
   /// Preloaded owner; null when not preloaded or absent.
   User? get ownerLoaded => preloaded<User>('owner');
@@ -447,28 +445,28 @@ class TeamMember with Preloadable {
   });
 
   factory TeamMember.fromRow(Map<String, dynamic> row) => TeamMember(
-        id: row['id'] as int?,
-        teamId: row['team_id'] as int,
-        userId: row['user_id'] as int,
-        role: row['role'] as String?,
-        invitedAt: row['invited_at'] is DateTime
-            ? row['invited_at'] as DateTime
-            : DateTime.parse(row['invited_at'].toString()),
-        acceptedAt: row['accepted_at'] == null
-            ? null
-            : (row['accepted_at'] is DateTime
-                ? row['accepted_at'] as DateTime
-                : DateTime.parse(row['accepted_at'].toString())),
-      );
+    id: row['id'] as int?,
+    teamId: row['team_id'] as int,
+    userId: row['user_id'] as int,
+    role: row['role'] as String?,
+    invitedAt: row['invited_at'] is DateTime
+        ? row['invited_at'] as DateTime
+        : DateTime.parse(row['invited_at'].toString()),
+    acceptedAt: row['accepted_at'] == null
+        ? null
+        : (row['accepted_at'] is DateTime
+              ? row['accepted_at'] as DateTime
+              : DateTime.parse(row['accepted_at'].toString())),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'team_id': teamId,
-        'user_id': userId,
-        'role': role,
-        'invited_at': invitedAt,
-        'accepted_at': acceptedAt,
-      };
+    'id': id,
+    'team_id': teamId,
+    'user_id': userId,
+    'role': role,
+    'invited_at': invitedAt,
+    'accepted_at': acceptedAt,
+  };
 
   factory TeamMember.fromJson(Map<String, dynamic> json) =>
       TeamMember.fromRow(json);
@@ -490,33 +488,32 @@ class TeamMember with Preloadable {
     String? role,
     DateTime? invitedAt,
     DateTime? acceptedAt,
-  }) =>
-      TeamMember(
-        id: id ?? this.id,
-        teamId: teamId ?? this.teamId,
-        userId: userId ?? this.userId,
-        role: role ?? this.role,
-        invitedAt: invitedAt ?? this.invitedAt,
-        acceptedAt: acceptedAt ?? this.acceptedAt,
-      );
+  }) => TeamMember(
+    id: id ?? this.id,
+    teamId: teamId ?? this.teamId,
+    userId: userId ?? this.userId,
+    role: role ?? this.role,
+    invitedAt: invitedAt ?? this.invitedAt,
+    acceptedAt: acceptedAt ?? this.acceptedAt,
+  );
 
   static final Relation<TeamMember, Team> team =
       BelongsToRelation<TeamMember, Team>(
-    parentTable: 'team_members',
-    childTable: 'teams',
-    name: 'team',
-    parentForeignKey: 'team_id',
-    childMeta: TeamTable.metadata,
-  );
+        parentTable: 'team_members',
+        childTable: 'teams',
+        name: 'team',
+        parentForeignKey: 'team_id',
+        childMeta: TeamTable.metadata,
+      );
 
   static final Relation<TeamMember, User> user =
       BelongsToRelation<TeamMember, User>(
-    parentTable: 'team_members',
-    childTable: 'users',
-    name: 'user',
-    parentForeignKey: 'user_id',
-    childMeta: UserTable.metadata,
-  );
+        parentTable: 'team_members',
+        childTable: 'users',
+        name: 'user',
+        parentForeignKey: 'user_id',
+        childMeta: UserTable.metadata,
+      );
 
   /// Preloaded team; null when not preloaded or absent.
   Team? get teamLoaded => preloaded<Team>('team');
@@ -591,36 +588,36 @@ class ApiToken with Preloadable {
   });
 
   factory ApiToken.fromRow(Map<String, dynamic> row) => ApiToken(
-        id: row['id'] as int?,
-        userId: row['user_id'] as int,
-        name: row['name'] as String,
-        tokenHash: row['token_hash'] as String?,
-        prefix: row['prefix'] as String?,
-        lastUsedAt: row['last_used_at'] == null
-            ? null
-            : (row['last_used_at'] is DateTime
-                ? row['last_used_at'] as DateTime
-                : DateTime.parse(row['last_used_at'].toString())),
-        expiresAt: row['expires_at'] == null
-            ? null
-            : (row['expires_at'] is DateTime
-                ? row['expires_at'] as DateTime
-                : DateTime.parse(row['expires_at'].toString())),
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    userId: row['user_id'] as int,
+    name: row['name'] as String,
+    tokenHash: row['token_hash'] as String?,
+    prefix: row['prefix'] as String?,
+    lastUsedAt: row['last_used_at'] == null
+        ? null
+        : (row['last_used_at'] is DateTime
+              ? row['last_used_at'] as DateTime
+              : DateTime.parse(row['last_used_at'].toString())),
+    expiresAt: row['expires_at'] == null
+        ? null
+        : (row['expires_at'] is DateTime
+              ? row['expires_at'] as DateTime
+              : DateTime.parse(row['expires_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'user_id': userId,
-        'name': name,
-        'token_hash': tokenHash,
-        'prefix': prefix,
-        'last_used_at': lastUsedAt,
-        'expires_at': expiresAt,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'user_id': userId,
+    'name': name,
+    'token_hash': tokenHash,
+    'prefix': prefix,
+    'last_used_at': lastUsedAt,
+    'expires_at': expiresAt,
+    'created_at': createdAt,
+  };
 
   factory ApiToken.fromJson(Map<String, dynamic> json) =>
       ApiToken.fromRow(json);
@@ -644,26 +641,25 @@ class ApiToken with Preloadable {
     DateTime? lastUsedAt,
     DateTime? expiresAt,
     DateTime? createdAt,
-  }) =>
-      ApiToken(
-        id: id ?? this.id,
-        userId: userId ?? this.userId,
-        name: name ?? this.name,
-        tokenHash: tokenHash ?? this.tokenHash,
-        prefix: prefix ?? this.prefix,
-        lastUsedAt: lastUsedAt ?? this.lastUsedAt,
-        expiresAt: expiresAt ?? this.expiresAt,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => ApiToken(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    name: name ?? this.name,
+    tokenHash: tokenHash ?? this.tokenHash,
+    prefix: prefix ?? this.prefix,
+    lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+    expiresAt: expiresAt ?? this.expiresAt,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<ApiToken, User> user =
       BelongsToRelation<ApiToken, User>(
-    parentTable: 'api_tokens',
-    childTable: 'users',
-    name: 'user',
-    parentForeignKey: 'user_id',
-    childMeta: UserTable.metadata,
-  );
+        parentTable: 'api_tokens',
+        childTable: 'users',
+        name: 'user',
+        parentForeignKey: 'user_id',
+        childMeta: UserTable.metadata,
+      );
 
   /// Preloaded user; null when not preloaded or absent.
   User? get userLoaded => preloaded<User>('user');
@@ -747,30 +743,30 @@ class SshKey with Preloadable {
   });
 
   factory SshKey.fromRow(Map<String, dynamic> row) => SshKey(
-        id: row['id'] as int?,
-        userId: row['user_id'] as int,
-        name: row['name'] as String,
-        algorithm: row['algorithm'] as String?,
-        publicKey: row['public_key'] as String,
-        privateKey: row['private_key'] as String?,
-        isDeployKey: row['is_deploy_key'] as bool?,
-        fingerprint: row['fingerprint'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    userId: row['user_id'] as int,
+    name: row['name'] as String,
+    algorithm: row['algorithm'] as String?,
+    publicKey: row['public_key'] as String,
+    privateKey: row['private_key'] as String?,
+    isDeployKey: row['is_deploy_key'] as bool?,
+    fingerprint: row['fingerprint'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'user_id': userId,
-        'name': name,
-        'algorithm': algorithm,
-        'public_key': publicKey,
-        'private_key': privateKey,
-        'is_deploy_key': isDeployKey,
-        'fingerprint': fingerprint,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'user_id': userId,
+    'name': name,
+    'algorithm': algorithm,
+    'public_key': publicKey,
+    'private_key': privateKey,
+    'is_deploy_key': isDeployKey,
+    'fingerprint': fingerprint,
+    'created_at': createdAt,
+  };
 
   factory SshKey.fromJson(Map<String, dynamic> json) => SshKey.fromRow(json);
 
@@ -794,18 +790,17 @@ class SshKey with Preloadable {
     bool? isDeployKey,
     String? fingerprint,
     DateTime? createdAt,
-  }) =>
-      SshKey(
-        id: id ?? this.id,
-        userId: userId ?? this.userId,
-        name: name ?? this.name,
-        algorithm: algorithm ?? this.algorithm,
-        publicKey: publicKey ?? this.publicKey,
-        privateKey: privateKey ?? this.privateKey,
-        isDeployKey: isDeployKey ?? this.isDeployKey,
-        fingerprint: fingerprint ?? this.fingerprint,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => SshKey(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    name: name ?? this.name,
+    algorithm: algorithm ?? this.algorithm,
+    publicKey: publicKey ?? this.publicKey,
+    privateKey: privateKey ?? this.privateKey,
+    isDeployKey: isDeployKey ?? this.isDeployKey,
+    fingerprint: fingerprint ?? this.fingerprint,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<SshKey, User> user = BelongsToRelation<SshKey, User>(
     parentTable: 'ssh_keys',
@@ -817,12 +812,12 @@ class SshKey with Preloadable {
 
   static final Relation<SshKey, App> deployedApps =
       HasManyRelation<SshKey, App>(
-    parentTable: 'ssh_keys',
-    childTable: 'apps',
-    name: 'deployedApps',
-    childForeignKey: 'deploy_key_id',
-    childMeta: AppTable.metadata,
-  );
+        parentTable: 'ssh_keys',
+        childTable: 'apps',
+        name: 'deployedApps',
+        childForeignKey: 'deploy_key_id',
+        childMeta: AppTable.metadata,
+      );
 
   /// Preloaded user; null when not preloaded or absent.
   User? get userLoaded => preloaded<User>('user');
@@ -909,24 +904,24 @@ class Project with Preloadable {
   });
 
   factory Project.fromRow(Map<String, dynamic> row) => Project(
-        id: row['id'] as int?,
-        teamId: row['team_id'] as int,
-        name: row['name'] as String,
-        slug: row['slug'] as String?,
-        description: row['description'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    teamId: row['team_id'] as int,
+    name: row['name'] as String,
+    slug: row['slug'] as String?,
+    description: row['description'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'team_id': teamId,
-        'name': name,
-        'slug': slug,
-        'description': description,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'team_id': teamId,
+    'name': name,
+    'slug': slug,
+    'description': description,
+    'created_at': createdAt,
+  };
 
   factory Project.fromJson(Map<String, dynamic> json) => Project.fromRow(json);
 
@@ -947,15 +942,14 @@ class Project with Preloadable {
     String? slug,
     String? description,
     DateTime? createdAt,
-  }) =>
-      Project(
-        id: id ?? this.id,
-        teamId: teamId ?? this.teamId,
-        name: name ?? this.name,
-        slug: slug ?? this.slug,
-        description: description ?? this.description,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => Project(
+    id: id ?? this.id,
+    teamId: teamId ?? this.teamId,
+    name: name ?? this.name,
+    slug: slug ?? this.slug,
+    description: description ?? this.description,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<Project, Team> team = BelongsToRelation<Project, Team>(
     parentTable: 'projects',
@@ -1073,70 +1067,70 @@ class App with Preloadable {
   });
 
   factory App.fromRow(Map<String, dynamic> row) => App(
-        id: row['id'] as int?,
-        projectId: row['project_id'] as int,
-        name: row['name'] as String,
-        slug: row['slug'] as String?,
-        linuxUser: row['linux_user'] as String?,
-        workDir: row['work_dir'] as String,
-        internalPort: row['internal_port'] as int?,
-        runtime: row['runtime'] as String,
-        sourceType: row['source_type'] as String,
-        gitUrl: row['git_url'] as String?,
-        gitBranch: row['git_branch'] as String?,
-        buildCommand: row['build_command'] as String?,
-        startCommand: row['start_command'] as String?,
-        healthCheckPath: row['health_check_path'] as String?,
-        deployKeyId: row['deploy_key_id'] as int?,
-        pythonVersion: row['python_version'] as String?,
-        pythonMode: row['python_mode'] as String?,
-        wsgiApp: row['wsgi_app'] as String?,
-        memoryMbLimit: row['memory_mb_limit'] as int?,
-        cpuQuotaPercent: row['cpu_quota_percent'] as int?,
-        tasksLimit: row['tasks_limit'] as int?,
-        status: row['status'] as String?,
-        lastDeployedAt: row['last_deployed_at'] == null
-            ? null
-            : (row['last_deployed_at'] is DateTime
-                ? row['last_deployed_at'] as DateTime
-                : DateTime.parse(row['last_deployed_at'].toString())),
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-        updatedAt: row['updated_at'] == null
-            ? null
-            : (row['updated_at'] is DateTime
-                ? row['updated_at'] as DateTime
-                : DateTime.parse(row['updated_at'].toString())),
-      );
+    id: row['id'] as int?,
+    projectId: row['project_id'] as int,
+    name: row['name'] as String,
+    slug: row['slug'] as String?,
+    linuxUser: row['linux_user'] as String?,
+    workDir: row['work_dir'] as String,
+    internalPort: row['internal_port'] as int?,
+    runtime: row['runtime'] as String,
+    sourceType: row['source_type'] as String,
+    gitUrl: row['git_url'] as String?,
+    gitBranch: row['git_branch'] as String?,
+    buildCommand: row['build_command'] as String?,
+    startCommand: row['start_command'] as String?,
+    healthCheckPath: row['health_check_path'] as String?,
+    deployKeyId: row['deploy_key_id'] as int?,
+    pythonVersion: row['python_version'] as String?,
+    pythonMode: row['python_mode'] as String?,
+    wsgiApp: row['wsgi_app'] as String?,
+    memoryMbLimit: row['memory_mb_limit'] as int?,
+    cpuQuotaPercent: row['cpu_quota_percent'] as int?,
+    tasksLimit: row['tasks_limit'] as int?,
+    status: row['status'] as String?,
+    lastDeployedAt: row['last_deployed_at'] == null
+        ? null
+        : (row['last_deployed_at'] is DateTime
+              ? row['last_deployed_at'] as DateTime
+              : DateTime.parse(row['last_deployed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'project_id': projectId,
-        'name': name,
-        'slug': slug,
-        'linux_user': linuxUser,
-        'work_dir': workDir,
-        'internal_port': internalPort,
-        'runtime': runtime,
-        'source_type': sourceType,
-        'git_url': gitUrl,
-        'git_branch': gitBranch,
-        'build_command': buildCommand,
-        'start_command': startCommand,
-        'health_check_path': healthCheckPath,
-        'deploy_key_id': deployKeyId,
-        'python_version': pythonVersion,
-        'python_mode': pythonMode,
-        'wsgi_app': wsgiApp,
-        'memory_mb_limit': memoryMbLimit,
-        'cpu_quota_percent': cpuQuotaPercent,
-        'tasks_limit': tasksLimit,
-        'status': status,
-        'last_deployed_at': lastDeployedAt,
-        'created_at': createdAt,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'project_id': projectId,
+    'name': name,
+    'slug': slug,
+    'linux_user': linuxUser,
+    'work_dir': workDir,
+    'internal_port': internalPort,
+    'runtime': runtime,
+    'source_type': sourceType,
+    'git_url': gitUrl,
+    'git_branch': gitBranch,
+    'build_command': buildCommand,
+    'start_command': startCommand,
+    'health_check_path': healthCheckPath,
+    'deploy_key_id': deployKeyId,
+    'python_version': pythonVersion,
+    'python_mode': pythonMode,
+    'wsgi_app': wsgiApp,
+    'memory_mb_limit': memoryMbLimit,
+    'cpu_quota_percent': cpuQuotaPercent,
+    'tasks_limit': tasksLimit,
+    'status': status,
+    'last_deployed_at': lastDeployedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
 
   factory App.fromJson(Map<String, dynamic> json) => App.fromRow(json);
 
@@ -1176,34 +1170,33 @@ class App with Preloadable {
     DateTime? lastDeployedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) =>
-      App(
-        id: id ?? this.id,
-        projectId: projectId ?? this.projectId,
-        name: name ?? this.name,
-        slug: slug ?? this.slug,
-        linuxUser: linuxUser ?? this.linuxUser,
-        workDir: workDir ?? this.workDir,
-        internalPort: internalPort ?? this.internalPort,
-        runtime: runtime ?? this.runtime,
-        sourceType: sourceType ?? this.sourceType,
-        gitUrl: gitUrl ?? this.gitUrl,
-        gitBranch: gitBranch ?? this.gitBranch,
-        buildCommand: buildCommand ?? this.buildCommand,
-        startCommand: startCommand ?? this.startCommand,
-        healthCheckPath: healthCheckPath ?? this.healthCheckPath,
-        deployKeyId: deployKeyId ?? this.deployKeyId,
-        pythonVersion: pythonVersion ?? this.pythonVersion,
-        pythonMode: pythonMode ?? this.pythonMode,
-        wsgiApp: wsgiApp ?? this.wsgiApp,
-        memoryMbLimit: memoryMbLimit ?? this.memoryMbLimit,
-        cpuQuotaPercent: cpuQuotaPercent ?? this.cpuQuotaPercent,
-        tasksLimit: tasksLimit ?? this.tasksLimit,
-        status: status ?? this.status,
-        lastDeployedAt: lastDeployedAt ?? this.lastDeployedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => App(
+    id: id ?? this.id,
+    projectId: projectId ?? this.projectId,
+    name: name ?? this.name,
+    slug: slug ?? this.slug,
+    linuxUser: linuxUser ?? this.linuxUser,
+    workDir: workDir ?? this.workDir,
+    internalPort: internalPort ?? this.internalPort,
+    runtime: runtime ?? this.runtime,
+    sourceType: sourceType ?? this.sourceType,
+    gitUrl: gitUrl ?? this.gitUrl,
+    gitBranch: gitBranch ?? this.gitBranch,
+    buildCommand: buildCommand ?? this.buildCommand,
+    startCommand: startCommand ?? this.startCommand,
+    healthCheckPath: healthCheckPath ?? this.healthCheckPath,
+    deployKeyId: deployKeyId ?? this.deployKeyId,
+    pythonVersion: pythonVersion ?? this.pythonVersion,
+    pythonMode: pythonMode ?? this.pythonMode,
+    wsgiApp: wsgiApp ?? this.wsgiApp,
+    memoryMbLimit: memoryMbLimit ?? this.memoryMbLimit,
+    cpuQuotaPercent: cpuQuotaPercent ?? this.cpuQuotaPercent,
+    tasksLimit: tasksLimit ?? this.tasksLimit,
+    status: status ?? this.status,
+    lastDeployedAt: lastDeployedAt ?? this.lastDeployedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   static final Relation<App, Project> project = BelongsToRelation<App, Project>(
     parentTable: 'apps',
@@ -1231,12 +1224,12 @@ class App with Preloadable {
 
   static final Relation<App, Deployment> deployments =
       HasManyRelation<App, Deployment>(
-    parentTable: 'apps',
-    childTable: 'deployments',
-    name: 'deployments',
-    childForeignKey: 'app_id',
-    childMeta: DeploymentTable.metadata,
-  );
+        parentTable: 'apps',
+        childTable: 'deployments',
+        name: 'deployments',
+        childForeignKey: 'app_id',
+        childMeta: DeploymentTable.metadata,
+      );
 
   static final Relation<App, Domain> domains = HasManyRelation<App, Domain>(
     parentTable: 'apps',
@@ -1248,12 +1241,12 @@ class App with Preloadable {
 
   static final Relation<App, MetricSample> metrics =
       HasManyRelation<App, MetricSample>(
-    parentTable: 'apps',
-    childTable: 'metric_samples',
-    name: 'metrics',
-    childForeignKey: 'app_id',
-    childMeta: MetricSampleTable.metadata,
-  );
+        parentTable: 'apps',
+        childTable: 'metric_samples',
+        name: 'metrics',
+        childForeignKey: 'app_id',
+        childMeta: MetricSampleTable.metadata,
+      );
 
   static final Relation<App, AppEvent> events = HasManyRelation<App, AppEvent>(
     parentTable: 'apps',
@@ -1447,24 +1440,24 @@ class EnvVar with Preloadable {
   });
 
   factory EnvVar.fromRow(Map<String, dynamic> row) => EnvVar(
-        id: row['id'] as int?,
-        appId: row['app_id'] as int,
-        name: row['name'] as String,
-        value: row['value'] as String?,
-        isSecret: row['is_secret'] as bool?,
-        updatedAt: row['updated_at'] is DateTime
-            ? row['updated_at'] as DateTime
-            : DateTime.parse(row['updated_at'].toString()),
-      );
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    name: row['name'] as String,
+    value: row['value'] as String?,
+    isSecret: row['is_secret'] as bool?,
+    updatedAt: row['updated_at'] is DateTime
+        ? row['updated_at'] as DateTime
+        : DateTime.parse(row['updated_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'app_id': appId,
-        'name': name,
-        'value': value,
-        'is_secret': isSecret,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'app_id': appId,
+    'name': name,
+    'value': value,
+    'is_secret': isSecret,
+    'updated_at': updatedAt,
+  };
 
   factory EnvVar.fromJson(Map<String, dynamic> json) => EnvVar.fromRow(json);
 
@@ -1485,15 +1478,14 @@ class EnvVar with Preloadable {
     String? value,
     bool? isSecret,
     DateTime? updatedAt,
-  }) =>
-      EnvVar(
-        id: id ?? this.id,
-        appId: appId ?? this.appId,
-        name: name ?? this.name,
-        value: value ?? this.value,
-        isSecret: isSecret ?? this.isSecret,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => EnvVar(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    name: name ?? this.name,
+    value: value ?? this.value,
+    isSecret: isSecret ?? this.isSecret,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   static final Relation<EnvVar, App> app = BelongsToRelation<EnvVar, App>(
     parentTable: 'env_vars',
@@ -1574,44 +1566,44 @@ class Deployment with Preloadable {
   });
 
   factory Deployment.fromRow(Map<String, dynamic> row) => Deployment(
-        id: row['id'] as int?,
-        appId: row['app_id'] as int,
-        triggeredById: row['triggered_by_id'] as int?,
-        sourceType: row['source_type'] as String,
-        gitCommitSha: row['git_commit_sha'] as String?,
-        artifactPath: row['artifact_path'] as String?,
-        status: row['status'] as String?,
-        failureReason: row['failure_reason'] as String?,
-        isActive: row['is_active'] as bool?,
-        startedAt: row['started_at'] == null
-            ? null
-            : (row['started_at'] is DateTime
-                ? row['started_at'] as DateTime
-                : DateTime.parse(row['started_at'].toString())),
-        finishedAt: row['finished_at'] == null
-            ? null
-            : (row['finished_at'] is DateTime
-                ? row['finished_at'] as DateTime
-                : DateTime.parse(row['finished_at'].toString())),
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    triggeredById: row['triggered_by_id'] as int?,
+    sourceType: row['source_type'] as String,
+    gitCommitSha: row['git_commit_sha'] as String?,
+    artifactPath: row['artifact_path'] as String?,
+    status: row['status'] as String?,
+    failureReason: row['failure_reason'] as String?,
+    isActive: row['is_active'] as bool?,
+    startedAt: row['started_at'] == null
+        ? null
+        : (row['started_at'] is DateTime
+              ? row['started_at'] as DateTime
+              : DateTime.parse(row['started_at'].toString())),
+    finishedAt: row['finished_at'] == null
+        ? null
+        : (row['finished_at'] is DateTime
+              ? row['finished_at'] as DateTime
+              : DateTime.parse(row['finished_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'app_id': appId,
-        'triggered_by_id': triggeredById,
-        'source_type': sourceType,
-        'git_commit_sha': gitCommitSha,
-        'artifact_path': artifactPath,
-        'status': status,
-        'failure_reason': failureReason,
-        'is_active': isActive,
-        'started_at': startedAt,
-        'finished_at': finishedAt,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'app_id': appId,
+    'triggered_by_id': triggeredById,
+    'source_type': sourceType,
+    'git_commit_sha': gitCommitSha,
+    'artifact_path': artifactPath,
+    'status': status,
+    'failure_reason': failureReason,
+    'is_active': isActive,
+    'started_at': startedAt,
+    'finished_at': finishedAt,
+    'created_at': createdAt,
+  };
 
   factory Deployment.fromJson(Map<String, dynamic> json) =>
       Deployment.fromRow(json);
@@ -1639,48 +1631,47 @@ class Deployment with Preloadable {
     DateTime? startedAt,
     DateTime? finishedAt,
     DateTime? createdAt,
-  }) =>
-      Deployment(
-        id: id ?? this.id,
-        appId: appId ?? this.appId,
-        triggeredById: triggeredById ?? this.triggeredById,
-        sourceType: sourceType ?? this.sourceType,
-        gitCommitSha: gitCommitSha ?? this.gitCommitSha,
-        artifactPath: artifactPath ?? this.artifactPath,
-        status: status ?? this.status,
-        failureReason: failureReason ?? this.failureReason,
-        isActive: isActive ?? this.isActive,
-        startedAt: startedAt ?? this.startedAt,
-        finishedAt: finishedAt ?? this.finishedAt,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => Deployment(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    triggeredById: triggeredById ?? this.triggeredById,
+    sourceType: sourceType ?? this.sourceType,
+    gitCommitSha: gitCommitSha ?? this.gitCommitSha,
+    artifactPath: artifactPath ?? this.artifactPath,
+    status: status ?? this.status,
+    failureReason: failureReason ?? this.failureReason,
+    isActive: isActive ?? this.isActive,
+    startedAt: startedAt ?? this.startedAt,
+    finishedAt: finishedAt ?? this.finishedAt,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<Deployment, App> app =
       BelongsToRelation<Deployment, App>(
-    parentTable: 'deployments',
-    childTable: 'apps',
-    name: 'app',
-    parentForeignKey: 'app_id',
-    childMeta: AppTable.metadata,
-  );
+        parentTable: 'deployments',
+        childTable: 'apps',
+        name: 'app',
+        parentForeignKey: 'app_id',
+        childMeta: AppTable.metadata,
+      );
 
   static final Relation<Deployment, User> triggeredBy =
       BelongsToRelation<Deployment, User>(
-    parentTable: 'deployments',
-    childTable: 'users',
-    name: 'triggeredBy',
-    parentForeignKey: 'triggered_by_id',
-    childMeta: UserTable.metadata,
-  );
+        parentTable: 'deployments',
+        childTable: 'users',
+        name: 'triggeredBy',
+        parentForeignKey: 'triggered_by_id',
+        childMeta: UserTable.metadata,
+      );
 
   static final Relation<Deployment, BuildLog> buildLogs =
       HasManyRelation<Deployment, BuildLog>(
-    parentTable: 'deployments',
-    childTable: 'build_logs',
-    name: 'buildLogs',
-    childForeignKey: 'deployment_id',
-    childMeta: BuildLogTable.metadata,
-  );
+        parentTable: 'deployments',
+        childTable: 'build_logs',
+        name: 'buildLogs',
+        childForeignKey: 'deployment_id',
+        childMeta: BuildLogTable.metadata,
+      );
 
   /// Preloaded app; null when not preloaded or absent.
   App? get appLoaded => preloaded<App>('app');
@@ -1783,22 +1774,22 @@ class BuildLog with Preloadable {
   });
 
   factory BuildLog.fromRow(Map<String, dynamic> row) => BuildLog(
-        id: row['id'] as int?,
-        deploymentId: row['deployment_id'] as int,
-        line: row['line'] as String,
-        stream: row['stream'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    deploymentId: row['deployment_id'] as int,
+    line: row['line'] as String,
+    stream: row['stream'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'deployment_id': deploymentId,
-        'line': line,
-        'stream': stream,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'deployment_id': deploymentId,
+    'line': line,
+    'stream': stream,
+    'created_at': createdAt,
+  };
 
   factory BuildLog.fromJson(Map<String, dynamic> json) =>
       BuildLog.fromRow(json);
@@ -1819,23 +1810,22 @@ class BuildLog with Preloadable {
     String? line,
     String? stream,
     DateTime? createdAt,
-  }) =>
-      BuildLog(
-        id: id ?? this.id,
-        deploymentId: deploymentId ?? this.deploymentId,
-        line: line ?? this.line,
-        stream: stream ?? this.stream,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => BuildLog(
+    id: id ?? this.id,
+    deploymentId: deploymentId ?? this.deploymentId,
+    line: line ?? this.line,
+    stream: stream ?? this.stream,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<BuildLog, Deployment> deployment =
       BelongsToRelation<BuildLog, Deployment>(
-    parentTable: 'build_logs',
-    childTable: 'deployments',
-    name: 'deployment',
-    parentForeignKey: 'deployment_id',
-    childMeta: DeploymentTable.metadata,
-  );
+        parentTable: 'build_logs',
+        childTable: 'deployments',
+        name: 'deployment',
+        parentForeignKey: 'deployment_id',
+        childMeta: DeploymentTable.metadata,
+      );
 
   /// Preloaded deployment; null when not preloaded or absent.
   Deployment? get deploymentLoaded => preloaded<Deployment>('deployment');
@@ -1900,36 +1890,36 @@ class Domain with Preloadable {
   });
 
   factory Domain.fromRow(Map<String, dynamic> row) => Domain(
-        id: row['id'] as int?,
-        appId: row['app_id'] as int,
-        hostname: row['hostname'] as String?,
-        isPrimary: row['is_primary'] as bool?,
-        isVerified: row['is_verified'] as bool?,
-        verificationToken: row['verification_token'] as String?,
-        sslStatus: row['ssl_status'] as String?,
-        sslExpiresAt: row['ssl_expires_at'] == null
-            ? null
-            : (row['ssl_expires_at'] is DateTime
-                ? row['ssl_expires_at'] as DateTime
-                : DateTime.parse(row['ssl_expires_at'].toString())),
-        sslIssuer: row['ssl_issuer'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    hostname: row['hostname'] as String?,
+    isPrimary: row['is_primary'] as bool?,
+    isVerified: row['is_verified'] as bool?,
+    verificationToken: row['verification_token'] as String?,
+    sslStatus: row['ssl_status'] as String?,
+    sslExpiresAt: row['ssl_expires_at'] == null
+        ? null
+        : (row['ssl_expires_at'] is DateTime
+              ? row['ssl_expires_at'] as DateTime
+              : DateTime.parse(row['ssl_expires_at'].toString())),
+    sslIssuer: row['ssl_issuer'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'app_id': appId,
-        'hostname': hostname,
-        'is_primary': isPrimary,
-        'is_verified': isVerified,
-        'verification_token': verificationToken,
-        'ssl_status': sslStatus,
-        'ssl_expires_at': sslExpiresAt,
-        'ssl_issuer': sslIssuer,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'app_id': appId,
+    'hostname': hostname,
+    'is_primary': isPrimary,
+    'is_verified': isVerified,
+    'verification_token': verificationToken,
+    'ssl_status': sslStatus,
+    'ssl_expires_at': sslExpiresAt,
+    'ssl_issuer': sslIssuer,
+    'created_at': createdAt,
+  };
 
   factory Domain.fromJson(Map<String, dynamic> json) => Domain.fromRow(json);
 
@@ -1954,19 +1944,18 @@ class Domain with Preloadable {
     DateTime? sslExpiresAt,
     String? sslIssuer,
     DateTime? createdAt,
-  }) =>
-      Domain(
-        id: id ?? this.id,
-        appId: appId ?? this.appId,
-        hostname: hostname ?? this.hostname,
-        isPrimary: isPrimary ?? this.isPrimary,
-        isVerified: isVerified ?? this.isVerified,
-        verificationToken: verificationToken ?? this.verificationToken,
-        sslStatus: sslStatus ?? this.sslStatus,
-        sslExpiresAt: sslExpiresAt ?? this.sslExpiresAt,
-        sslIssuer: sslIssuer ?? this.sslIssuer,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => Domain(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    hostname: hostname ?? this.hostname,
+    isPrimary: isPrimary ?? this.isPrimary,
+    isVerified: isVerified ?? this.isVerified,
+    verificationToken: verificationToken ?? this.verificationToken,
+    sslStatus: sslStatus ?? this.sslStatus,
+    sslExpiresAt: sslExpiresAt ?? this.sslExpiresAt,
+    sslIssuer: sslIssuer ?? this.sslIssuer,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<Domain, App> app = BelongsToRelation<Domain, App>(
     parentTable: 'domains',
@@ -2062,24 +2051,24 @@ class MetricSample with Preloadable {
   });
 
   factory MetricSample.fromRow(Map<String, dynamic> row) => MetricSample(
-        id: row['id'] as int?,
-        appId: row['app_id'] as int,
-        cpuPercent: row['cpu_percent'] as int?,
-        memBytes: row['mem_bytes'] as int?,
-        rssBytes: row['rss_bytes'] as int?,
-        sampledAt: row['sampled_at'] is DateTime
-            ? row['sampled_at'] as DateTime
-            : DateTime.parse(row['sampled_at'].toString()),
-      );
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    cpuPercent: row['cpu_percent'] as int?,
+    memBytes: row['mem_bytes'] as int?,
+    rssBytes: row['rss_bytes'] as int?,
+    sampledAt: row['sampled_at'] is DateTime
+        ? row['sampled_at'] as DateTime
+        : DateTime.parse(row['sampled_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'app_id': appId,
-        'cpu_percent': cpuPercent,
-        'mem_bytes': memBytes,
-        'rss_bytes': rssBytes,
-        'sampled_at': sampledAt,
-      };
+    'id': id,
+    'app_id': appId,
+    'cpu_percent': cpuPercent,
+    'mem_bytes': memBytes,
+    'rss_bytes': rssBytes,
+    'sampled_at': sampledAt,
+  };
 
   factory MetricSample.fromJson(Map<String, dynamic> json) =>
       MetricSample.fromRow(json);
@@ -2101,24 +2090,23 @@ class MetricSample with Preloadable {
     int? memBytes,
     int? rssBytes,
     DateTime? sampledAt,
-  }) =>
-      MetricSample(
-        id: id ?? this.id,
-        appId: appId ?? this.appId,
-        cpuPercent: cpuPercent ?? this.cpuPercent,
-        memBytes: memBytes ?? this.memBytes,
-        rssBytes: rssBytes ?? this.rssBytes,
-        sampledAt: sampledAt ?? this.sampledAt,
-      );
+  }) => MetricSample(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    cpuPercent: cpuPercent ?? this.cpuPercent,
+    memBytes: memBytes ?? this.memBytes,
+    rssBytes: rssBytes ?? this.rssBytes,
+    sampledAt: sampledAt ?? this.sampledAt,
+  );
 
   static final Relation<MetricSample, App> app =
       BelongsToRelation<MetricSample, App>(
-    parentTable: 'metric_samples',
-    childTable: 'apps',
-    name: 'app',
-    parentForeignKey: 'app_id',
-    childMeta: AppTable.metadata,
-  );
+        parentTable: 'metric_samples',
+        childTable: 'apps',
+        name: 'app',
+        parentForeignKey: 'app_id',
+        childMeta: AppTable.metadata,
+      );
 
   /// Preloaded app; null when not preloaded or absent.
   App? get appLoaded => preloaded<App>('app');
@@ -2189,26 +2177,26 @@ class AppEvent with Preloadable {
   });
 
   factory AppEvent.fromRow(Map<String, dynamic> row) => AppEvent(
-        id: row['id'] as int?,
-        appId: row['app_id'] as int,
-        actorId: row['actor_id'] as int?,
-        kind: row['kind'] as String,
-        message: row['message'] as String?,
-        data: row['data'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    actorId: row['actor_id'] as int?,
+    kind: row['kind'] as String,
+    message: row['message'] as String?,
+    data: row['data'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'app_id': appId,
-        'actor_id': actorId,
-        'kind': kind,
-        'message': message,
-        'data': data,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'app_id': appId,
+    'actor_id': actorId,
+    'kind': kind,
+    'message': message,
+    'data': data,
+    'created_at': createdAt,
+  };
 
   factory AppEvent.fromJson(Map<String, dynamic> json) =>
       AppEvent.fromRow(json);
@@ -2231,16 +2219,15 @@ class AppEvent with Preloadable {
     String? message,
     String? data,
     DateTime? createdAt,
-  }) =>
-      AppEvent(
-        id: id ?? this.id,
-        appId: appId ?? this.appId,
-        actorId: actorId ?? this.actorId,
-        kind: kind ?? this.kind,
-        message: message ?? this.message,
-        data: data ?? this.data,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => AppEvent(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    actorId: actorId ?? this.actorId,
+    kind: kind ?? this.kind,
+    message: message ?? this.message,
+    data: data ?? this.data,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<AppEvent, App> app = BelongsToRelation<AppEvent, App>(
     parentTable: 'app_events',
@@ -2252,12 +2239,12 @@ class AppEvent with Preloadable {
 
   static final Relation<AppEvent, User> actor =
       BelongsToRelation<AppEvent, User>(
-    parentTable: 'app_events',
-    childTable: 'users',
-    name: 'actor',
-    parentForeignKey: 'actor_id',
-    childMeta: UserTable.metadata,
-  );
+        parentTable: 'app_events',
+        childTable: 'users',
+        name: 'actor',
+        parentForeignKey: 'actor_id',
+        childMeta: UserTable.metadata,
+      );
 
   /// Preloaded app; null when not preloaded or absent.
   App? get appLoaded => preloaded<App>('app');
@@ -2339,38 +2326,38 @@ class ManagedService with Preloadable {
   });
 
   factory ManagedService.fromRow(Map<String, dynamic> row) => ManagedService(
-        id: row['id'] as int?,
-        serviceType: row['service_type'] as String,
-        displayName: row['display_name'] as String,
-        status: row['status'] as String?,
-        config: row['config'] as String?,
-        errorMessage: row['error_message'] as String?,
-        installedAt: row['installed_at'] == null
-            ? null
-            : (row['installed_at'] is DateTime
-                ? row['installed_at'] as DateTime
-                : DateTime.parse(row['installed_at'].toString())),
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-        updatedAt: row['updated_at'] == null
-            ? null
-            : (row['updated_at'] is DateTime
-                ? row['updated_at'] as DateTime
-                : DateTime.parse(row['updated_at'].toString())),
-      );
+    id: row['id'] as int?,
+    serviceType: row['service_type'] as String,
+    displayName: row['display_name'] as String,
+    status: row['status'] as String?,
+    config: row['config'] as String?,
+    errorMessage: row['error_message'] as String?,
+    installedAt: row['installed_at'] == null
+        ? null
+        : (row['installed_at'] is DateTime
+              ? row['installed_at'] as DateTime
+              : DateTime.parse(row['installed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'service_type': serviceType,
-        'display_name': displayName,
-        'status': status,
-        'config': config,
-        'error_message': errorMessage,
-        'installed_at': installedAt,
-        'created_at': createdAt,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'service_type': serviceType,
+    'display_name': displayName,
+    'status': status,
+    'config': config,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
 
   factory ManagedService.fromJson(Map<String, dynamic> json) =>
       ManagedService.fromRow(json);
@@ -2395,18 +2382,17 @@ class ManagedService with Preloadable {
     DateTime? installedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) =>
-      ManagedService(
-        id: id ?? this.id,
-        serviceType: serviceType ?? this.serviceType,
-        displayName: displayName ?? this.displayName,
-        status: status ?? this.status,
-        config: config ?? this.config,
-        errorMessage: errorMessage ?? this.errorMessage,
-        installedAt: installedAt ?? this.installedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => ManagedService(
+    id: id ?? this.id,
+    serviceType: serviceType ?? this.serviceType,
+    displayName: displayName ?? this.displayName,
+    status: status ?? this.status,
+    config: config ?? this.config,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 }
 
 class ManagedServiceTable {
@@ -2509,31 +2495,31 @@ class PostgresInstance with Preloadable {
         installedAt: row['installed_at'] == null
             ? null
             : (row['installed_at'] is DateTime
-                ? row['installed_at'] as DateTime
-                : DateTime.parse(row['installed_at'].toString())),
+                  ? row['installed_at'] as DateTime
+                  : DateTime.parse(row['installed_at'].toString())),
         createdAt: row['created_at'] is DateTime
             ? row['created_at'] as DateTime
             : DateTime.parse(row['created_at'].toString()),
         updatedAt: row['updated_at'] == null
             ? null
             : (row['updated_at'] is DateTime
-                ? row['updated_at'] as DateTime
-                : DateTime.parse(row['updated_at'].toString())),
+                  ? row['updated_at'] as DateTime
+                  : DateTime.parse(row['updated_at'].toString())),
       );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'version': version,
-        'display_name': displayName,
-        'port': port,
-        'status': status,
-        'is_default': isDefault,
-        'data_directory': dataDirectory,
-        'error_message': errorMessage,
-        'installed_at': installedAt,
-        'created_at': createdAt,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'version': version,
+    'display_name': displayName,
+    'port': port,
+    'status': status,
+    'is_default': isDefault,
+    'data_directory': dataDirectory,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
 
   factory PostgresInstance.fromJson(Map<String, dynamic> json) =>
       PostgresInstance.fromRow(json);
@@ -2560,29 +2546,28 @@ class PostgresInstance with Preloadable {
     DateTime? installedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) =>
-      PostgresInstance(
-        id: id ?? this.id,
-        version: version ?? this.version,
-        displayName: displayName ?? this.displayName,
-        port: port ?? this.port,
-        status: status ?? this.status,
-        isDefault: isDefault ?? this.isDefault,
-        dataDirectory: dataDirectory ?? this.dataDirectory,
-        errorMessage: errorMessage ?? this.errorMessage,
-        installedAt: installedAt ?? this.installedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => PostgresInstance(
+    id: id ?? this.id,
+    version: version ?? this.version,
+    displayName: displayName ?? this.displayName,
+    port: port ?? this.port,
+    status: status ?? this.status,
+    isDefault: isDefault ?? this.isDefault,
+    dataDirectory: dataDirectory ?? this.dataDirectory,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   static final Relation<PostgresInstance, PostgresDatabase> databases =
       HasManyRelation<PostgresInstance, PostgresDatabase>(
-    parentTable: 'postgres_instances',
-    childTable: 'postgres_databases',
-    name: 'databases',
-    childForeignKey: 'instance_id',
-    childMeta: PostgresDatabaseTable.metadata,
-  );
+        parentTable: 'postgres_instances',
+        childTable: 'postgres_databases',
+        name: 'databases',
+        childForeignKey: 'instance_id',
+        childMeta: PostgresDatabaseTable.metadata,
+      );
 
   /// Preloaded databases; empty list when not preloaded.
   List<PostgresDatabase> get databasesList =>
@@ -2638,23 +2623,23 @@ class PostgresInstanceTable {
 
   static const TableMeta<PostgresInstance> metadata =
       TableMeta<PostgresInstance>(
-    tableName: 'postgres_instances',
-    primaryKey: 'id',
-    columnNames: [
-      'id',
-      'version',
-      'display_name',
-      'port',
-      'status',
-      'is_default',
-      'data_directory',
-      'error_message',
-      'installed_at',
-      'created_at',
-      'updated_at',
-    ],
-    fromRow: PostgresInstance.fromRow,
-  );
+        tableName: 'postgres_instances',
+        primaryKey: 'id',
+        columnNames: [
+          'id',
+          'version',
+          'display_name',
+          'port',
+          'status',
+          'is_default',
+          'data_directory',
+          'error_message',
+          'installed_at',
+          'created_at',
+          'updated_at',
+        ],
+        fromRow: PostgresInstance.fromRow,
+      );
 }
 
 Query<PostgresInstance> postgresInstances() =>
@@ -2701,22 +2686,22 @@ class PostgresDatabase with Preloadable {
         updatedAt: row['updated_at'] == null
             ? null
             : (row['updated_at'] is DateTime
-                ? row['updated_at'] as DateTime
-                : DateTime.parse(row['updated_at'].toString())),
+                  ? row['updated_at'] as DateTime
+                  : DateTime.parse(row['updated_at'].toString())),
       );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'instance_id': instanceId,
-        'db_name': dbName,
-        'role_name': roleName,
-        'password': password,
-        'extensions': extensions,
-        'status': status,
-        'error_message': errorMessage,
-        'created_at': createdAt,
-        'updated_at': updatedAt,
-      };
+    'id': id,
+    'instance_id': instanceId,
+    'db_name': dbName,
+    'role_name': roleName,
+    'password': password,
+    'extensions': extensions,
+    'status': status,
+    'error_message': errorMessage,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
 
   factory PostgresDatabase.fromJson(Map<String, dynamic> json) =>
       PostgresDatabase.fromRow(json);
@@ -2742,28 +2727,27 @@ class PostgresDatabase with Preloadable {
     String? errorMessage,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) =>
-      PostgresDatabase(
-        id: id ?? this.id,
-        instanceId: instanceId ?? this.instanceId,
-        dbName: dbName ?? this.dbName,
-        roleName: roleName ?? this.roleName,
-        password: password ?? this.password,
-        extensions: extensions ?? this.extensions,
-        status: status ?? this.status,
-        errorMessage: errorMessage ?? this.errorMessage,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+  }) => PostgresDatabase(
+    id: id ?? this.id,
+    instanceId: instanceId ?? this.instanceId,
+    dbName: dbName ?? this.dbName,
+    roleName: roleName ?? this.roleName,
+    password: password ?? this.password,
+    extensions: extensions ?? this.extensions,
+    status: status ?? this.status,
+    errorMessage: errorMessage ?? this.errorMessage,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   static final Relation<PostgresDatabase, PostgresInstance> instance =
       BelongsToRelation<PostgresDatabase, PostgresInstance>(
-    parentTable: 'postgres_databases',
-    childTable: 'postgres_instances',
-    name: 'instance',
-    parentForeignKey: 'instance_id',
-    childMeta: PostgresInstanceTable.metadata,
-  );
+        parentTable: 'postgres_databases',
+        childTable: 'postgres_instances',
+        name: 'instance',
+        parentForeignKey: 'instance_id',
+        childMeta: PostgresInstanceTable.metadata,
+      );
 
   /// Preloaded instance; null when not preloaded or absent.
   PostgresInstance? get instanceLoaded =>
@@ -2815,22 +2799,22 @@ class PostgresDatabaseTable {
 
   static const TableMeta<PostgresDatabase> metadata =
       TableMeta<PostgresDatabase>(
-    tableName: 'postgres_databases',
-    primaryKey: 'id',
-    columnNames: [
-      'id',
-      'instance_id',
-      'db_name',
-      'role_name',
-      'password',
-      'extensions',
-      'status',
-      'error_message',
-      'created_at',
-      'updated_at',
-    ],
-    fromRow: PostgresDatabase.fromRow,
-  );
+        tableName: 'postgres_databases',
+        primaryKey: 'id',
+        columnNames: [
+          'id',
+          'instance_id',
+          'db_name',
+          'role_name',
+          'password',
+          'extensions',
+          'status',
+          'error_message',
+          'created_at',
+          'updated_at',
+        ],
+        fromRow: PostgresDatabase.fromRow,
+      );
 }
 
 Query<PostgresDatabase> postgresDatabases() =>
@@ -2862,32 +2846,32 @@ class AuditLog with Preloadable {
   });
 
   factory AuditLog.fromRow(Map<String, dynamic> row) => AuditLog(
-        id: row['id'] as int?,
-        actorId: row['actor_id'] as int?,
-        teamId: row['team_id'] as int?,
-        action: row['action'] as String,
-        targetType: row['target_type'] as String?,
-        targetId: row['target_id'] as String?,
-        ipAddress: row['ip_address'] as String?,
-        userAgent: row['user_agent'] as String?,
-        data: row['data'] as String?,
-        createdAt: row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
-            : DateTime.parse(row['created_at'].toString()),
-      );
+    id: row['id'] as int?,
+    actorId: row['actor_id'] as int?,
+    teamId: row['team_id'] as int?,
+    action: row['action'] as String,
+    targetType: row['target_type'] as String?,
+    targetId: row['target_id'] as String?,
+    ipAddress: row['ip_address'] as String?,
+    userAgent: row['user_agent'] as String?,
+    data: row['data'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
 
   Map<String, dynamic> toRow() => {
-        'id': id,
-        'actor_id': actorId,
-        'team_id': teamId,
-        'action': action,
-        'target_type': targetType,
-        'target_id': targetId,
-        'ip_address': ipAddress,
-        'user_agent': userAgent,
-        'data': data,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'actor_id': actorId,
+    'team_id': teamId,
+    'action': action,
+    'target_type': targetType,
+    'target_id': targetId,
+    'ip_address': ipAddress,
+    'user_agent': userAgent,
+    'data': data,
+    'created_at': createdAt,
+  };
 
   factory AuditLog.fromJson(Map<String, dynamic> json) =>
       AuditLog.fromRow(json);
@@ -2913,37 +2897,36 @@ class AuditLog with Preloadable {
     String? userAgent,
     String? data,
     DateTime? createdAt,
-  }) =>
-      AuditLog(
-        id: id ?? this.id,
-        actorId: actorId ?? this.actorId,
-        teamId: teamId ?? this.teamId,
-        action: action ?? this.action,
-        targetType: targetType ?? this.targetType,
-        targetId: targetId ?? this.targetId,
-        ipAddress: ipAddress ?? this.ipAddress,
-        userAgent: userAgent ?? this.userAgent,
-        data: data ?? this.data,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => AuditLog(
+    id: id ?? this.id,
+    actorId: actorId ?? this.actorId,
+    teamId: teamId ?? this.teamId,
+    action: action ?? this.action,
+    targetType: targetType ?? this.targetType,
+    targetId: targetId ?? this.targetId,
+    ipAddress: ipAddress ?? this.ipAddress,
+    userAgent: userAgent ?? this.userAgent,
+    data: data ?? this.data,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   static final Relation<AuditLog, User> actor =
       BelongsToRelation<AuditLog, User>(
-    parentTable: 'audit_logs',
-    childTable: 'users',
-    name: 'actor',
-    parentForeignKey: 'actor_id',
-    childMeta: UserTable.metadata,
-  );
+        parentTable: 'audit_logs',
+        childTable: 'users',
+        name: 'actor',
+        parentForeignKey: 'actor_id',
+        childMeta: UserTable.metadata,
+      );
 
   static final Relation<AuditLog, Team> team =
       BelongsToRelation<AuditLog, Team>(
-    parentTable: 'audit_logs',
-    childTable: 'teams',
-    name: 'team',
-    parentForeignKey: 'team_id',
-    childMeta: TeamTable.metadata,
-  );
+        parentTable: 'audit_logs',
+        childTable: 'teams',
+        name: 'team',
+        parentForeignKey: 'team_id',
+        childMeta: TeamTable.metadata,
+      );
 
   /// Preloaded actor; null when not preloaded or absent.
   User? get actorLoaded => preloaded<User>('actor');

@@ -6,10 +6,11 @@ if [[ $EUID -ne 0 ]]; then
   echo "Please run as root" >&2; exit 1
 fi
 
-systemctl stop gisila-panel.service gisila-worker.service 2>/dev/null || true
-systemctl disable gisila-panel.service gisila-worker.service 2>/dev/null || true
+systemctl stop gisila-panel.service gisila-worker.service gisila-ui.service 2>/dev/null || true
+systemctl disable gisila-panel.service gisila-worker.service gisila-ui.service 2>/dev/null || true
 rm -f /etc/systemd/system/gisila-panel.service \
       /etc/systemd/system/gisila-worker.service \
+      /etc/systemd/system/gisila-ui.service \
       /etc/systemd/system/gisila-apps.target
 systemctl daemon-reload
 
