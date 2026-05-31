@@ -16,9 +16,12 @@ import {
   Layers,
   Database,
   KeySquare,
+  Shield,
 } from "lucide-react";
+import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import { setToken } from "@/lib/api";
+import { setToken, fetcher } from "@/lib/api";
+import type { User } from "@/lib/types";
 
 const NAV_SECTIONS = [
   {
@@ -62,6 +65,7 @@ const NAV_SECTIONS = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: me } = useSWR<User>("/auth/me", fetcher);
 
   function signOut() {
     setToken(null);
@@ -71,10 +75,22 @@ export function Sidebar() {
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === href;
     // /settings must not match /settings/tokens or /settings/ssh-keys
-    if (href === "/settings")
-      return pathname === "/settings";
+    if (href === "/settings") return pathname === "/settings";
     return pathname === href || pathname?.startsWith(href + "/");
   }
+
+  const adminSection = me?.isSuperuser
+    ? [
+        {
+          label: "Administration",
+          items: [
+            { href: "/settings/users", label: "Users", icon: Shield },
+          ],
+        },
+      ]
+    : [];
+
+  const allSections = [...NAV_SECTIONS, ...adminSection];
 
   return (
     <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-card md:flex">
@@ -89,7 +105,7 @@ export function Sidebar() {
 
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-4">
-        {NAV_SECTIONS.map((section) => (
+        {allSections.map((section) => (
           <div key={section.label}>
             <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
               {section.label}

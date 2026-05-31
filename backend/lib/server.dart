@@ -1,9 +1,11 @@
 import 'dart:io';
 
-import 'package:gisila_doc/gisila_doc.dart';
+import 'package:gisila_doc/gisila_doc.dart' hide Query;
 import 'package:gisila_orm/gisila.dart' hide PostgresErrorMapper;
 import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
+import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
 import 'package:gisila_panel/endpoints/auth.dart';
@@ -43,6 +45,7 @@ Future<Handler> application() async {
   );
 
   final database = await Database.connect(databaseConfig);
+  await _seedSuperuser(database);
 
   final app = GisilaApp(
     config: AppConfig(
@@ -95,6 +98,59 @@ Future<Handler> application() async {
   );
 
   return app.buildHandler();
+}
+
+/// Seeds the initial superuser from env vars if no users exist yet.
+///
+/// Environment variables:
+///   SUPERUSER_EMAIL    — e-mail for the initial superuser
+///   SUPERUSER_PASSWORD — password for the initial superuser
+///
+/// If either variable is missing the seed is skipped (the operator must set
+/// them before the first boot, or create the account through another means).
+Future<void> _seedSuperuser(Database database) async {
+  final email = env['SUPERUSER_EMAIL'];
+  final password = env['SUPERUSER_PASSWORD'];
+  if (email == null || email.isEmpty || password == null || password.isEmpty) {
+    return;
+  }
+
+  final existing = await Query<User>(UserTable.metadata)
+      .where(UserTable.isSuperuser.eq(true))
+      .first(database.context());
+
+  if (existing != null) return; // superuser already exists
+
+  logger.i('Seeding initial superuser: $email');
+  final now = DateTime.now().toUtc();
+  final user = await Query<User>(UserTable.metadata).insert(<String, Object?>{
+    'email': email,
+    'password': PasswordHasher.hash(password),
+    'isActive': true,
+    'isStaff': true,
+    'isSuperuser': true,
+    'isEmailVerified': true,
+    'createdAt': now.toIso8601String(),
+  }).one(database.context());
+
+  final teamSlug = 'admin-${user.id}-team';
+  final team = await Query<Team>(TeamTable.metadata).insert(<String, Object?>{
+    'name': 'Administrators',
+    'slug': teamSlug,
+    'ownerId': user.id,
+    'plan': 'free',
+    'createdAt': now.toIso8601String(),
+  }).one(database.context());
+
+  await Query<TeamMember>(TeamMemberTable.metadata).insert(<String, Object?>{
+    'teamId': team.id,
+    'userId': user.id,
+    'role': 'owner',
+    'invitedAt': now.toIso8601String(),
+    'acceptedAt': now.toIso8601String(),
+  }).run(database.context());
+
+  logger.i('Superuser seeded successfully (id=${user.id})');
 }
 
 /// Serves the compiled panel UI from the `web/` directory.

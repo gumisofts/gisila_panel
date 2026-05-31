@@ -30,11 +30,8 @@ export default function LandingPage() {
           <span>gisila panel</span>
         </Link>
         <nav className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/login">Sign in</Link>
-          </Button>
           <Button asChild size="sm">
-            <Link href="/register">Get started</Link>
+            <Link href="/login">Sign in</Link>
           </Button>
         </nav>
       </header>
@@ -59,7 +56,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-10 flex items-center justify-center gap-3">
             <Button asChild size="lg">
-              <Link href="/register">Start your free panel</Link>
+              <Link href="/login">Sign in to your panel</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
               <Link href="/docs" target="_blank">
@@ -132,7 +129,7 @@ export default function LandingPage() {
             </div>
           </div>
           <Button asChild>
-            <Link href="/register">Try it free</Link>
+            <Link href="/login">Sign in</Link>
           </Button>
         </div>
       </main>

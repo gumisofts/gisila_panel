@@ -9,11 +9,42 @@ import 'package:gisila_panel/utils/slugs.dart';
 class AuthService extends Service {
   Database get _db => db<Database>();
 
-  Future<({User user, String accessToken, Team team})> register({
+  // ── Login ─────────────────────────────────────────────────────────────────
+
+  Future<({User user, String accessToken})> login({
+    required String email,
+    required String password,
+  }) async {
+    final user = await Query<User>(UserTable.metadata)
+        .where(UserTable.email.eq(email))
+        .first(_db.context());
+
+    if (user == null ||
+        user.password == null ||
+        !PasswordHasher.verify(password, user.password!)) {
+      throw Unauthorized('Invalid email or password.');
+    }
+    if (user.isActive == false) {
+      throw Forbidden('This account is inactive.');
+    }
+
+    return (user: user, accessToken: JWTAuth.sign(user));
+  }
+
+  // ── User management (superuser only) ─────────────────────────────────────
+
+  Future<List<User>> listUsers() async {
+    return Query<User>(UserTable.metadata)
+        .orderBy(UserTable.createdAt)
+        .all(_db.context());
+  }
+
+  Future<({User user, Team team})> createUser({
     required String email,
     required String password,
     String? firstName,
     String? lastName,
+    bool isSuperuser = false,
   }) async {
     final existing = await Query<User>(UserTable.metadata)
         .where(UserTable.email.eq(email))
@@ -34,7 +65,7 @@ class AuthService extends Service {
       'lastName': lastName,
       'isActive': true,
       'isStaff': false,
-      'isSuperuser': false,
+      'isSuperuser': isSuperuser,
       'isEmailVerified': false,
       'createdAt': now.toIso8601String(),
     }).one(_db.context());
@@ -56,28 +87,38 @@ class AuthService extends Service {
       'acceptedAt': now.toIso8601String(),
     }).run(_db.context());
 
-    return (user: user, accessToken: JWTAuth.sign(user), team: team);
+    return (user: user, team: team);
   }
 
-  Future<({User user, String accessToken})> login({
-    required String email,
-    required String password,
+  Future<User> updateUser(
+    int id, {
+    String? firstName,
+    String? lastName,
+    bool? isActive,
+    bool? isSuperuser,
   }) async {
-    final user = await Query<User>(UserTable.metadata)
-        .where(UserTable.email.eq(email))
-        .first(_db.context());
-
-    if (user == null ||
-        user.password == null ||
-        !PasswordHasher.verify(password, user.password!)) {
-      throw Unauthorized('Invalid email or password.');
-    }
-    if (user.isActive == false) {
-      throw Forbidden('This account is inactive.');
-    }
-
-    return (user: user, accessToken: JWTAuth.sign(user));
+    final updates = <String, Object?>{
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      if (firstName != null) 'firstName': firstName,
+      if (lastName != null) 'lastName': lastName,
+      if (isActive != null) 'isActive': isActive,
+      if (isSuperuser != null) 'isSuperuser': isSuperuser,
+    };
+    final rows = await Query<User>(UserTable.metadata)
+        .where(UserTable.id.eq(id))
+        .update(updates)
+        .run(_db.context());
+    return rows.first;
   }
+
+  Future<void> deleteUser(int id) async {
+    await Query<User>(UserTable.metadata)
+        .where(UserTable.id.eq(id))
+        .delete()
+        .run(_db.context());
+  }
+
+  // ── Password ──────────────────────────────────────────────────────────────
 
   Future<void> changePassword(
     User current, {

@@ -57,3 +57,41 @@ class UpdateProfileForm extends Form {
   List<FormField<Object?>> collectFields() =>
       <FormField<Object?>>[firstName, lastName, avatarUrl];
 }
+
+/// Used by superusers to create a new user account.
+class CreateUserForm extends Form {
+  final email = EmailField(name: 'email', required: true);
+  final password = StringField(
+    name: 'password',
+    required: true,
+    validators: <FieldValidator<String>>[_strongPassword],
+  );
+  final firstName = StringField(name: 'firstName');
+  final lastName = StringField(name: 'lastName');
+  final isSuperuser = BoolField(name: 'isSuperuser');
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[
+        email,
+        password,
+        firstName,
+        lastName,
+        isSuperuser,
+      ];
+}
+
+/// Used by superusers to update another user's account flags.
+class UpdateUserForm extends Form {
+  final firstName = StringField(name: 'firstName');
+  final lastName = StringField(name: 'lastName');
+  final isActive = BoolField(name: 'isActive');
+  final isSuperuser = BoolField(name: 'isSuperuser');
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[
+        firstName,
+        lastName,
+        isActive,
+        isSuperuser,
+      ];
+}

@@ -40,6 +40,9 @@ x-dart-base: &dart-base
     JWT_EXPIRE_DAYS: "14"
     STUDIO_USERNAME: admin
     STUDIO_PASSWORD: admin
+    # Initial superuser (created automatically on first boot if no superuser exists).
+    SUPERUSER_EMAIL: admin@localhost
+    SUPERUSER_PASSWORD: changeme
     APPS_ROOT: /srv/apps
     APP_PORT_RANGE_MIN: "4000"
     APP_PORT_RANGE_MAX: "4999"

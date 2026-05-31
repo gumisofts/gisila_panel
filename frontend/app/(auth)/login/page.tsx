@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/compat/link";
 import { useRouter } from "@/compat/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -73,10 +72,7 @@ export default function LoginPage() {
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">
-        No account?{" "}
-        <Link href="/register" className="text-primary hover:underline">
-          Create one
-        </Link>
+        Contact your administrator to get an account.
       </p>
     </div>
   );

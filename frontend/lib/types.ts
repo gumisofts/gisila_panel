@@ -7,8 +7,10 @@ export interface User {
   lastName?: string | null;
   isActive: boolean;
   isStaff: boolean;
+  isSuperuser: boolean;
   avatarUrl?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface Team {

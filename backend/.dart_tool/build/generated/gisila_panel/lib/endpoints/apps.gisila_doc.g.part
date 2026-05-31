@@ -41,7 +41,11 @@ extension AppsApiGisilaDoc on AppsApi {
           'type': 'integer',
           'format': 'int64'
         },
-        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'pythonVersion': <String, Object?>{'type': 'string'},
+        'pythonMode': <String, Object?>{'type': 'string'},
+        'wsgiApp': <String, Object?>{'type': 'string'},
+        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
     spec.putSchema('UpdateAppForm', <String, Object?>{
@@ -61,7 +65,11 @@ extension AppsApiGisilaDoc on AppsApi {
           'type': 'integer',
           'format': 'int64'
         },
-        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'pythonVersion': <String, Object?>{'type': 'string'},
+        'pythonMode': <String, Object?>{'type': 'string'},
+        'wsgiApp': <String, Object?>{'type': 'string'},
+        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
     spec.putSchema('EnvVarForm', <String, Object?>{
@@ -70,6 +78,12 @@ extension AppsApiGisilaDoc on AppsApi {
         'name': <String, Object?>{'type': 'string'},
         'value': <String, Object?>{'type': 'string'},
         'isSecret': <String, Object?>{'type': 'boolean'}
+      }
+    });
+    spec.putSchema('BulkEnvVarForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'entries': <String, Object?>{'type': 'object'}
       }
     });
     spec.putTag('Apps');
@@ -583,6 +597,63 @@ extension AppsApiGisilaDoc on AppsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/EnvVarForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/apps/<id>/envs/bulk';
+      final openApiPath = '$prefix/apps/{id}/envs/bulk';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, BulkEnvVarForm.new);
+                final envs = ctx.service<EnvsService>();
+                final result = await this.bulkEnvs(id, form, envs, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Bulk-upsert env vars from a .env file',
+            tags: <String>['Apps'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/BulkEnvVarForm'
               })
             }),
             responses: <String, ResponseSpec>{

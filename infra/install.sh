@@ -171,6 +171,8 @@ JWT_SECRET=$(head -c 32 /dev/urandom | base64)
 JWT_EXPIRE_DAYS=14
 STUDIO_USERNAME=admin
 STUDIO_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -d '/+=')
+SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null || echo localhost)
+SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 APPS_ROOT=$APPS_ROOT
@@ -239,7 +241,8 @@ echo "  Panel:  http://$IP  (or your configured domain)"
 echo "  Docs:   http://$IP/docs"
 echo "  Admin:  http://$IP/admin"
 echo
-echo "  Credentials are in /etc/gisila/.env (STUDIO_USERNAME / STUDIO_PASSWORD)."
+echo "  Panel superuser:  \$SUPERUSER_EMAIL (see /etc/gisila/.env)"
+echo "  Studio/admin:    \$STUDIO_USERNAME (see /etc/gisila/.env)"
 echo
 echo "  To add a domain and get a TLS cert:"
 echo "    Edit /etc/nginx/sites-available/gisila-panel → set server_name"
