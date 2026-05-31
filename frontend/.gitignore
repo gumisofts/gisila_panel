@@ -1,15 +1,3 @@
-/node_modules
-/dist
-/build
-/public
-/src
-/test
-/types
-/utils
-/views
-/components
-/store
-/router
-/app.vue
-/main.js
+node_modules/
 .next/
+dist/
