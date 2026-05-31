@@ -1,0 +1,29 @@
+[Unit]
+Description=Gisila Panel — control plane API
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=gisila
+Group=gisila
+WorkingDirectory=/srv/gisila
+EnvironmentFile=/etc/gisila/.env
+ExecStart=/usr/local/bin/gisila-panel
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/srv/gisila /var/log/gisila /etc/gisila
+RestrictRealtime=true
+RestrictNamespaces=true
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

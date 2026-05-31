@@ -1,0 +1,250 @@
+export type ID = number;
+
+export interface User {
+  id: ID;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  isActive: boolean;
+  isStaff: boolean;
+  avatarUrl?: string | null;
+  createdAt: string;
+}
+
+export interface Team {
+  id: ID;
+  name: string;
+  slug: string;
+  ownerId: ID;
+  plan: string;
+  createdAt: string;
+}
+
+export interface Project {
+  id: ID;
+  teamId: ID;
+  name: string;
+  slug: string;
+  description?: string | null;
+  createdAt: string;
+}
+
+export type AppStatus =
+  | "created"
+  | "building"
+  | "running"
+  | "stopped"
+  | "failed"
+  | "crashed";
+
+export interface App {
+  id: ID;
+  projectId: ID;
+  name: string;
+  slug: string;
+  linuxUser: string;
+  workDir: string;
+  internalPort: number;
+  runtime: string;
+  sourceType: "binary" | "git" | "zip";
+  gitUrl?: string | null;
+  gitBranch?: string | null;
+  buildCommand?: string | null;
+  startCommand?: string | null;
+  healthCheckPath?: string | null;
+  pythonVersion?: string | null;
+  pythonMode?: "wsgi" | "asgi" | null;
+  wsgiApp?: string | null;
+  deployKeyId?: number | null;
+  memoryMbLimit: number;
+  cpuQuotaPercent: number;
+  tasksLimit: number;
+  status: AppStatus;
+  lastDeployedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface EnvVar {
+  id: ID;
+  appId: ID;
+  name: string;
+  value?: string | null;
+  isSecret: boolean;
+  updatedAt: string;
+}
+
+export type DeploymentStatus =
+  | "queued"
+  | "building"
+  | "deploying"
+  | "succeeded"
+  | "failed"
+  | "rolled_back";
+
+export interface Deployment {
+  id: ID;
+  appId: ID;
+  triggeredById?: ID | null;
+  sourceType: string;
+  gitCommitSha?: string | null;
+  artifactPath?: string | null;
+  status: DeploymentStatus;
+  failureReason?: string | null;
+  isActive: boolean;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface Domain {
+  id: ID;
+  appId: ID;
+  hostname: string;
+  isPrimary: boolean;
+  isVerified: boolean;
+  sslStatus: "none" | "pending" | "issued" | "expired" | "failed";
+  sslExpiresAt?: string | null;
+  sslIssuer?: string | null;
+  createdAt: string;
+}
+
+export interface MetricSample {
+  id: ID;
+  appId: ID;
+  cpuPercent: number;
+  memBytes: number;
+  rssBytes: number;
+  sampledAt: string;
+}
+
+export interface ApiToken {
+  id: ID;
+  name: string;
+  prefix: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+}
+
+export interface SshKey {
+  id: ID;
+  name: string;
+  algorithm?: string | null;
+  fingerprint: string;
+  publicKey: string;
+  isDeployKey?: boolean;
+  createdAt: string;
+}
+
+export type SshKeyAlgorithm = 'ed25519' | 'rsa-4096' | 'rsa-2048' | 'ecdsa-p256' | 'ecdsa-p384';
+
+export interface BuildLog {
+  id: ID;
+  deploymentId: ID;
+  line: string;
+  stream: "stdout" | "stderr" | "system";
+  createdAt: string | null;
+}
+
+export interface ListResponse<T> {
+  results: T[];
+}
+
+// ── Managed services ─────────────────────────────────────────────────────────
+
+export type ServiceStatus =
+  | "pending"
+  | "installing"
+  | "running"
+  | "stopped"
+  | "failed"
+  | "uninstalling"
+  | "config_only";
+
+export type FieldType = "string" | "password" | "number" | "boolean" | "select";
+
+export interface ConfigField {
+  key: string;
+  label: string;
+  type: FieldType;
+  default?: string;
+  placeholder?: string;
+  hint?: string;
+  required: boolean;
+  secret: boolean;
+  options?: string[];
+  min?: number;
+  max?: number;
+}
+
+export interface ServiceDef {
+  type: string;
+  name: string;
+  description: string;
+  category: "cache" | "email" | "queue";
+  requiresInstall: boolean;
+  docsUrl?: string;
+  configSchema: ConfigField[];
+}
+
+// ── PostgreSQL ────────────────────────────────────────────────────────────────
+
+export type PgInstanceStatus =
+  | "pending"
+  | "installing"
+  | "running"
+  | "stopped"
+  | "failed"
+  | "uninstalling";
+
+export type PgDatabaseStatus = "pending" | "active" | "failed" | "dropped";
+
+export interface PostgresInstance {
+  id: ID;
+  version: number;
+  displayName: string;
+  port: number;
+  status: PgInstanceStatus;
+  isDefault: boolean;
+  dataDirectory?: string | null;
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface PgConnectionInfo {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  url: string;
+}
+
+export interface PostgresDatabase {
+  id: ID;
+  instanceId: ID;
+  dbName: string;
+  roleName: string;
+  extensions: string[];
+  status: PgDatabaseStatus;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  connection?: PgConnectionInfo; // present on create + retrieve
+}
+
+export interface ManagedService {
+  id: ID;
+  serviceType: string;
+  displayName: string;
+  status: ServiceStatus;
+  config: string; // JSON string
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  _def?: ServiceDef; // injected by the retrieve endpoint
+}

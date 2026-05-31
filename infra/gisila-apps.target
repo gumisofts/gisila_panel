@@ -1,0 +1,8 @@
+[Unit]
+Description=All gisila-managed user apps
+Documentation=https://github.com/your-org/gisila-panel
+After=network.target
+StopWhenUnneeded=no
+
+[Install]
+WantedBy=multi-user.target

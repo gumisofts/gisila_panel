@@ -1,0 +1,9 @@
+# /etc/sudoers.d/gisila — managed by gisila-panel/infra/install.sh
+#
+# The `gisila` system user is allowed to run *only* the deployment agent
+# binary as root, with no password, and no environment passthrough beyond
+# what the agent itself sets. Every other privileged action is denied.
+
+Defaults!/usr/local/bin/gisila-agent !env_reset
+Defaults!/usr/local/bin/gisila-agent !requiretty
+gisila ALL=(root) NOPASSWD: /usr/local/bin/gisila-agent

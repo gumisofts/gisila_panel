@@ -1,0 +1,7 @@
+targets:
+  $default:
+    builders:
+      gisila|controllers:
+        enabled: true
+      gisila_orm|schema:
+        enabled: true

@@ -1,0 +1,22 @@
+# Database configuration used inside the docker-compose dev stack.
+#
+# Loaded automatically when GISILA_DATABASE_FILE points at this file (the
+# docker-compose `api`, `worker`, and `migrate` services all do).
+#
+# The host name `pg` resolves via the docker network; the port is the
+# container-internal 5432 (the 5455 host mapping is irrelevant in-network).
+default: default
+
+connections:
+  default:
+    type: postgresql
+    host: pg
+    port: 5432
+    database: gisila_panel
+    username: postgres
+    password: postgres
+    ssl: false
+    connection_timeout: 30
+    query_timeout: 30
+    max_connections: 20
+    min_connections: 2

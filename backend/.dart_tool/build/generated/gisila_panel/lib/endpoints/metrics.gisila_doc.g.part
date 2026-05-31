@@ -1,0 +1,90 @@
+// **************************************************************************
+// ControllerGenerator
+// **************************************************************************
+
+// **************************************************
+// gisila_doc: generated for MetricsApi
+// **************************************************
+
+extension MetricsApiGisilaDoc on MetricsApi {
+  /// Registers every annotated route of this controller on
+  /// [router] (through `gisilaRoute(...)` so the route runs
+  /// through the same MVC pipeline as gisila core) and
+  /// contributes the matching operations / schemas / tags
+  /// to [spec].
+  ///
+  /// Pass [prefix] to mount the controller under an extra
+  /// path segment (e.g. an `/api/v1` versioning prefix).
+  void attachToApp(
+    GisilaApp app,
+    Router router,
+    OpenApiSpec spec, {
+    String prefix = '',
+  }) {
+    spec.putTag('Metrics');
+    {
+      final basePath = '$prefix/apps/<appId>/metrics/';
+      final openApiPath = '$prefix/apps/{appId}/metrics/';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final appId = coerce<int>(request.params['appId'], 'appId',
+                    required: true);
+                final apps = ctx.service<AppsService>();
+                final minutes = coerce<int?>(
+                    request.url.queryParameters['minutes'], 'minutes',
+                    required: false);
+                final result = await this.recent(appId, apps, ctx, minutes);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Recent CPU / memory samples for an app',
+            tags: <String>['Metrics'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'appId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'minutes',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+  }
+}

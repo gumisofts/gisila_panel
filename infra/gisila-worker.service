@@ -1,0 +1,27 @@
+[Unit]
+Description=Gisila Panel — background worker
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+PartOf=gisila-panel.service
+
+[Service]
+Type=simple
+User=gisila
+Group=gisila
+WorkingDirectory=/srv/gisila
+EnvironmentFile=/etc/gisila/.env
+ExecStart=/usr/local/bin/gisila-worker
+Restart=on-failure
+RestartSec=5
+
+# The worker shells out to gisila-agent via sudo. It does NOT need root
+# itself, but it does need to read /etc/gisila/.env and write to /srv/gisila.
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/gisila /var/log/gisila /etc/gisila /srv/apps
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

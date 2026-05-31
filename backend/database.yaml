@@ -1,0 +1,17 @@
+# Gisila Panel database configuration.
+# For local development Postgres runs in docker-compose on port 5455.
+default: default
+
+connections:
+  default:
+    type: postgresql
+    host: localhost
+    port: 5455
+    database: gisila_panel
+    username: postgres
+    password: postgres
+    ssl: false
+    connection_timeout: 30
+    query_timeout: 30
+    max_connections: 20
+    min_connections: 2

@@ -1,0 +1,222 @@
+# =============================================================================
+# Gisila Panel — full development stack.
+#
+# Everything runs in containers. You do NOT need Dart, Node, or pnpm on the
+# host machine.
+#
+#   docker compose up           # bring everything up (foreground)
+#   docker compose up -d        # bring everything up (detached)
+#   docker compose logs -f api  # tail one service
+#   docker compose down         # stop (volumes preserved)
+#   docker compose down -v      # stop + wipe data
+#
+# Services exposed on the host:
+#   - Postgres            localhost:5455
+#   - Redis               localhost:6380
+#   - Dart API            http://localhost:8000   (docs at /docs, admin at /admin)
+#   - Next.js frontend    http://localhost:3000
+#
+# The whole `gisila_tools/` workspace is bind-mounted into each container,
+# so editing any file (in this repo OR in the sibling gisila / gisila_orm /
+# gisila_doc / gisila_studio packages) triggers hot reload.
+#
+# NOTE: For production, run `infra/install.sh` on the target server instead of
+# using Docker. The install script sets up the panel + agent natively so the
+# agent can manage system services via systemctl.
+# =============================================================================
+
+x-dart-base: &dart-base
+  image: dart:stable
+  working_dir: /workspace/gisila-panel/backend
+  environment: &dart-env
+    PUB_CACHE: /pub-cache
+    # Use the docker-network-aware database.yaml (host = `pg`, port = 5432).
+    GISILA_DATABASE_FILE: /workspace/gisila-panel/backend/docker/database.yaml
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    JWT_SECRET: dev-only-change-me
+    JWT_EXPIRE_DAYS: "14"
+    STUDIO_USERNAME: admin
+    STUDIO_PASSWORD: admin
+    APPS_ROOT: /srv/apps
+    APP_PORT_RANGE_MIN: "4000"
+    APP_PORT_RANGE_MAX: "4999"
+    # AGENT_MODE=dev → worker logs what it would do but never runs system
+    # commands. Use infra/install.sh for a real server deployment.
+    AGENT_MODE: dev
+    AGENT_BIN: dart
+    AGENT_DART_ENTRY: /workspace/gisila-panel/agent/bin/gisila-agent.dart
+    NODE_ID: dev
+  volumes: &dart-volumes
+    # Mount the entire gisila_tools/ monorepo so `path:` deps resolve.
+    - ..:/workspace
+    # Cache `dart pub get` across restarts.
+    - pub_cache:/pub-cache
+    # Keep .dart_tool out of the host bind mount so absolute paths inside
+    # package_config.json don't collide between host and container.
+    - backend_dart_tool:/workspace/gisila-panel/backend/.dart_tool
+    - agent_dart_tool:/workspace/gisila-panel/agent/.dart_tool
+    - gisila_dart_tool:/workspace/gisila/.dart_tool
+    - gisila_orm_dart_tool:/workspace/gisila_orm/.dart_tool
+    - gisila_doc_dart_tool:/workspace/gisila_doc/.dart_tool
+    - gisila_studio_dart_tool:/workspace/gisila_studio/.dart_tool
+
+services:
+  # ─────────────────────────────── Data plane ────────────────────────────────
+
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5455:5432"
+    environment:
+      POSTGRES_DB: gisila_panel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gisila_panel"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ───────────────────────────── One-shot bootstrap ──────────────────────────
+  # Runs `pub get` → `build_runner build` → `gisila_orm:migrate up`. The api +
+  # worker depend on this completing successfully, so the first
+  # `docker compose up` is fully unattended.
+
+  migrate:
+    <<: *dart-base
+    container_name: gisila-migrate
+    restart: "no"
+    depends_on:
+      pg:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "==> dart pub get"
+        dart pub get
+        echo "==> code generation (build_runner)"
+        dart run build_runner build --delete-conflicting-outputs
+        echo "==> applying migrations"
+        dart run gisila_orm:migrate up \
+          --config /workspace/gisila-panel/backend/docker/database.yaml
+        echo "==> migrate done"
+
+  # ──────────────────────────── Control-plane API ────────────────────────────
+
+  api:
+    <<: *dart-base
+    container_name: gisila-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *dart-env
+      PORT: "8000"
+    depends_on:
+      pg: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    command:
+      - /bin/sh
+      - -c
+      - |
+        dart pub get
+        exec dart \
+          --enable-vm-service=8181/0.0.0.0 \
+          --disable-service-auth-codes \
+          --no-serve-devtools \
+          run bin/server.dart --dev
+
+  # ──────────────────────────── Background worker ────────────────────────────
+  # Processes deployment / service / postgres jobs from Redis queues.
+  # Runs in AGENT_MODE=dev so it never executes real system commands here.
+  # For real deployments, use infra/install.sh on the target server.
+
+  worker:
+    <<: *dart-base
+    container_name: gisila-worker
+    restart: unless-stopped
+    environment:
+      <<: *dart-env
+    depends_on:
+      pg: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    command:
+      - /bin/sh
+      - -c
+      - |
+        dart pub get
+        exec dart run bin/worker.dart
+
+  # ────────────────────────────── Next.js frontend ───────────────────────────
+
+  frontend:
+    image: node:20-alpine
+    container_name: gisila-frontend
+    restart: unless-stopped
+    working_dir: /workspace/gisila-panel/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser-visible — must be the host-reachable URL.
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+      # Server-side (used by Next.js rewrites for SSR). Inside the docker
+      # network the API is reachable at `api:8000`.
+      INTERNAL_API_URL: http://api:8000
+      # Hot-reload fix for Docker bind mounts.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ..:/workspace
+      - frontend_node_modules:/workspace/gisila-panel/frontend/node_modules
+      - frontend_next_cache:/workspace/gisila-panel/frontend/.next
+    depends_on:
+      api: { condition: service_started }
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        corepack enable
+        corepack prepare pnpm@9 --activate
+        if [ ! -d node_modules/next ]; then
+          echo "==> installing frontend deps"
+          pnpm install --frozen-lockfile=false
+        fi
+        exec pnpm dev --hostname 0.0.0.0 --port 3000
+
+volumes:
+  pg_data:
+  redis_data:
+  pub_cache:
+  backend_dart_tool:
+  agent_dart_tool:
+  gisila_dart_tool:
+  gisila_orm_dart_tool:
+  gisila_doc_dart_tool:
+  gisila_studio_dart_tool:
+  frontend_node_modules:
+  frontend_next_cache:

@@ -1,0 +1,316 @@
+// **************************************************************************
+// ControllerGenerator
+// **************************************************************************
+
+// **************************************************
+// gisila_doc: generated for SecurityApi
+// **************************************************
+
+extension SecurityApiGisilaDoc on SecurityApi {
+  /// Registers every annotated route of this controller on
+  /// [router] (through `gisilaRoute(...)` so the route runs
+  /// through the same MVC pipeline as gisila core) and
+  /// contributes the matching operations / schemas / tags
+  /// to [spec].
+  ///
+  /// Pass [prefix] to mount the controller under an extra
+  /// path segment (e.g. an `/api/v1` versioning prefix).
+  void attachToApp(
+    GisilaApp app,
+    Router router,
+    OpenApiSpec spec, {
+    String prefix = '',
+  }) {
+    spec.putSchema('CreateApiTokenForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'name': <String, Object?>{'type': 'string'},
+        'expiresInDays': <String, Object?>{'type': 'integer', 'format': 'int64'}
+      }
+    });
+    spec.putSchema('AddSshKeyForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'name': <String, Object?>{'type': 'string'},
+        'publicKey': <String, Object?>{'type': 'string'}
+      }
+    });
+    spec.putTag('Security');
+    {
+      final basePath = '$prefix/me/security/tokens';
+      final openApiPath = '$prefix/me/security/tokens';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final security = ctx.service<SecurityService>();
+                final result = await this.tokens(security, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'List my API tokens',
+            tags: <String>['Security'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/me/security/tokens';
+      final openApiPath = '$prefix/me/security/tokens';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, CreateApiTokenForm.new);
+                final security = ctx.service<SecurityService>();
+                final result = await this.issueToken(form, security, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Issue a new API token',
+            tags: <String>['Security'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/CreateApiTokenForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/me/security/tokens/<id>';
+      final openApiPath = '$prefix/me/security/tokens/{id}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final security = ctx.service<SecurityService>();
+                final result = await this.revokeToken(id, security, ctx);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary: 'Revoke an API token',
+            tags: <String>['Security'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/me/security/ssh-keys';
+      final openApiPath = '$prefix/me/security/ssh-keys';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final security = ctx.service<SecurityService>();
+                final result = await this.sshKeys(security, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'List my SSH keys',
+            tags: <String>['Security'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/me/security/ssh-keys';
+      final openApiPath = '$prefix/me/security/ssh-keys';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, AddSshKeyForm.new);
+                final security = ctx.service<SecurityService>();
+                final result = await this.addSshKey(form, security, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Add an SSH key',
+            tags: <String>['Security'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/AddSshKeyForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/me/security/ssh-keys/<id>';
+      final openApiPath = '$prefix/me/security/ssh-keys/{id}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final security = ctx.service<SecurityService>();
+                final result = await this.deleteSshKey(id, security, ctx);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary: 'Delete an SSH key',
+            tags: <String>['Security'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+  }
+}
