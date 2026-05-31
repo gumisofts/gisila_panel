@@ -348,7 +348,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
   }
 
   if (type == 'postfix') {
-    await _run(
+    await _sudo(
         'apt-get', ['-qq', '-y', 'install', 'postfix', 'libsasl2-modules']);
     await _serviceConfigure(type, config);
     await _serviceCtl('enable', 'postfix');
@@ -361,7 +361,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
     final pkgs = ['dovecot-core'];
     if (protos.contains('imap')) pkgs.add('dovecot-imapd');
     if (protos.contains('pop3')) pkgs.add('dovecot-pop3d');
-    await _run('apt-get', ['-qq', '-y', 'install', ...pkgs]);
+    await _sudo('apt-get', ['-qq', '-y', 'install', ...pkgs]);
     await _serviceConfigure(type, config);
     await _serviceCtl('enable', 'dovecot');
     await _serviceCtl('start', 'dovecot');
@@ -369,7 +369,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
   }
 
   // apt install (redis, memcached, …).
-  await _run('apt-get', ['-qq', '-y', 'install', pkg!]);
+  await _sudo('apt-get', ['-qq', '-y', 'install', pkg!]);
   await _serviceConfigure(type, config);
   await _serviceCtl('enable', type);
   await _serviceCtl('start', type);
@@ -388,8 +388,7 @@ Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
           'requirepass ${config['password']}',
         'appendonly ${config['appendonly'] == 'false' ? 'no' : 'yes'}',
       ];
-      await File('/etc/redis/redis.conf')
-          .writeAsString(lines.join('\n') + '\n');
+      await _writeFileSudo('/etc/redis/redis.conf', lines.join('\n') + '\n');
       await _serviceCtl('restart', 'redis-server');
 
     case 'memcached':
@@ -397,7 +396,7 @@ Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
       final mem = config['memory_mb'] ?? '64';
       final conn = config['connections'] ?? '1024';
       final content = '-p $port\n-m $mem\n-c $conn\n-u memcache\n';
-      await File('/etc/memcached.conf').writeAsString(content);
+      await _writeFileSudo('/etc/memcached.conf', content);
       await _serviceCtl('restart', 'memcached');
 
     case 'smtp':
@@ -420,8 +419,8 @@ Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
         // In Docker, use supervisord instead of systemd.
         const supervisorConf = '/etc/supervisor/conf.d/mailpit.conf';
         const supervisorDir = '/etc/supervisor/conf.d';
-        Directory(supervisorDir).createSync(recursive: true);
-        await File(supervisorConf).writeAsString('''
+        await _sudo('mkdir', ['-p', supervisorDir]);
+        await _writeFileSudo(supervisorConf, '''
 [program:mailpit]
 command=/usr/local/bin/mailpit --smtp 0.0.0.0:$smtpPort --listen 0.0.0.0:$uiPort --max $maxMsg
 autostart=true
@@ -429,8 +428,8 @@ autorestart=true
 stdout_logfile=/var/log/mailpit.log
 stderr_logfile=/var/log/mailpit.err
 ''');
-        await _run('supervisorctl', ['update'], failOk: true);
-        await _run('supervisorctl', ['restart', 'mailpit'], failOk: true);
+        await _sudo('supervisorctl', ['update'], failOk: true);
+        await _sudo('supervisorctl', ['restart', 'mailpit'], failOk: true);
       } else {
         const unitContent = r'''
 [Unit]
@@ -451,7 +450,7 @@ WantedBy=multi-user.target
             .replaceAll('SMTP_PORT', smtpPort)
             .replaceAll('UI_PORT', uiPort)
             .replaceAll('MESSAGES', maxMsg);
-        await File('/etc/systemd/system/mailpit.service').writeAsString(unit);
+        await _writeFileSudo('/etc/systemd/system/mailpit.service', unit);
         await _serviceCtl('daemon-reload', 'mailpit');
         await _serviceCtl('restart', 'mailpit');
       }
@@ -501,10 +500,10 @@ Future<void> _configurePostfix(Map<String, dynamic> config) async {
       'smtp_sasl_security_options = noanonymous',
     ]);
     if (relayHost.isNotEmpty && relayUser.isNotEmpty) {
-      await File('/etc/postfix/sasl_passwd')
-          .writeAsString('$relayHost $relayUser:$relayPass\n');
-      await _run('postmap', ['/etc/postfix/sasl_passwd']);
-      await _run('chmod', ['600', '/etc/postfix/sasl_passwd']);
+      await _writeFileSudo(
+          '/etc/postfix/sasl_passwd', '$relayHost $relayUser:$relayPass\n');
+      await _sudo('postmap', ['/etc/postfix/sasl_passwd']);
+      await _sudo('chmod', ['600', '/etc/postfix/sasl_passwd']);
     }
   } else {
     // Standalone mode.
@@ -526,7 +525,7 @@ Future<void> _configurePostfix(Map<String, dynamic> config) async {
     ]);
   }
 
-  await File('/etc/postfix/main.cf').writeAsString(lines.join('\n') + '\n');
+  await _writeFileSudo('/etc/postfix/main.cf', lines.join('\n') + '\n');
   await _serviceCtl('reload-or-restart', 'postfix');
 }
 
@@ -574,13 +573,14 @@ service auth {
 }
 ''';
 
-  await File('/etc/dovecot/local.conf').writeAsString(conf);
+  await _writeFileSudo('/etc/dovecot/local.conf', conf);
   // local.conf is included automatically when it exists in newer dovecot.
   // Ensure the include is in dovecot.conf.
-  final dovecotConf = File('/etc/dovecot/dovecot.conf');
-  final existing = await dovecotConf.readAsString();
+  final dovecotConfPath = '/etc/dovecot/dovecot.conf';
+  final catResult = await Process.run('sudo', ['cat', dovecotConfPath]);
+  final existing = catResult.stdout.toString();
   if (!existing.contains('!include local.conf')) {
-    await dovecotConf.writeAsString('$existing\n!include local.conf\n');
+    await _writeFileSudo(dovecotConfPath, '$existing\n!include local.conf\n');
   }
   await _serviceCtl('reload-or-restart', 'dovecot');
 }
@@ -601,12 +601,12 @@ Future<void> _serviceCtl(String action, String type) async {
     if (noOps.contains(action)) return;
     // SysV shim: `service <unit> restart` etc.
     final svcAction = action == 'reload-or-restart' ? 'restart' : action;
-    await _run('service', [unitName, svcAction], failOk: true);
+    await _sudo('service', [unitName, svcAction], failOk: true);
   } else {
     if (action == 'daemon-reload') {
-      await _run('systemctl', ['daemon-reload']);
+      await _sudo('systemctl', ['daemon-reload']);
     } else {
-      await _run('systemctl', [action, unitName]);
+      await _sudo('systemctl', [action, unitName]);
     }
   }
 }
@@ -621,19 +621,20 @@ Future<void> _serviceUninstall(String type) async {
 
   switch (type) {
     case 'redis':
-      await _run('apt-get', ['-qq', '-y', 'remove', '--purge', 'redis-server']);
+      await _sudo(
+          'apt-get', ['-qq', '-y', 'remove', '--purge', 'redis-server']);
     case 'memcached':
-      await _run('apt-get', ['-qq', '-y', 'remove', '--purge', 'memcached']);
+      await _sudo('apt-get', ['-qq', '-y', 'remove', '--purge', 'memcached']);
     case 'mailpit':
-      await File('/usr/local/bin/mailpit').delete();
+      await _sudo('rm', ['-f', '/usr/local/bin/mailpit'], failOk: true);
       final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
       if (isDocker) {
-        final conf = File('/etc/supervisor/conf.d/mailpit.conf');
-        if (await conf.exists()) await conf.delete();
-        await _run('supervisorctl', ['update'], failOk: true);
+        await _sudo('rm', ['-f', '/etc/supervisor/conf.d/mailpit.conf'],
+            failOk: true);
+        await _sudo('supervisorctl', ['update'], failOk: true);
       } else {
-        final unit = File('/etc/systemd/system/mailpit.service');
-        if (await unit.exists()) await unit.delete();
+        await _sudo('rm', ['-f', '/etc/systemd/system/mailpit.service'],
+            failOk: true);
         await _serviceCtl('daemon-reload', 'mailpit');
       }
     case 'smtp':
@@ -643,8 +644,9 @@ Future<void> _serviceUninstall(String type) async {
 }
 
 Future<void> _installMailpit(Map<String, dynamic> config) async {
-  // Download the latest mailpit binary.
-  await _run('sh', [
+  // Download the latest mailpit binary (requires root to install to /usr/local/bin).
+  await _run('sudo', [
+    'sh',
     '-c',
     'curl -sL https://raw.githubusercontent.com/axllent/mailpit/develop/install.sh | bash',
   ]);
@@ -664,6 +666,21 @@ Future<void> _run(String exe, List<String> args, {bool failOk = false}) async {
     throw Exception(
         '$exe ${args.join(' ')}: exit ${result.exitCode}\n${result.stderr}');
   }
+}
+
+/// Run a command with sudo.
+Future<void> _sudo(String exe, List<String> args, {bool failOk = false}) =>
+    _run('sudo', [exe, ...args], failOk: failOk);
+
+/// Write [content] to a privileged [path] using `sudo tee`.
+Future<void> _writeFileSudo(String path, String content) async {
+  final proc = await Process.start('sudo', ['tee', path]);
+  proc.stdin.write(content);
+  await proc.stdin.close();
+  // tee echoes to stdout — drain it so the process can finish.
+  await proc.stdout.drain<void>();
+  final exit = await proc.exitCode;
+  if (exit != 0) throw Exception('sudo tee $path failed with exit $exit');
 }
 
 // =============================================================================
@@ -705,11 +722,11 @@ Future<void> _postgres(List<String> args) async {
 
     case 'start-instance':
       if (version == null) throw ArgumentError('--version required');
-      await _run('systemctl', ['start', 'postgresql@$version-main']);
+      await _sudo('systemctl', ['start', 'postgresql@$version-main']);
 
     case 'stop-instance':
       if (version == null) throw ArgumentError('--version required');
-      await _run('systemctl', ['stop', 'postgresql@$version-main']);
+      await _sudo('systemctl', ['stop', 'postgresql@$version-main']);
 
     case 'create-db':
       if (version == null) throw ArgumentError('--version required');
@@ -745,7 +762,7 @@ Future<void> _pgInstallInstance(int version, int port) async {
   // 1. Add pgdg repo if the signing key is missing.
   final keyFile = File('/etc/apt/keyrings/pgdg.gpg');
   if (!keyFile.existsSync()) {
-    await _run('mkdir', ['-p', '/etc/apt/keyrings']);
+    await _sudo('mkdir', ['-p', '/etc/apt/keyrings']);
     // Download and de-armour the pgdg signing key.
     final keyResult = await Process.run('curl', [
       '-fsSL',
@@ -754,11 +771,12 @@ Future<void> _pgInstallInstance(int version, int port) async {
     if (keyResult.exitCode != 0) {
       throw Exception('Failed to download pgdg key: ${keyResult.stderr}');
     }
-    // gpg --dearmor writes binary to stdout; pipe into the keyring file.
+    // gpg --dearmor writes binary to stdout; pipe into the keyring file via sudo tee.
     final gpgProc = await Process.start(
-        'gpg', ['--dearmor', '-o', '/etc/apt/keyrings/pgdg.gpg']);
+        'sudo', ['gpg', '--dearmor', '-o', '/etc/apt/keyrings/pgdg.gpg']);
     gpgProc.stdin.write(keyResult.stdout);
     await gpgProc.stdin.close();
+    await gpgProc.stdout.drain<void>();
     final gpgExit = await gpgProc.exitCode;
     if (gpgExit != 0) throw Exception('gpg --dearmor failed');
   }
@@ -768,12 +786,14 @@ Future<void> _pgInstallInstance(int version, int port) async {
   if (!sourceFile.existsSync()) {
     final os =
         (await Process.run('lsb_release', ['-cs'])).stdout.toString().trim();
-    await sourceFile.writeAsString('deb [signed-by=/etc/apt/keyrings/pgdg.gpg] '
-        'https://apt.postgresql.org/pub/repos/apt $os-pgdg main\n');
+    await _writeFileSudo(
+        '/etc/apt/sources.list.d/pgdg.list',
+        'deb [signed-by=/etc/apt/keyrings/pgdg.gpg] '
+            'https://apt.postgresql.org/pub/repos/apt $os-pgdg main\n');
   }
 
-  await _run('apt-get', ['update', '-qq']);
-  await _run('apt-get', ['-qq', '-y', 'install', 'postgresql-$version']);
+  await _sudo('apt-get', ['update', '-qq']);
+  await _sudo('apt-get', ['-qq', '-y', 'install', 'postgresql-$version']);
 
   // 3. Configure port in postgresql.conf.
   final confPath = '/etc/postgresql/$version/main/postgresql.conf';
@@ -787,21 +807,21 @@ Future<void> _pgInstallInstance(int version, int port) async {
     } else {
       content += '\nport = $port\n';
     }
-    await conf.writeAsString(content);
+    await _writeFileSudo(confPath, content);
   }
 
   // 4. Enable + start the versioned service unit.
-  await _run('systemctl', ['enable', 'postgresql@$version-main']);
-  await _run('systemctl', ['restart', 'postgresql@$version-main']);
+  await _sudo('systemctl', ['enable', 'postgresql@$version-main']);
+  await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
 }
 
 Future<void> _pgUninstallInstance(int version) async {
-  await _run('systemctl', ['stop', 'postgresql@$version-main'], failOk: true);
-  await _run('systemctl', ['disable', 'postgresql@$version-main'],
+  await _sudo('systemctl', ['stop', 'postgresql@$version-main'], failOk: true);
+  await _sudo('systemctl', ['disable', 'postgresql@$version-main'],
       failOk: true);
-  await _run('apt-get', ['-y', 'remove', '--purge', 'postgresql-$version'],
+  await _sudo('apt-get', ['-y', 'remove', '--purge', 'postgresql-$version'],
       failOk: true);
-  await _run(
+  await _sudo(
       'rm', ['-rf', '/etc/postgresql/$version', '/var/lib/postgresql/$version'],
       failOk: true);
 }
@@ -859,10 +879,9 @@ Future<void> _pgDropDatabase(int version, String dbName, String role) async {
   await sql("DROP ROLE IF EXISTS $role;");
 }
 
-/// Run a command as a different system user via `su -s /bin/sh -c`.
+/// Run a command as a different system user via `sudo -u <user>`.
 Future<void> _runAs(String user, List<String> command) async {
-  final cmd = ['su', '-s', '/bin/sh', user, '-c', command.join(' ')];
-  final result = await Process.run(cmd.first, cmd.skip(1).toList());
+  final result = await Process.run('sudo', ['-u', user, ...command]);
   if (result.exitCode != 0) {
     throw Exception(
         '${command.first} exited ${result.exitCode}: ${result.stderr}');
@@ -942,7 +961,7 @@ Future<void> _pyenvInstallVersion(String version) async {
         '$_pyenvRoot/bin:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
   };
   // pyenv needs build deps.
-  await _run('apt-get', [
+  await _sudo('apt-get', [
     '-qq',
     '-y',
     'install',
