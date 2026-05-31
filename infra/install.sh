@@ -62,18 +62,34 @@ install -d -o root -g root -m 0755 /var/log/gisila
 # ── 3. PostgreSQL ─────────────────────────────────────────────────────────────
 echo "==> Configuring PostgreSQL"
 systemctl enable --now postgresql
-sudo -u postgres psql <<SQL
+
+# Wait until PostgreSQL is accepting connections (fresh install can take a moment).
+echo "==> Waiting for PostgreSQL to be ready"
+for i in $(seq 1 15); do
+  sudo -u postgres pg_isready -q && break
+  echo "    waiting... ($i/15)"
+  sleep 2
+done
+sudo -u postgres pg_isready  # final check — exits non-zero if still not ready
+
+# Create the role.  ON_ERROR_STOP=1 ensures psql failures propagate to set -e.
+sudo -u postgres psql --set ON_ERROR_STOP=1 <<SQL
 DO \$\$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gisila') THEN
     CREATE ROLE gisila LOGIN PASSWORD 'gisila';
   END IF;
 END \$\$;
-DO \$\$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'gisila_panel') THEN
-    CREATE DATABASE gisila_panel OWNER gisila;
-  END IF;
-END \$\$;
 SQL
+
+# CREATE DATABASE cannot run inside a PL/pgSQL DO block (transaction restriction).
+# Use createdb which runs outside any transaction.
+if ! sudo -u postgres psql --set ON_ERROR_STOP=1 \
+    -tc "SELECT 1 FROM pg_database WHERE datname='gisila_panel'" | grep -q 1; then
+  sudo -u postgres createdb --owner=gisila gisila_panel
+  echo "    created database gisila_panel"
+else
+  echo "    database gisila_panel already exists, skipping"
+fi
 
 # ── 4. Build & install binaries (all as root) ─────────────────────────────────
 echo "==> dart pub get — backend"
