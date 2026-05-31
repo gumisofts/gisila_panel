@@ -136,7 +136,9 @@ install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 # ── 5. Frontend — build & deploy ─────────────────────────────────────────────
 echo "==> Building Next.js frontend"
 cd "$REPO_DIR/frontend"
-pnpm install --frozen-lockfile
+# --prefer-frozen-lockfile uses committed versions but allows pnpm to record
+# build-script approvals (onlyBuiltDependencies) without treating it as an error.
+pnpm install --prefer-frozen-lockfile
 pnpm build
 
 # The standalone build produces a minimal Node server bundle.

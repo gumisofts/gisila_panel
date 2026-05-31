@@ -51,6 +51,7 @@ export default function AppDetailPage() {
   }
 
   async function deployNow() {
+    if (!app) return;
     try {
       await api(`/apps/${appId}/deployments/`, {
         method: "POST",
