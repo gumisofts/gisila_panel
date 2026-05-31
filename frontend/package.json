@@ -32,6 +32,9 @@
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["sharp", "unrs-resolver"]
+  },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/react": "^19.2.15",
