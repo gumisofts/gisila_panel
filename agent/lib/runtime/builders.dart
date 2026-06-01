@@ -150,7 +150,15 @@ class Builders {
     // 3. Create virtualenv (always, even for custom build commands, so that
     //    bare `pip install` calls inside the buildCommand work without hitting
     //    PEP 668's "externally-managed-environment" restriction).
-    await _runAsUser(user, src, '$pythonBin -m venv .venv');
+    //
+    // --copies is required: without it the venv's bin/python is a symlink to
+    // the pyenv binary.  On Linux, Python uses /proc/self/exe to find its real
+    // path, which resolves the symlink to /opt/pyenv/…/bin/python3.x.  Python
+    // then searches for pyvenv.cfg relative to that resolved path — which has
+    // none — so it falls back to treating the pyenv prefix as sys.prefix,
+    // leaving the venv's site-packages off sys.path entirely and causing
+    // gunicorn / app dependencies to be missing at runtime.
+    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
 
     if (buildCommand != null) {
       // 4a. Custom build command — run it with the venv activated so that

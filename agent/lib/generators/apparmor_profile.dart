@@ -33,6 +33,17 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     /usr/lib/** rm,
     /lib/** rm,
 
+    # Python pyenv runtime — stdlib, extension modules, and interpreter binary.
+    # The venv copies the Python binary (--copies) so reads come through
+    # \$workDir/releases, but the stdlib and .so extension modules always live
+    # in the pyenv-managed prefix and need explicit allow rules.
+    /opt/pyenv/versions/*/lib/python*.zip r,
+    /opt/pyenv/versions/*/lib/python*/** r,
+    /opt/pyenv/versions/*/lib/python*/lib-dynload/*.so* mr,
+    # Allow executing the pyenv interpreter directly (e.g. when reached via
+    # a venv symlink rather than a --copies binary).
+    /opt/pyenv/versions/*/bin/python* ix,
+
     # Networking
     network inet stream,
     network inet6 stream,
