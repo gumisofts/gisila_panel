@@ -6,28 +6,18 @@ PartOf=gisila-panel.service
 
 [Service]
 Type=simple
-User=gisila
-Group=gisila
+User=root
+Group=root
 WorkingDirectory=/srv/gisila
 EnvironmentFile=/etc/gisila/.env
+# Run the agent directly — no sudo required because the worker itself is root.
+# This works on all VPS providers, including those that enforce the kernel-level
+# no_new_privileges flag (Hetzner, DigitalOcean, Linode, etc.) which would
+# block sudo even when NoNewPrivileges=false is set in this unit.
+Environment=AGENT_MODE=direct
 ExecStart=/usr/local/bin/gisila-worker
 Restart=on-failure
 RestartSec=5
-
-# The worker shells out to `gisila-agent` via `sudo` to perform host
-# management: installing apt packages, creating Linux users, writing nginx
-# vhosts and systemd units, provisioning Postgres, etc.
-#
-# IMPORTANT: systemd sandbox directives (ProtectSystem, ProtectHome,
-# PrivateTmp, …) install a private mount namespace that is INHERITED by every
-# child process — including the root agent spawned via sudo. With
-# `ProtectSystem=strict` the whole filesystem is mounted read-only except the
-# listed ReadWritePaths, so the agent (even as root) cannot write to
-# /var/cache/apt, /var/lib/dpkg, /usr, /etc, … and *every* install fails with
-# "Read-only file system". The worker must therefore run without a filesystem
-# sandbox. Defense-in-depth is preserved by the sudoers rule, which only lets
-# `gisila` execute the single `gisila-agent` binary as root.
-NoNewPrivileges=false
 RestrictRealtime=true
 
 [Install]

@@ -199,17 +199,7 @@ class ServiceWorker {
       return;
     }
 
-    // When AGENT_BIN=dart, call: dart run <entry> <args>
-    // When AGENT_MODE=sudo, prepend sudo.
-    final List<String> cmd;
-    if (hostConfig.agentBin == 'dart') {
-      cmd = ['dart', 'run', hostConfig.agentDartEntry, ...args];
-    } else if (hostConfig.agentMode == 'sudo') {
-      cmd = ['sudo', '--non-interactive', hostConfig.agentBin, ...args];
-    } else {
-      cmd = [hostConfig.agentBin, ...args];
-    }
-
+    final cmd = buildAgentCmd(args);
     logger.i('service_worker: ${cmd.join(' ')}');
 
     // Blocking path when there is no live consumer.

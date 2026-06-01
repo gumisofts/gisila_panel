@@ -152,10 +152,12 @@ install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$GISILA_HOME/web"
 rsync -a --delete "$REPO_DIR/backend/web/" "$GISILA_HOME/web/"
 chown -R "$GISILA_USER:$GISILA_USER" "$GISILA_HOME/web"
 
-# ── 6. sudoers rule ───────────────────────────────────────────────────────────
-echo "==> Installing sudoers rule"
-install -m 0440 "$REPO_DIR/infra/sudoers.d_gisila" /etc/sudoers.d/gisila
-visudo -cf /etc/sudoers.d/gisila
+# ── 6. Journal access for the API user ───────────────────────────────────────
+# The gisila-panel API streams app runtime logs via journalctl. Adding the
+# gisila user to the systemd-journal group lets it read journals without root,
+# which is required on VPS hosts that enforce no_new_privileges (blocking sudo).
+echo "==> Adding gisila to systemd-journal group"
+usermod -aG systemd-journal "$GISILA_USER"
 
 # ── 7. systemd units ─────────────────────────────────────────────────────────
 echo "==> Installing systemd units"
@@ -186,7 +188,7 @@ SYSTEMD_UNITS_DIR=/etc/systemd/system
 APPARMOR_PROFILES_DIR=/etc/apparmor.d
 APP_PORT_RANGE_MIN=4000
 APP_PORT_RANGE_MAX=4999
-AGENT_MODE=sudo
+AGENT_MODE=direct
 AGENT_BIN=/usr/local/bin/gisila-agent
 NODE_ID=$(hostname -s)
 EOF

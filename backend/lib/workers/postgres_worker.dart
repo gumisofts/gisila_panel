@@ -262,17 +262,7 @@ class PostgresWorker {
       return;
     }
 
-    // When AGENT_BIN=dart, call: dart run <entry> <args>
-    // When AGENT_MODE=sudo, prepend sudo.
-    final List<String> cmd;
-    if (hostConfig.agentBin == 'dart') {
-      cmd = ['dart', 'run', hostConfig.agentDartEntry, ...args];
-    } else if (hostConfig.agentMode == 'sudo') {
-      cmd = ['sudo', '--non-interactive', hostConfig.agentBin, ...args];
-    } else {
-      cmd = [hostConfig.agentBin, ...args];
-    }
-
+    final cmd = buildAgentCmd(args);
     logger.i('postgres_worker: ${cmd.join(' ')}');
     final result = await Process.run(cmd.first, cmd.skip(1).toList());
     if (result.exitCode != 0) {

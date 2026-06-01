@@ -52,6 +52,9 @@ x-dart-base: &dart-base
     AGENT_BIN: dart
     AGENT_DART_ENTRY: /workspace/gisila-panel/agent/bin/gisila-agent.dart
     NODE_ID: dev
+    # Tells workers + agent they are running inside Docker: skips sudo and uses
+    # supervisord instead of systemd for app service management.
+    DOCKER_DEPLOY: "true"
   volumes: &dart-volumes
     # Mount the entire gisila_tools/ monorepo so `path:` deps resolve.
     - ..:/workspace

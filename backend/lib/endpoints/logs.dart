@@ -238,7 +238,7 @@ Future<void> _streamRuntimeLogs(
     return;
   }
 
-  final args = [
+  final cmd = buildAgentCmd([
     'logs',
     '--user',
     user,
@@ -247,15 +247,7 @@ Future<void> _streamRuntimeLogs(
     '--lines',
     '300',
     '--follow',
-  ];
-  final List<String> cmd;
-  if (hostConfig.agentBin == 'dart') {
-    cmd = ['dart', 'run', hostConfig.agentDartEntry, ...args];
-  } else if (hostConfig.agentMode == 'sudo') {
-    cmd = ['sudo', '--non-interactive', hostConfig.agentBin, ...args];
-  } else {
-    cmd = [hostConfig.agentBin, ...args];
-  }
+  ]);
 
   Process process;
   try {

@@ -54,6 +54,7 @@ class HostConfig {
     required this.agentBin,
     required this.agentDartEntry,
     required this.nodeId,
+    required this.dockerDeploy,
   });
 
   factory HostConfig.fromEnv() => HostConfig(
@@ -75,6 +76,12 @@ class HostConfig {
           () => '/workspace/gisila-panel/agent/bin/gisila-agent.dart',
         ),
         nodeId: env.getOrElse('NODE_ID', () => 'local'),
+        // true when running inside Docker (set DOCKER_DEPLOY=true in the
+        // container env). Prevents the worker from prepending `sudo` to the
+        // agent command: Docker containers already run as root, and the kernel's
+        // no_new_privileges flag blocks sudo even when AGENT_MODE=sudo.
+        dockerDeploy: Platform.environment['DOCKER_DEPLOY'] == 'true' ||
+            env['DOCKER_DEPLOY'] == 'true',
       );
 
   final String appsRoot;
@@ -91,7 +98,28 @@ class HostConfig {
   final String agentDartEntry;
 
   final String nodeId;
+
+  /// True when running inside a Docker container (DOCKER_DEPLOY=true).
+  final bool dockerDeploy;
 }
 
 /// Singleton host config.
 final hostConfig = HostConfig.fromEnv();
+
+/// Build the OS command used by every worker to invoke the agent.
+///
+/// Priority:
+///   1. `AGENT_BIN=dart`             → `dart run <entry> <args>`
+///   2. `DOCKER_DEPLOY=true`         → `<bin> <args>` (container is already root,
+///                                      sudo would be blocked by no_new_privileges)
+///   3. `AGENT_MODE=sudo`            → `sudo --non-interactive <bin> <args>`
+///   4. anything else                → `<bin> <args>`
+List<String> buildAgentCmd(List<String> args) {
+  if (hostConfig.agentBin == 'dart') {
+    return ['dart', 'run', hostConfig.agentDartEntry, ...args];
+  }
+  if (hostConfig.dockerDeploy || hostConfig.agentMode != 'sudo') {
+    return [hostConfig.agentBin, ...args];
+  }
+  return ['sudo', '--non-interactive', hostConfig.agentBin, ...args];
+}
