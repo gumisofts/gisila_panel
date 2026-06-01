@@ -103,7 +103,8 @@ class PostgresWorker {
     } catch (e) {
       // Log but do not re-throw: the package may not be installed if a previous
       // install attempt failed. The intent is removal, so always delete the record.
-      logger.w('postgres_worker: agent uninstall-instance error (continuing): $e');
+      logger.w(
+          'postgres_worker: agent uninstall-instance error (continuing): $e');
     }
 
     // Hard-delete the instance record regardless of agent result.
