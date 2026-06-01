@@ -670,7 +670,8 @@ service auth {
   // local.conf is included automatically when it exists in newer dovecot.
   // Ensure the include is in dovecot.conf.
   final dovecotConfPath = '/etc/dovecot/dovecot.conf';
-  final catResult = await Process.run('sudo', ['cat', dovecotConfPath]);
+  final catCmd = _priv('cat', [dovecotConfPath]);
+  final catResult = await Process.run(catCmd.first, catCmd.skip(1).toList());
   final existing = catResult.stdout.toString();
   if (!existing.contains('!include local.conf')) {
     await _writeFileSudo(dovecotConfPath, '$existing\n!include local.conf\n');
@@ -738,8 +739,7 @@ Future<void> _serviceUninstall(String type) async {
 
 Future<void> _installMailpit(Map<String, dynamic> config) async {
   // Download the latest mailpit binary (requires root to install to /usr/local/bin).
-  await _run('sudo', [
-    'sh',
+  await _sudo('sh', [
     '-c',
     'curl -sL https://raw.githubusercontent.com/axllent/mailpit/develop/install.sh | bash',
   ]);
@@ -761,23 +761,46 @@ Future<void> _run(String exe, List<String> args, {bool failOk = false}) async {
   }
 }
 
-/// Run a command with sudo.
-Future<void> _sudo(String exe, List<String> args, {bool failOk = false}) =>
-    _run('sudo', [exe, ...args], failOk: failOk);
+/// Whether the agent is already running as root (uid 0).
+///
+/// When true we must NOT use `sudo`: the worker now launches the agent directly
+/// as root, and many VPS / container hosts enforce the kernel-level
+/// `no_new_privileges` flag which blocks `sudo` even for root with
+/// "The 'no new privileges' flag is set, which prevents sudo from running as
+/// root." Running the underlying command directly avoids that entirely.
+final bool _isRoot = () {
+  try {
+    final r = Process.runSync('id', ['-u']);
+    return r.exitCode == 0 && (r.stdout as String).trim() == '0';
+  } catch (_) {
+    return false;
+  }
+}();
+
+/// Build a command list, prepending `sudo` only when not already root.
+List<String> _priv(String exe, List<String> args) =>
+    _isRoot ? [exe, ...args] : ['sudo', exe, ...args];
+
+/// Run a privileged command — directly when root, otherwise via sudo.
+Future<void> _sudo(String exe, List<String> args, {bool failOk = false}) {
+  final cmd = _priv(exe, args);
+  return _run(cmd.first, cmd.skip(1).toList(), failOk: failOk);
+}
 
 /// Install one or more apt packages non-interactively.
 Future<void> _aptInstall(List<String> packages) =>
     _sudo('apt-get', ['-qq', '-y', 'install', ...packages]);
 
-/// Write [content] to a privileged [path] using `sudo tee`.
+/// Write [content] to a privileged [path] using `tee` (via sudo when needed).
 Future<void> _writeFileSudo(String path, String content) async {
-  final proc = await Process.start('sudo', ['tee', path]);
+  final cmd = _priv('tee', [path]);
+  final proc = await Process.start(cmd.first, cmd.skip(1).toList());
   proc.stdin.write(content);
   await proc.stdin.close();
   // tee echoes to stdout — drain it so the process can finish.
   await proc.stdout.drain<void>();
   final exit = await proc.exitCode;
-  if (exit != 0) throw Exception('sudo tee $path failed with exit $exit');
+  if (exit != 0) throw Exception('tee $path failed with exit $exit');
 }
 
 // =============================================================================
@@ -868,9 +891,11 @@ Future<void> _pgInstallInstance(int version, int port) async {
     if (keyResult.exitCode != 0) {
       throw Exception('Failed to download pgdg key: ${keyResult.stderr}');
     }
-    // gpg --dearmor writes binary to stdout; pipe into the keyring file via sudo tee.
-    final gpgProc = await Process.start(
-        'sudo', ['gpg', '--dearmor', '-o', '/etc/apt/keyrings/pgdg.gpg']);
+    // gpg --dearmor writes binary to stdout; pipe into the keyring file.
+    final gpgCmd =
+        _priv('gpg', ['--dearmor', '-o', '/etc/apt/keyrings/pgdg.gpg']);
+    final gpgProc =
+        await Process.start(gpgCmd.first, gpgCmd.skip(1).toList());
     gpgProc.stdin.write(keyResult.stdout);
     await gpgProc.stdin.close();
     await gpgProc.stdout.drain<void>();
@@ -992,9 +1017,18 @@ Future<void> _pgDropDatabase(int version, String dbName, String role) async {
   await sql("DROP ROLE IF EXISTS $role;");
 }
 
-/// Run a command as a different system user via `sudo -u <user>`.
+/// Run a command as a different system user.
+///
+/// When already root we use `runuser -u <user> --` (util-linux) instead of
+/// `sudo -u`: it drops privileges without invoking sudo, so it works even on
+/// hosts that enforce the kernel `no_new_privileges` flag. When not root we
+/// fall back to `sudo -u <user>`.
 Future<void> _runAs(String user, List<String> command) async {
-  final result = await Process.run('sudo', ['-u', user, ...command]);
+  final invocation = _isRoot
+      ? ['runuser', '-u', user, '--', ...command]
+      : ['sudo', '-u', user, ...command];
+  final result =
+      await Process.run(invocation.first, invocation.skip(1).toList());
   if (result.exitCode != 0) {
     throw Exception(
         '${command.first} exited ${result.exitCode}: ${result.stderr}');
