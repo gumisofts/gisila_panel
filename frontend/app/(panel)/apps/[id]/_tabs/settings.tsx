@@ -47,6 +47,11 @@ export function SettingsTab({
     pythonVersion: app.pythonVersion ?? "3.12.4",
     pythonMode: app.pythonMode ?? "wsgi",
     wsgiApp: app.wsgiApp ?? "",
+    gunicornWorkers: app.gunicornWorkers != null ? String(app.gunicornWorkers) : "",
+    gunicornThreads: app.gunicornThreads != null ? String(app.gunicornThreads) : "",
+    gunicornTimeout: app.gunicornTimeout != null ? String(app.gunicornTimeout) : "",
+    gunicornBind: app.gunicornBind ?? "",
+    gunicornExtraArgs: app.gunicornExtraArgs ?? "",
     deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
   });
   const [saving, setSaving] = useState(false);
@@ -66,6 +71,11 @@ export function SettingsTab({
       pythonVersion: app.pythonVersion ?? "3.12.4",
       pythonMode: app.pythonMode ?? "wsgi",
       wsgiApp: app.wsgiApp ?? "",
+      gunicornWorkers: app.gunicornWorkers != null ? String(app.gunicornWorkers) : "",
+      gunicornThreads: app.gunicornThreads != null ? String(app.gunicornThreads) : "",
+      gunicornTimeout: app.gunicornTimeout != null ? String(app.gunicornTimeout) : "",
+      gunicornBind: app.gunicornBind ?? "",
+      gunicornExtraArgs: app.gunicornExtraArgs ?? "",
       deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +108,17 @@ export function SettingsTab({
         patch.pythonVersion = form.pythonVersion;
         patch.pythonMode = form.pythonMode;
         patch.wsgiApp = form.wsgiApp || undefined;
+        patch.gunicornWorkers = form.gunicornWorkers
+          ? Number(form.gunicornWorkers)
+          : undefined;
+        patch.gunicornThreads = form.gunicornThreads
+          ? Number(form.gunicornThreads)
+          : undefined;
+        patch.gunicornTimeout = form.gunicornTimeout
+          ? Number(form.gunicornTimeout)
+          : undefined;
+        patch.gunicornBind = form.gunicornBind || undefined;
+        patch.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
       }
       if (isGit) {
         patch.deployKeyId = form.deployKeyId ? Number(form.deployKeyId) : undefined;
@@ -309,6 +330,85 @@ export function SettingsTab({
                 value={form.wsgiApp}
                 onChange={(e) => set("wsgiApp", e.target.value)}
               />
+            </div>
+
+            {/* Gunicorn tuning */}
+            <div className="space-y-4 rounded-md border border-border/60 bg-background/40 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Gunicorn
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <Label htmlFor="s-gworkers">Workers</Label>
+                  <Input
+                    id="s-gworkers"
+                    type="number"
+                    min={1}
+                    max={64}
+                    className="mt-1"
+                    placeholder="4"
+                    value={form.gunicornWorkers}
+                    onChange={(e) => set("gunicornWorkers", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="s-gthreads">Threads / worker</Label>
+                  <Input
+                    id="s-gthreads"
+                    type="number"
+                    min={1}
+                    max={64}
+                    className="mt-1"
+                    placeholder="1"
+                    value={form.gunicornThreads}
+                    onChange={(e) => set("gunicornThreads", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="s-gtimeout">Timeout (s)</Label>
+                  <Input
+                    id="s-gtimeout"
+                    type="number"
+                    min={1}
+                    max={3600}
+                    className="mt-1"
+                    placeholder="120"
+                    value={form.gunicornTimeout}
+                    onChange={(e) => set("gunicornTimeout", e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="s-gbind">
+                  Bind address
+                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="s-gbind"
+                  className="mt-1 font-mono text-sm"
+                  placeholder={`0.0.0.0:${app.internalPort} (internal port)`}
+                  value={form.gunicornBind}
+                  onChange={(e) => set("gunicornBind", e.target.value)}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Defaults to <code className="font-mono">0.0.0.0:$PORT</code>{" "}
+                  (the app&apos;s internal port {app.internalPort}). Only override
+                  if you keep the same port so the nginx proxy still resolves.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="s-gextra">
+                  Extra arguments
+                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="s-gextra"
+                  className="mt-1 font-mono text-sm"
+                  placeholder="--max-requests 1000 --graceful-timeout 30"
+                  value={form.gunicornExtraArgs}
+                  onChange={(e) => set("gunicornExtraArgs", e.target.value)}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -60,6 +60,12 @@ class AppsService extends Service {
     String? pythonVersion,
     String? pythonMode,
     String? wsgiApp,
+    // Gunicorn tuning (python only)
+    int? gunicornWorkers,
+    int? gunicornThreads,
+    int? gunicornTimeout,
+    String? gunicornBind,
+    String? gunicornExtraArgs,
     // SSH deploy key (for git source)
     int? deployKeyId,
   }) async {
@@ -94,6 +100,11 @@ class AppsService extends Service {
       if (pythonVersion != null) 'pythonVersion': pythonVersion,
       if (pythonMode != null) 'pythonMode': pythonMode,
       if (wsgiApp != null) 'wsgiApp': wsgiApp,
+      if (gunicornWorkers != null) 'gunicornWorkers': gunicornWorkers,
+      if (gunicornThreads != null) 'gunicornThreads': gunicornThreads,
+      if (gunicornTimeout != null) 'gunicornTimeout': gunicornTimeout,
+      if (gunicornBind != null) 'gunicornBind': gunicornBind,
+      if (gunicornExtraArgs != null) 'gunicornExtraArgs': gunicornExtraArgs,
       if (deployKeyId != null) 'deployKeyId': deployKeyId,
       'status': 'created',
       'createdAt': now.toIso8601String(),

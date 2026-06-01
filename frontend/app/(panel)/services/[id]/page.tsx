@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR, { mutate } from "swr";
 import {
@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { api, fetcher } from "@/lib/api";
+import { api, fetcher, getToken, getWsBase } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   ManagedService,
@@ -157,10 +157,152 @@ export default function ServiceDetailPage() {
         <ConfigForm svc={svc} def={def} onSaved={() => mutate(`/services/${id}`)} />
       )}
 
+      {/* Live install / lifecycle logs (only for services installed on the host) */}
+      {def?.requiresInstall && (
+        <>
+          <Separator />
+          <ServiceLogPanel serviceId={svc.id} status={svc.status} />
+        </>
+      )}
+
       <Separator />
 
       {/* Actions */}
       <ServiceActions svc={svc} onDone={() => router.push("/services")} />
+    </div>
+  );
+}
+
+// ── Live install / lifecycle logs ──────────────────────────────────────────────
+
+const WS_BASE = getWsBase();
+
+interface SvcLogLine {
+  ts: string;
+  stream: string;
+  line: string;
+}
+
+function ServiceLogPanel({
+  serviceId,
+  status,
+}: {
+  serviceId: number;
+  status: string;
+}) {
+  const [lines, setLines] = useState<SvcLogLine[]>([]);
+  const endRef = useRef<HTMLDivElement>(null);
+  const active = ["installing", "pending", "uninstalling"].includes(status);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let closed = false;
+
+    function connect() {
+      ws = new WebSocket(`${WS_BASE}/services/${serviceId}/logs`);
+
+      ws.onopen = () => {
+        attempt = 0;
+        // History replays the full buffer, so reset to avoid duplicates.
+        setLines([]);
+        ws?.send(JSON.stringify({ token, serviceId }));
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.error) return;
+          const raw =
+            typeof data.message === "string"
+              ? data.message
+              : JSON.stringify(data.message);
+          let parsed: { stream?: string; line?: string } = {};
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            parsed = { line: raw };
+          }
+          setLines((prev) =>
+            [
+              ...prev,
+              {
+                ts: data.ts ?? new Date().toISOString(),
+                stream: parsed.stream ?? "stdout",
+                line: parsed.line ?? raw,
+              },
+            ].slice(-1000),
+          );
+        } catch {
+          /* ignore */
+        }
+      };
+
+      ws.onclose = () => {
+        if (closed) return;
+        const delay = Math.min(1000 * 2 ** attempt, 10000);
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => ws?.close();
+    }
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [serviceId]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Install logs</h2>
+        {active && (
+          <span className="flex items-center gap-1.5 text-xs text-emerald-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            live
+          </span>
+        )}
+      </div>
+      <div className="h-64 overflow-y-auto rounded-md border border-border/60 bg-[#0d1117] p-3 font-mono text-xs scrollbar-thin">
+        {lines.length === 0 ? (
+          <p className="text-white/40">
+            {active ? "Waiting for output…" : "No logs yet. Trigger an install or restart to see live output."}
+          </p>
+        ) : (
+          lines.map((l, i) => (
+            <div
+              key={i}
+              className={cn(
+                "leading-5",
+                l.stream === "stderr"
+                  ? "text-red-400"
+                  : l.stream === "system"
+                    ? "text-fuchsia-400"
+                    : "text-[#e6edf3]",
+              )}
+            >
+              <span className="mr-2 select-none text-white/25">
+                {l.ts.slice(11, 19)}
+              </span>
+              {l.line}
+            </div>
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
     </div>
   );
 }

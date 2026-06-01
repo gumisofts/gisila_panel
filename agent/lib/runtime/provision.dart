@@ -28,6 +28,15 @@ class Provisioner {
     }
     await ShellExec.run('chown', ['-R', '$user:$user', workDir]);
     await ShellExec.run('chmod', ['-R', '0750', workDir]);
+
+    // The apps root (parent of workDir, e.g. /srv/apps) must be traversable by
+    // the unprivileged app user so that absolute paths into its own work dir
+    // resolve — both during the build (python -m venv resolves abs paths) and
+    // at runtime (systemd ExecStart uses absolute paths). Granting only the
+    // execute bit (o+x → 0751) allows traversal without letting app users list
+    // or read sibling apps' directories (each is 0750, owner-only).
+    final parent = root.parent.path;
+    await ShellExec.run('chmod', ['o+x', parent]);
   }
 
   /// Touch the env file so EnvironmentFile= references don't break the unit.

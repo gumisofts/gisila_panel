@@ -49,6 +49,20 @@ extension AppsApiGisilaDoc on AppsApi {
         'pythonVersion': <String, Object?>{'type': 'string'},
         'pythonMode': <String, Object?>{'type': 'string'},
         'wsgiApp': <String, Object?>{'type': 'string'},
+        'gunicornWorkers': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornThreads': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornTimeout': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornBind': <String, Object?>{'type': 'string'},
+        'gunicornExtraArgs': <String, Object?>{'type': 'string'},
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
@@ -73,6 +87,20 @@ extension AppsApiGisilaDoc on AppsApi {
         'pythonVersion': <String, Object?>{'type': 'string'},
         'pythonMode': <String, Object?>{'type': 'string'},
         'wsgiApp': <String, Object?>{'type': 'string'},
+        'gunicornWorkers': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornThreads': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornTimeout': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'gunicornBind': <String, Object?>{'type': 'string'},
+        'gunicornExtraArgs': <String, Object?>{'type': 'string'},
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });

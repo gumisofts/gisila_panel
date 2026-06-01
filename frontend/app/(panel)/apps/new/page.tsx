@@ -75,6 +75,12 @@ export default function NewAppPage() {
     pythonVersion: "3.12.4",
     pythonMode: "wsgi",
     wsgiApp: "",
+    // Gunicorn tuning
+    gunicornWorkers: "",
+    gunicornThreads: "",
+    gunicornTimeout: "",
+    gunicornBind: "",
+    gunicornExtraArgs: "",
     // Git deploy key
     deployKeyId: "" as string | number,
   });
@@ -124,6 +130,11 @@ export default function NewAppPage() {
         payload.pythonVersion = form.pythonVersion;
         payload.pythonMode    = form.pythonMode;
         payload.wsgiApp       = form.wsgiApp || undefined;
+        payload.gunicornWorkers = form.gunicornWorkers ? Number(form.gunicornWorkers) : undefined;
+        payload.gunicornThreads = form.gunicornThreads ? Number(form.gunicornThreads) : undefined;
+        payload.gunicornTimeout = form.gunicornTimeout ? Number(form.gunicornTimeout) : undefined;
+        payload.gunicornBind    = form.gunicornBind || undefined;
+        payload.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
       }
       if (form.sourceType === "git" && form.deployKeyId) {
         payload.deployKeyId = Number(form.deployKeyId);
@@ -323,6 +334,76 @@ export default function NewAppPage() {
                       Examples: <code className="font-mono">myproject.wsgi:application</code> (Django),{" "}
                       <code className="font-mono">main:app</code> (FastAPI/Flask).
                     </p>
+                  </div>
+
+                  {/* Gunicorn tuning */}
+                  <div className="space-y-3 rounded-md border border-blue-500/20 bg-background/40 p-3">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Gunicorn (optional)
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="g-workers" className="text-xs">Workers</Label>
+                        <Input
+                          id="g-workers"
+                          type="number"
+                          min={1}
+                          placeholder="4"
+                          value={form.gunicornWorkers}
+                          onChange={(e) => set("gunicornWorkers", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="g-threads" className="text-xs">Threads</Label>
+                        <Input
+                          id="g-threads"
+                          type="number"
+                          min={1}
+                          placeholder="1"
+                          value={form.gunicornThreads}
+                          onChange={(e) => set("gunicornThreads", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="g-timeout" className="text-xs">Timeout (s)</Label>
+                        <Input
+                          id="g-timeout"
+                          type="number"
+                          min={1}
+                          placeholder="120"
+                          value={form.gunicornTimeout}
+                          onChange={(e) => set("gunicornTimeout", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="g-bind" className="text-xs">
+                        Bind address
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          (defaults to 0.0.0.0:$PORT)
+                        </span>
+                      </Label>
+                      <Input
+                        id="g-bind"
+                        className="font-mono text-sm"
+                        placeholder="0.0.0.0:$PORT"
+                        value={form.gunicornBind}
+                        onChange={(e) => set("gunicornBind", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="g-extra" className="text-xs">
+                        Extra arguments
+                        <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Input
+                        id="g-extra"
+                        className="font-mono text-sm"
+                        placeholder="--max-requests 1000 --graceful-timeout 30"
+                        value={form.gunicornExtraArgs}
+                        onChange={(e) => set("gunicornExtraArgs", e.target.value)}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>

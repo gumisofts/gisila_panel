@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -43,6 +44,9 @@ Future<void> main(List<String> args) async {
       case 'uninstall':
         await _uninstall(rest);
         break;
+      case 'logs':
+        await _logs(rest);
+        return; // _logs streams and exits on its own.
       case 'service':
         await _service(rest);
         break;
@@ -189,6 +193,10 @@ Future<void> _applyUnit(List<String> args) async {
     p.addOption('python-mode', defaultsTo: 'wsgi');
     p.addOption('wsgi-app');
     p.addOption('workers', defaultsTo: '4');
+    p.addOption('gunicorn-threads');
+    p.addOption('gunicorn-timeout');
+    p.addOption('gunicorn-bind');
+    p.addOption('gunicorn-extra-args');
   });
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
@@ -202,22 +210,43 @@ Future<void> _applyUnit(List<String> args) async {
     startCommand =
         AgentValidators.optionalCommand(r['start-command'] as String)!;
   } else if (isPython) {
-    // Auto-generate the gunicorn start command.
+    // Auto-generate the gunicorn start command from the configurable options.
     final mode = r['python-mode'] as String; // wsgi | asgi
     final wsgiApp = r['wsgi-app'] as String? ?? 'app:application';
     final workers = r['workers'] as String;
+    final threads = r['gunicorn-threads'] as String?;
+    final timeoutRaw = r['gunicorn-timeout'] as String?;
+    final timeout =
+        (timeoutRaw != null && timeoutRaw.isNotEmpty) ? timeoutRaw : '120';
+    final bindRaw = r['gunicorn-bind'] as String?;
+    // Default bind tracks the systemd-provided $PORT (= the app's internal port).
+    final bind =
+        (bindRaw != null && bindRaw.isNotEmpty) ? bindRaw : '0.0.0.0:\$PORT';
+    final extraArgs = r['gunicorn-extra-args'] as String?;
     final venv = '$workDir/current/.venv';
     final logs = '$workDir/logs';
-    final workerClass =
-        mode == 'asgi' ? '--worker-class uvicorn.workers.UvicornWorker ' : '';
-    startCommand = '$venv/bin/gunicorn '
-        '--workers $workers '
-        '${workerClass}'
-        '--bind 0.0.0.0:\$PORT '
-        '--timeout 120 '
-        '--access-logfile $logs/access.log '
-        '--error-logfile $logs/error.log '
-        '$wsgiApp';
+
+    final parts = <String>[
+      '$venv/bin/gunicorn',
+      '--workers',
+      workers,
+      if (threads != null && threads.isNotEmpty) ...['--threads', threads],
+      if (mode == 'asgi') ...[
+        '--worker-class',
+        'uvicorn.workers.UvicornWorker',
+      ],
+      '--bind',
+      bind,
+      '--timeout',
+      timeout,
+      '--access-logfile',
+      '$logs/access.log',
+      '--error-logfile',
+      '$logs/error.log',
+      if (extraArgs != null && extraArgs.trim().isNotEmpty) extraArgs.trim(),
+      wsgiApp,
+    ];
+    startCommand = parts.join(' ');
   } else {
     startCommand = '$workDir/current/app';
   }
@@ -284,6 +313,71 @@ Future<void> _uninstall(List<String> args) async {
   final user = AgentValidators.requireUser(r['user'] as String?);
   final appId = int.tryParse((r['app-id'] as String?) ?? '');
   await Applier().uninstall(user, appId);
+}
+
+/// Stream an app's runtime logs to stdout (consumed by the panel WebSocket).
+///
+/// On a systemd host this tails `journalctl -u gisila-<user>.service`.
+/// In Docker (supervisord) it tails the per-app stdout/stderr log files.
+/// With `--follow` the stream stays open until the parent terminates it; we
+/// then propagate SIGTERM to the child so no journalctl/tail process leaks.
+Future<void> _logs(List<String> args) async {
+  final r = _parse(args, (p) {
+    p.addOption('user', mandatory: true);
+    p.addOption('work-dir');
+    p.addOption('lines', defaultsTo: '200');
+    p.addFlag('follow', defaultsTo: false);
+  });
+  final user = AgentValidators.requireUser(r['user'] as String?);
+  final lines = r['lines'] as String;
+  final follow = r['follow'] as bool;
+  final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
+
+  final String exe;
+  final List<String> cmdArgs;
+  if (isDocker) {
+    final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+    exe = 'tail';
+    cmdArgs = [
+      '-n',
+      lines,
+      if (follow) '-F',
+      '$workDir/logs/stdout.log',
+      '$workDir/logs/stderr.log',
+    ];
+  } else {
+    exe = 'journalctl';
+    cmdArgs = [
+      '-u',
+      'gisila-$user.service',
+      '-n',
+      lines,
+      '--no-pager',
+      '--output',
+      'short-iso',
+      if (follow) '-f',
+    ];
+  }
+
+  final child = await Process.start(exe, cmdArgs);
+  final outSub = child.stdout.listen(stdout.add);
+  final errSub = child.stderr.listen(stderr.add);
+
+  // Propagate termination to the child so the tail/journalctl process dies.
+  final termSub = ProcessSignal.sigterm
+      .watch()
+      .listen((_) => child.kill(ProcessSignal.sigterm));
+  final intSub = ProcessSignal.sigint
+      .watch()
+      .listen((_) => child.kill(ProcessSignal.sigterm));
+
+  final code = await child.exitCode;
+  await outSub.cancel();
+  await errSub.cancel();
+  await termSub.cancel();
+  await intSub.cancel();
+  await stdout.flush();
+  exit(code);
 }
 
 // ── Service management ───────────────────────────────────────────────────────
@@ -1085,6 +1179,7 @@ Subcommands:
   issue-cert    --hostname HOSTNAME
   start|stop|restart  --user app_xxx
   uninstall     --user app_xxx [--app-id ID]
+  logs          --user app_xxx [--work-dir PATH] [--lines N] [--follow]
   service       install|configure|start|stop|uninstall \\
                 --type redis|memcached|smtp|mailpit|postfix|dovecot [--config JSON]
   postgres      install-instance --version VER [--port PORT]

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Pause, Play, Trash2 } from "lucide-react";
 import { getToken, getWsBase } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const WS_URL = getWsBase();
 
@@ -14,81 +15,121 @@ interface LogLine {
   line: string;
 }
 
+type ConnState = "connecting" | "connected" | "reconnecting";
+
 export function LogsTab({ appId }: { appId: number }) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [paused, setPaused] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [conn, setConn] = useState<ConnState>("connecting");
+  const pausedRef = useRef(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep a ref in sync so pausing doesn't tear down / recreate the socket.
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
-    const url = `${WS_URL}/apps/${appId}/logs`;
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ token, appId }));
-      setLines((l) => [
-        ...l,
-        {
-          ts: new Date().toISOString(),
-          stream: "system",
-          line: "[ws] connected",
-        },
-      ]);
-    };
-    ws.onmessage = (ev) => {
-      if (paused) return;
-      try {
-        const data = JSON.parse(ev.data);
-        const raw =
-          typeof data.message === "string"
-            ? data.message
-            : JSON.stringify(data.message);
-        let parsed: { stream?: string; line?: string } = {};
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let closed = false; // set on unmount to stop reconnecting
+
+    const append = (l: LogLine) =>
+      setLines((prev) => [...prev, l].slice(-1000));
+
+    function connect() {
+      setConn(attempt === 0 ? "connecting" : "reconnecting");
+      ws = new WebSocket(`${WS_URL}/apps/${appId}/logs`);
+
+      ws.onopen = () => {
+        attempt = 0;
+        setConn("connected");
+        ws?.send(JSON.stringify({ token, appId }));
+      };
+
+      ws.onmessage = (ev) => {
+        if (pausedRef.current) return;
         try {
-          parsed = JSON.parse(raw);
+          const data = JSON.parse(ev.data);
+          if (data.error) {
+            append({
+              ts: new Date().toISOString(),
+              stream: "system",
+              line: `[error] ${data.error}`,
+            });
+            return;
+          }
+          const raw =
+            typeof data.message === "string"
+              ? data.message
+              : JSON.stringify(data.message);
+          let parsed: { stream?: string; line?: string } = {};
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            parsed = { line: raw };
+          }
+          append({
+            ts: data.ts ?? new Date().toISOString(),
+            stream: parsed.stream ?? "stdout",
+            line: parsed.line ?? raw,
+          });
         } catch {
-          parsed = { line: raw };
+          /* ignore malformed frames */
         }
-        setLines((l) =>
-          [
-            ...l,
-            {
-              ts: data.ts ?? new Date().toISOString(),
-              stream: parsed.stream ?? "stdout",
-              line: parsed.line ?? raw,
-            },
-          ].slice(-1000),
-        );
-      } catch {
-        /* ignore */
-      }
+      };
+
+      ws.onclose = () => {
+        if (closed) return;
+        setConn("reconnecting");
+        // Exponential backoff capped at 10s.
+        const delay = Math.min(1000 * 2 ** attempt, 10000);
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        // onclose will follow and trigger the reconnect.
+        ws?.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
     };
-    ws.onclose = () =>
-      setLines((l) => [
-        ...l,
-        {
-          ts: new Date().toISOString(),
-          stream: "system",
-          line: "[ws] closed",
-        },
-      ]);
-    return () => ws.close();
-  }, [appId, paused]);
+  }, [appId]);
 
   useEffect(() => {
     if (!paused) endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines, paused]);
 
+  const statusMeta = {
+    connecting: { label: "Connecting…", dot: "bg-amber-400" },
+    connected: { label: "Live", dot: "bg-emerald-400 animate-pulse" },
+    reconnecting: { label: "Reconnecting…", dot: "bg-amber-400 animate-pulse" },
+  }[conn];
+
   return (
     <Card>
       <CardContent className="space-y-3 p-5">
         <div className="flex items-center justify-between">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
-            Live runtime logs · journald
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              Live runtime logs · journald
+            </p>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={cn("h-1.5 w-1.5 rounded-full", statusMeta.dot)} />
+              {statusMeta.label}
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <Button
               size="sm"

@@ -57,6 +57,11 @@ export interface App {
   pythonVersion?: string | null;
   pythonMode?: "wsgi" | "asgi" | null;
   wsgiApp?: string | null;
+  gunicornWorkers?: number | null;
+  gunicornThreads?: number | null;
+  gunicornTimeout?: number | null;
+  gunicornBind?: string | null;
+  gunicornExtraArgs?: string | null;
   deployKeyId?: number | null;
   memoryMbLimit: number;
   cpuQuotaPercent: number;

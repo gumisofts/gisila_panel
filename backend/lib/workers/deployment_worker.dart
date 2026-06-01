@@ -105,6 +105,27 @@ class DeploymentWorker {
           '--python-mode',
           app.pythonMode ?? 'wsgi',
           if (app.wsgiApp != null) ...['--wsgi-app', app.wsgiApp!],
+          if (app.gunicornWorkers != null) ...[
+            '--workers',
+            '${app.gunicornWorkers}',
+          ],
+          if (app.gunicornThreads != null) ...[
+            '--gunicorn-threads',
+            '${app.gunicornThreads}',
+          ],
+          if (app.gunicornTimeout != null) ...[
+            '--gunicorn-timeout',
+            '${app.gunicornTimeout}',
+          ],
+          if (app.gunicornBind != null && app.gunicornBind!.isNotEmpty) ...[
+            '--gunicorn-bind',
+            app.gunicornBind!,
+          ],
+          if (app.gunicornExtraArgs != null &&
+              app.gunicornExtraArgs!.isNotEmpty) ...[
+            '--gunicorn-extra-args',
+            app.gunicornExtraArgs!,
+          ],
         ],
       ], deploymentId: deploymentId);
 

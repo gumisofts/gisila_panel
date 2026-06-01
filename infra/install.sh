@@ -71,7 +71,12 @@ if ! id -u "$GISILA_USER" >/dev/null 2>&1; then
   useradd --system --create-home --home "$GISILA_HOME" \
     --shell /bin/bash "$GISILA_USER"
 fi
-install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$GISILA_HOME" "$APPS_ROOT"
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$GISILA_HOME"
+# APPS_ROOT is 0751 so each unprivileged app user can traverse into its own
+# work dir (e.g. /srv/apps/app_xxx) via absolute paths — required by the build
+# (python -m venv) and at runtime (systemd ExecStart). Per-app dirs stay 0750
+# so app users cannot read or list each other's directories.
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0751 "$APPS_ROOT"
 install -d -o root -g root -m 0755 /var/log/gisila
 
 # ── 3. PostgreSQL ─────────────────────────────────────────────────────────────

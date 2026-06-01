@@ -249,6 +249,22 @@ App:
     wsgi_app:
       type: varchar
       is_null: true          # gunicorn app target, e.g. myapp.wsgi:application
+    # Gunicorn tuning (only relevant when runtime = python). Null → sensible defaults.
+    gunicorn_workers:
+      type: integer
+      is_null: true          # number of worker processes (default 4)
+    gunicorn_threads:
+      type: integer
+      is_null: true          # threads per worker (default 1)
+    gunicorn_timeout:
+      type: integer
+      is_null: true          # worker timeout in seconds (default 120)
+    gunicorn_bind:
+      type: varchar
+      is_null: true          # bind address override, e.g. 0.0.0.0:8000 (default 0.0.0.0:$PORT)
+    gunicorn_extra_args:
+      type: varchar
+      is_null: true          # extra raw gunicorn flags appended verbatim
     # Resource limits (translated into systemd MemoryMax / CPUQuota / TasksMax).
     memory_mb_limit:
       type: integer

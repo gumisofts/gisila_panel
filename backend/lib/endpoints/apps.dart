@@ -47,6 +47,11 @@ class AppsApi {
       pythonVersion: form.pythonVersion.value,
       pythonMode: form.pythonMode.value,
       wsgiApp: form.wsgiApp.value,
+      gunicornWorkers: form.gunicornWorkers.value,
+      gunicornThreads: form.gunicornThreads.value,
+      gunicornTimeout: form.gunicornTimeout.value,
+      gunicornBind: form.gunicornBind.value,
+      gunicornExtraArgs: form.gunicornExtraArgs.value,
       deployKeyId: form.deployKeyId.value,
     );
     return app.toJson();
@@ -90,6 +95,16 @@ class AppsApi {
         'pythonVersion': form.pythonVersion.value,
       if (form.pythonMode.value != null) 'pythonMode': form.pythonMode.value,
       if (form.wsgiApp.value != null) 'wsgiApp': form.wsgiApp.value,
+      if (form.gunicornWorkers.value != null)
+        'gunicornWorkers': form.gunicornWorkers.value,
+      if (form.gunicornThreads.value != null)
+        'gunicornThreads': form.gunicornThreads.value,
+      if (form.gunicornTimeout.value != null)
+        'gunicornTimeout': form.gunicornTimeout.value,
+      if (form.gunicornBind.value != null)
+        'gunicornBind': form.gunicornBind.value,
+      if (form.gunicornExtraArgs.value != null)
+        'gunicornExtraArgs': form.gunicornExtraArgs.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
     };
     final app = await apps.update(user, id, patch);

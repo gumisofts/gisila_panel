@@ -52,4 +52,22 @@ class RedisClient {
     final result = await cmd.send_object(['INCR', key]);
     return result is int ? result : int.parse(result.toString());
   }
+
+  /// Trim a list to the inclusive range [start, stop] (capped log buffers).
+  Future<void> ltrim(String key, int start, int stop) async {
+    final cmd = await connection();
+    await cmd.send_object(['LTRIM', key, '$start', '$stop']);
+  }
+
+  /// Delete a key (used to clear a stale log history buffer).
+  Future<void> del(String key) async {
+    final cmd = await connection();
+    await cmd.send_object(['DEL', key]);
+  }
+
+  /// Set an expiry (seconds) on a key so log buffers don't linger forever.
+  Future<void> expire(String key, int seconds) async {
+    final cmd = await connection();
+    await cmd.send_object(['EXPIRE', key, '$seconds']);
+  }
 }

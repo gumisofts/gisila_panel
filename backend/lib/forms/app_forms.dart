@@ -23,6 +23,13 @@ class CreateAppForm extends Form {
   final pythonMode = StringField(name: 'pythonMode'); // wsgi | asgi
   final wsgiApp = StringField(name: 'wsgiApp');
 
+  // Gunicorn tuning (python only).
+  final gunicornWorkers = IntField(name: 'gunicornWorkers');
+  final gunicornThreads = IntField(name: 'gunicornThreads');
+  final gunicornTimeout = IntField(name: 'gunicornTimeout');
+  final gunicornBind = StringField(name: 'gunicornBind');
+  final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
+
   // Optional SSH deploy key for authenticated git clone.
   final deployKeyId = IntField(name: 'deployKeyId');
 
@@ -43,6 +50,11 @@ class CreateAppForm extends Form {
         pythonVersion,
         pythonMode,
         wsgiApp,
+        gunicornWorkers,
+        gunicornThreads,
+        gunicornTimeout,
+        gunicornBind,
+        gunicornExtraArgs,
         deployKeyId,
       ];
 }
@@ -60,6 +72,11 @@ class UpdateAppForm extends Form {
   final pythonVersion = StringField(name: 'pythonVersion');
   final pythonMode = StringField(name: 'pythonMode');
   final wsgiApp = StringField(name: 'wsgiApp');
+  final gunicornWorkers = IntField(name: 'gunicornWorkers');
+  final gunicornThreads = IntField(name: 'gunicornThreads');
+  final gunicornTimeout = IntField(name: 'gunicornTimeout');
+  final gunicornBind = StringField(name: 'gunicornBind');
+  final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
   final deployKeyId = IntField(name: 'deployKeyId');
 
   @override
@@ -76,6 +93,11 @@ class UpdateAppForm extends Form {
         pythonVersion,
         pythonMode,
         wsgiApp,
+        gunicornWorkers,
+        gunicornThreads,
+        gunicornTimeout,
+        gunicornBind,
+        gunicornExtraArgs,
         deployKeyId,
       ];
 }
