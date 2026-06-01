@@ -33,15 +33,16 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     /usr/lib/** rm,
     /lib/** rm,
 
-    # Python pyenv runtime — stdlib, extension modules, and interpreter binary.
-    # The venv copies the Python binary (--copies) so reads come through
-    # \$workDir/releases, but the stdlib and .so extension modules always live
-    # in the pyenv-managed prefix and need explicit allow rules.
-    /opt/pyenv/versions/*/lib/python*.zip r,
-    /opt/pyenv/versions/*/lib/python*/** r,
-    /opt/pyenv/versions/*/lib/python*/lib-dynload/*.so* mr,
-    # Allow executing the pyenv interpreter directly (e.g. when reached via
-    # a venv symlink rather than a --copies binary).
+    # Python pyenv runtime. Even when the venv binary is a copy, the stdlib,
+    # the .so extension modules (lib-dynload), and a shared libpython all live
+    # in the pyenv-managed prefix. AppArmor is deny-by-default, so without these
+    # rules the interpreter cannot even import `encodings` during init and dies
+    # with "Fatal Python error: init_fs_encoding". `mr` grants read + mmap so
+    # shared objects can be loaded; the bin rule allows execution when the venv
+    # reaches the interpreter through a symlink rather than a --copies binary.
+    /opt/pyenv/versions/*/ r,
+    /opt/pyenv/versions/*/lib/ r,
+    /opt/pyenv/versions/*/lib/** mr,
     /opt/pyenv/versions/*/bin/python* ix,
 
     # Networking
