@@ -43,19 +43,21 @@ Router logsRouter({required Database database}) {
 
 /// Live runtime logs — tails the app's systemd journal through the agent.
 Handler _logSocket(Database database) => webSocketHandler((webSocket) async {
-      await _authThen(webSocket, database: database, handler: (auth) async {
+      await _authThen(webSocket, database: database,
+          handler: (auth, closed) async {
         if (auth.app == null) {
           _sendError(webSocket, 'app_not_found');
           return;
         }
-        await _streamRuntimeLogs(webSocket, app: auth.app!);
+        await _streamRuntimeLogs(webSocket, app: auth.app!, closed: closed);
       });
     });
 
 /// Live build logs — bridges the Redis pub/sub channel the worker publishes to.
 Handler _buildLogSocket(Database database) =>
     webSocketHandler((webSocket) async {
-      await _authThen(webSocket, database: database, handler: (auth) async {
+      await _authThen(webSocket, database: database,
+          handler: (auth, closed) async {
         final deploymentId = auth.deploymentId;
         if (deploymentId == null) {
           _sendError(webSocket, 'deployment_required');
@@ -64,6 +66,7 @@ Handler _buildLogSocket(Database database) =>
         await _bridgeRedis(
           webSocket,
           channel: 'gisila:logs:build:$deploymentId',
+          closed: closed,
         );
       });
     });
@@ -76,7 +79,7 @@ Handler _serviceLogSocket(Database database) =>
         webSocket,
         database: database,
         requireApp: false,
-        handler: (auth) async {
+        handler: (auth, closed) async {
           final serviceId = auth.serviceId;
           if (serviceId == null) {
             _sendError(webSocket, 'service_required');
@@ -86,6 +89,7 @@ Handler _serviceLogSocket(Database database) =>
             webSocket,
             channel: 'gisila:logs:service:$serviceId',
             historyKey: 'gisila:logs:service:$serviceId:history',
+            closed: closed,
           );
         },
       );
@@ -100,82 +104,101 @@ class _Auth {
   final int? serviceId;
 }
 
-/// Waits for the first frame, validates the JWT and (optionally) loads the App,
-/// then invokes [handler]. Closes the socket on any auth failure.
+/// Drives the whole socket lifecycle with a **single** subscription (the
+/// WebSocket stream is single-subscription, so we must never re-listen).
+///
+/// The first frame carries the JWT + ids. Once validated, [handler] runs and is
+/// handed a `closed` future that resolves when the client disconnects, so it
+/// can tear down any tail process / Redis subscription without listening to the
+/// socket itself.
 Future<void> _authThen(
   dynamic webSocket, {
   required Database database,
-  required Future<void> Function(_Auth auth) handler,
+  required Future<void> Function(_Auth auth, Future<void> closed) handler,
   bool requireApp = true,
 }) async {
-  late StreamSubscription sub;
-  final completer = Completer<void>();
+  final closed = Completer<void>();
+  var handled = false;
+  Future<void>? handlerFuture;
 
-  sub = webSocket.stream.listen(
+  final sub = webSocket.stream.listen(
     (Object? raw) async {
-      if (completer.isCompleted) return;
-      completer.complete();
-      await sub.cancel();
+      if (handled) return; // ignore any further frames
+      handled = true;
       try {
-        final msg = jsonDecode(raw as String) as Map<String, Object?>;
-        final token = msg['token'] as String?;
-        final appId = msg['appId'] as int?;
-        final deploymentId = msg['deploymentId'] as int?;
-        final serviceId = msg['serviceId'] as int?;
-
-        if (token == null) {
-          _sendError(webSocket, 'auth_required');
-          await webSocket.sink.close();
-          return;
-        }
-        final payload = JWTAuth.decodeAndVerify(token);
-        final userId = payload?['id'] as int?;
-        if (userId == null) {
-          _sendError(webSocket, 'invalid_token');
-          await webSocket.sink.close();
-          return;
-        }
-        final user = await Query<User>(UserTable.metadata)
-            .where(UserTable.id.eq(userId))
-            .first(database.context());
-        if (user == null) {
-          _sendError(webSocket, 'invalid_user');
-          await webSocket.sink.close();
-          return;
-        }
-
-        App? app;
-        if (requireApp) {
-          if (appId == null) {
-            _sendError(webSocket, 'auth_required');
-            await webSocket.sink.close();
-            return;
-          }
-          app = await Query<App>(AppTable.metadata)
-              .where(AppTable.id.eq(appId))
-              .first(database.context());
-          if (app == null) {
-            _sendError(webSocket, 'app_not_found');
-            await webSocket.sink.close();
-            return;
-          }
-        }
-
-        await handler(_Auth(
-          app: app,
-          deploymentId: deploymentId,
-          serviceId: serviceId,
-        ));
+        final auth =
+            await _authenticate(webSocket, database, raw, requireApp);
+        if (auth == null) return; // error already sent + socket closed
+        handlerFuture = handler(auth, closed.future);
+        await handlerFuture;
       } catch (e) {
         _sendError(webSocket, e.toString());
-        await webSocket.sink.close();
+        try {
+          await webSocket.sink.close();
+        } catch (_) {}
       }
     },
-    onError: (Object _) => completer.complete(),
-    onDone: () => completer.complete(),
+    onError: (Object _) {
+      if (!closed.isCompleted) closed.complete();
+    },
+    onDone: () {
+      if (!closed.isCompleted) closed.complete();
+    },
+    cancelOnError: false,
   );
 
-  await completer.future;
+  await closed.future;
+  // Let the handler finish its cleanup before we drop the subscription.
+  if (handlerFuture != null) {
+    try {
+      await handlerFuture;
+    } catch (_) {}
+  }
+  await sub.cancel();
+}
+
+/// Validate the first frame. Returns the resolved [_Auth], or null after having
+/// sent an error frame and closed the socket.
+Future<_Auth?> _authenticate(
+  dynamic webSocket,
+  Database database,
+  Object? raw,
+  bool requireApp,
+) async {
+  final msg = jsonDecode(raw as String) as Map<String, Object?>;
+  final token = msg['token'] as String?;
+  final appId = msg['appId'] as int?;
+  final deploymentId = msg['deploymentId'] as int?;
+  final serviceId = msg['serviceId'] as int?;
+
+  Future<_Auth?> fail(String error) async {
+    _sendError(webSocket, error);
+    try {
+      await webSocket.sink.close();
+    } catch (_) {}
+    return null;
+  }
+
+  if (token == null) return fail('auth_required');
+  final payload = JWTAuth.decodeAndVerify(token);
+  final userId = payload?['id'] as int?;
+  if (userId == null) return fail('invalid_token');
+
+  final user = await Query<User>(UserTable.metadata)
+      .where(UserTable.id.eq(userId))
+      .first(database.context());
+  if (user == null) return fail('invalid_user');
+
+  App? app;
+  if (requireApp) {
+    if (appId == null) return fail('auth_required');
+    app = await Query<App>(AppTable.metadata)
+        .where(AppTable.id.eq(appId))
+        .first(database.context());
+    if (app == null) return fail('app_not_found');
+  }
+
+  return _Auth(app: app, deploymentId: deploymentId, serviceId: serviceId);
 }
 
 void _sendError(dynamic webSocket, String error) {
@@ -195,7 +218,11 @@ void _sendLine(dynamic webSocket, String stream, String line) {
 
 // ── Runtime logs (journalctl via agent) ──────────────────────────────────────
 
-Future<void> _streamRuntimeLogs(dynamic webSocket, {required App app}) async {
+Future<void> _streamRuntimeLogs(
+  dynamic webSocket, {
+  required App app,
+  required Future<void> closed,
+}) async {
   final user = app.linuxUser;
   if (user == null) {
     _sendLine(webSocket, 'system',
@@ -207,8 +234,7 @@ Future<void> _streamRuntimeLogs(dynamic webSocket, {required App app}) async {
   if (hostConfig.agentMode == 'dev') {
     _sendLine(webSocket, 'system',
         'Runtime log streaming is disabled in dev mode (no journald).');
-    // Keep the socket open until the client disconnects.
-    await webSocket.stream.drain<void>().catchError((_) {});
+    await closed; // hold the socket open until the client disconnects
     return;
   }
 
@@ -231,7 +257,7 @@ Future<void> _streamRuntimeLogs(dynamic webSocket, {required App app}) async {
     cmd = [hostConfig.agentBin, ...args];
   }
 
-  Process? process;
+  Process process;
   try {
     process = await Process.start(cmd.first, cmd.skip(1).toList());
   } catch (e) {
@@ -240,25 +266,20 @@ Future<void> _streamRuntimeLogs(dynamic webSocket, {required App app}) async {
     return;
   }
 
-  final proc = process;
-  final stdoutSub = proc.stdout
+  final stdoutSub = process.stdout
       .transform(utf8.decoder)
       .transform(const LineSplitter())
       .listen((line) => _sendLine(webSocket, 'stdout', line));
-  final stderrSub = proc.stderr
+  final stderrSub = process.stderr
       .transform(utf8.decoder)
       .transform(const LineSplitter())
       .listen((line) => _sendLine(webSocket, 'stderr', line));
 
-  // Kill the journalctl process as soon as the client disconnects.
-  final closeSub = webSocket.stream.listen((_) {}, onDone: () {
-    proc.kill(ProcessSignal.sigterm);
-  });
-
-  await proc.exitCode;
+  // Stop as soon as either the client disconnects or the tail process exits.
+  await Future.any([closed, process.exitCode]);
+  process.kill(ProcessSignal.sigterm);
   await stdoutSub.cancel();
   await stderrSub.cancel();
-  await closeSub.cancel();
   try {
     await webSocket.sink.close();
   } catch (_) {}
@@ -269,6 +290,7 @@ Future<void> _streamRuntimeLogs(dynamic webSocket, {required App app}) async {
 Future<void> _bridgeRedis(
   dynamic webSocket, {
   required String channel,
+  required Future<void> closed,
   String? historyKey,
 }) async {
   final host = env.getOrElse('REDIS_HOST', () => 'localhost');
@@ -295,8 +317,7 @@ Future<void> _bridgeRedis(
   final cmd = await RedisConnection().connect(host, port);
   final ps = PubSub(cmd);
   ps.subscribe([channel]);
-  late StreamSubscription redisSub;
-  redisSub = ps.getStream().listen(
+  final redisSub = ps.getStream().listen(
     (event) {
       if (event is List && event.length >= 3 && event[0] == 'message') {
         webSocket.sink.add(jsonEncode({
@@ -309,14 +330,10 @@ Future<void> _bridgeRedis(
     onError: (Object _) {},
   );
 
-  final closeSub = webSocket.stream.listen(
-    (_) {},
-    onDone: () async {
-      await redisSub.cancel();
-      try {
-        await cmd.get_connection().close();
-      } catch (_) {}
-    },
-  );
-  await closeSub.asFuture();
+  // Hold until the client disconnects, then tear down the Redis connection.
+  await closed;
+  await redisSub.cancel();
+  try {
+    await cmd.get_connection().close();
+  } catch (_) {}
 }
