@@ -121,12 +121,13 @@ class Builders {
   /// Build a Python app using pyenv + venv.
   ///
   /// Steps (when no [buildCommand] override is supplied):
-  ///   1. Ensure pyenv is installed at [pyenvRoot] (default /opt/pyenv).
-  ///   2. Install the requested [pythonVersion] if not present.
-  ///   3. Create a virtualenv at `<src>/.venv` using that Python.
-  ///   4. `pip install` deps from requirements.txt (if present).
-  ///   5. Install gunicorn + uvicorn[standard] for serving.
-  ///   6. Symlink `.venv` → `<workDir>/current/.venv` so the systemd unit
+  ///   1. Ensure Python C-extension build dependencies are installed.
+  ///   2. Ensure pyenv is installed at [pyenvRoot] (default /opt/pyenv).
+  ///   3. Install the requested [pythonVersion] if not present.
+  ///   4. Create a virtualenv at `<src>/.venv` using that Python.
+  ///   5. `pip install` deps from requirements.txt (if present).
+  ///   6. Install gunicorn + uvicorn[standard] for serving.
+  ///   7. Symlink `.venv` → `<workDir>/current/.venv` so the systemd unit
   ///      can always reference `<workDir>/current/.venv/bin/gunicorn`.
   static Future<void> buildPython({
     required String workDir,
@@ -141,7 +142,14 @@ class Builders {
 
     final version = pythonVersion?.trim();
 
-    // 1 + 2. Ensure pyenv and the requested version.
+    // 1. Install Python build-time system libraries before pyenv compiles
+    //    Python.  If these are absent when `pyenv install` runs, CPython
+    //    silently skips the corresponding C extension modules (_sqlite3, _ssl,
+    //    _lzma, etc.), leaving them permanently missing from that installation.
+    //    apt-get install is idempotent, so this is safe to run every build.
+    await _ensurePythonBuildDeps();
+
+    // 2 + 3. Ensure pyenv and the requested version.
     await _ensurePyenv(pyenvRoot);
     final pythonBin = version != null
         ? await _pyenvPython(pyenvRoot, version)
@@ -244,6 +252,31 @@ class Builders {
       '$workDir/current/app',
     ]);
   }
+
+  /// Install the system libraries that CPython needs to compile its C extension
+  /// modules (sqlite3, ssl, lzma, readline, etc.).  When these are absent
+  /// during `pyenv install`, CPython silently omits the corresponding `.so`
+  /// files, producing hard-to-diagnose "No module named '_sqlite3'" errors at
+  /// runtime.  Running this before every pyenv call is safe — apt-get is a
+  /// no-op when packages are already at the latest version.
+  static Future<void> _ensurePythonBuildDeps() => ShellExec.run(
+        'apt-get',
+        [
+          'install', '-y', '-qq',
+          'libsqlite3-dev',
+          'libssl-dev',
+          'zlib1g-dev',
+          'libbz2-dev',
+          'libreadline-dev',
+          'libncursesw5-dev',
+          'xz-utils',
+          'libxml2-dev',
+          'libxmlsec1-dev',
+          'libffi-dev',
+          'liblzma-dev',
+        ],
+        requireSuccess: false,
+      );
 
   static Future<void> _runAsUser(String user, String cwd, String command) =>
       ShellExec.run(

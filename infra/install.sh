@@ -38,7 +38,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   certbot python3-certbot-nginx \
   apparmor apparmor-utils \
   git build-essential unzip \
-  curl ca-certificates gnupg
+  curl ca-certificates gnupg \
+  libsqlite3-dev libssl-dev zlib1g-dev libbz2-dev \
+  libreadline-dev libncursesw5-dev xz-utils \
+  libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
 
 if ! command -v dart >/dev/null 2>&1; then
   echo "==> Installing Dart SDK"
