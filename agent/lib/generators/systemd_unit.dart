@@ -30,14 +30,27 @@ class SystemdUnit {
 
   /// When true, relax sandbox flags that break the CPython interpreter:
   ///   - `MemoryDenyWriteExecute` must be off (Python JIT / .pyc bytecode)
-  ///   - The venv directory needs write access so gunicorn can create .pyc files
+  ///   - The venv and source tree need write access for .pyc / __pycache__
   final bool isPython;
 
   String render() {
-    final extraRW = isPython ? ' $workDir/current/.venv' : '';
+    // Python needs write access to:
+    //  - the venv for pip-created .dist-info stamps and script wrappers
+    //  - the source tree so Python can write __pycache__ / .pyc files
+    final extraRW = isPython
+        ? ' $workDir/current/.venv $workDir/releases/current_build'
+        : '';
     final mdwe = isPython
         ? '# MemoryDenyWriteExecute disabled for CPython (bytecode compilation)'
         : 'MemoryDenyWriteExecute=true';
+
+    // Python apps (gunicorn/uvicorn) need the source tree as their working
+    // directory so that the project's top-level packages (e.g. `core`, `blog`)
+    // are on sys.path without requiring a PYTHONPATH override. The source is
+    // always at releases/current_build after a successful build; $workDir/current
+    // only holds the .venv symlink and compiled binaries for non-Python runtimes.
+    final workingDir =
+        isPython ? '$workDir/releases/current_build' : '$workDir/current';
 
     return '''
 [Unit]
@@ -49,7 +62,7 @@ PartOf=gisila-apps.target
 Type=simple
 User=$linuxUser
 Group=$linuxUser
-WorkingDirectory=$workDir/current
+WorkingDirectory=$workingDir
 ExecStart=$startCommand
 Restart=always
 RestartSec=5
