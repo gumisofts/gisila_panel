@@ -798,8 +798,24 @@ Future<void> _pgInstallInstance(int version, int port) async {
   await _sudo('apt-get', ['update', '-qq']);
   await _aptInstall(['postgresql-$version']);
 
-  // 3. Configure port in postgresql.conf.
+  // 3. Ensure the "$version/main" cluster exists.
+  //
+  // Installing the apt package does NOT reliably auto-create a cluster (e.g.
+  // when other PostgreSQL versions are already present on the host — only the
+  // first-installed version gets a "main" cluster). The systemd unit
+  // `postgresql@$version-main.service` carries
+  // `AssertPathExists=/etc/postgresql/$version/main/postgresql.conf`, so it
+  // aborts with "Assertion failed on job" when the cluster is missing.
+  // Create it explicitly on the requested port. Without `--start`,
+  // pg_createcluster only lays down the config; the systemctl restart below
+  // brings it online.
   final confPath = '/etc/postgresql/$version/main/postgresql.conf';
+  if (!File(confPath).existsSync()) {
+    await _sudo('pg_createcluster', ['$version', 'main', '-p', '$port']);
+  }
+
+  // 4. Configure port in postgresql.conf (enforce it even if the cluster
+  // already existed on a different port).
   final conf = File(confPath);
   if (conf.existsSync()) {
     var content = await conf.readAsString();
@@ -813,7 +829,7 @@ Future<void> _pgInstallInstance(int version, int port) async {
     await _writeFileSudo(confPath, content);
   }
 
-  // 4. Enable + start the versioned service unit.
+  // 5. Enable + start the versioned service unit.
   await _sudo('systemctl', ['enable', 'postgresql@$version-main']);
   await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
 }
