@@ -123,3 +123,17 @@ List<String> buildAgentCmd(List<String> args) {
   }
   return ['sudo', '--non-interactive', hostConfig.agentBin, ...args];
 }
+
+/// Like [buildAgentCmd] but never uses sudo.
+///
+/// Used by the API server's runtime-log streaming. The API runs as the
+/// unprivileged `gisila` user with systemd `NoNewPrivileges=true`, so it can
+/// never invoke sudo regardless of `AGENT_MODE`. The agent's `logs` command
+/// only needs to read journald, which works when `gisila` is a member of the
+/// `systemd-journal` group (set up by infra/install.sh).
+List<String> buildAgentCmdNoSudo(List<String> args) {
+  if (hostConfig.agentBin == 'dart') {
+    return ['dart', 'run', hostConfig.agentDartEntry, ...args];
+  }
+  return [hostConfig.agentBin, ...args];
+}

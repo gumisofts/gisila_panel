@@ -238,7 +238,10 @@ Future<void> _streamRuntimeLogs(
     return;
   }
 
-  final cmd = buildAgentCmd([
+  // Never use sudo here: the API runs as the unprivileged `gisila` user with
+  // NoNewPrivileges=true and can't escalate. The agent reads journald directly
+  // via the systemd-journal group instead.
+  final cmd = buildAgentCmdNoSudo([
     'logs',
     '--user',
     user,
