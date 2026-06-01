@@ -219,9 +219,12 @@ Future<void> _applyUnit(List<String> args) async {
     final timeout =
         (timeoutRaw != null && timeoutRaw.isNotEmpty) ? timeoutRaw : '120';
     final bindRaw = r['gunicorn-bind'] as String?;
-    // Default bind tracks the systemd-provided $PORT (= the app's internal port).
+    // Use the concrete port number directly. systemd only expands $VAR when it
+    // is a complete whitespace-delimited token in ExecStart; embedded occurrences
+    // like "0.0.0.0:$PORT" are passed through literally, so gunicorn would
+    // receive the string "$PORT" rather than the actual port number.
     final bind =
-        (bindRaw != null && bindRaw.isNotEmpty) ? bindRaw : '0.0.0.0:\$PORT';
+        (bindRaw != null && bindRaw.isNotEmpty) ? bindRaw : '0.0.0.0:$port';
     final extraArgs = r['gunicorn-extra-args'] as String?;
     final venv = '$workDir/current/.venv';
     final logs = '$workDir/logs';
