@@ -348,8 +348,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
   }
 
   if (type == 'postfix') {
-    await _sudo(
-        'apt-get', ['-qq', '-y', 'install', 'postfix', 'libsasl2-modules']);
+    await _aptInstall(['postfix', 'libsasl2-modules']);
     await _serviceConfigure(type, config);
     await _serviceCtl('enable', 'postfix');
     await _serviceCtl('start', 'postfix');
@@ -361,7 +360,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
     final pkgs = ['dovecot-core'];
     if (protos.contains('imap')) pkgs.add('dovecot-imapd');
     if (protos.contains('pop3')) pkgs.add('dovecot-pop3d');
-    await _sudo('apt-get', ['-qq', '-y', 'install', ...pkgs]);
+    await _aptInstall(pkgs);
     await _serviceConfigure(type, config);
     await _serviceCtl('enable', 'dovecot');
     await _serviceCtl('start', 'dovecot');
@@ -369,7 +368,7 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
   }
 
   // apt install (redis, memcached, …).
-  await _sudo('apt-get', ['-qq', '-y', 'install', pkg!]);
+  await _aptInstall([pkg!]);
   await _serviceConfigure(type, config);
   await _serviceCtl('enable', type);
   await _serviceCtl('start', type);
@@ -672,6 +671,10 @@ Future<void> _run(String exe, List<String> args, {bool failOk = false}) async {
 Future<void> _sudo(String exe, List<String> args, {bool failOk = false}) =>
     _run('sudo', [exe, ...args], failOk: failOk);
 
+/// Install one or more apt packages non-interactively.
+Future<void> _aptInstall(List<String> packages) =>
+    _sudo('apt-get', ['-qq', '-y', 'install', ...packages]);
+
 /// Write [content] to a privileged [path] using `sudo tee`.
 Future<void> _writeFileSudo(String path, String content) async {
   final proc = await Process.start('sudo', ['tee', path]);
@@ -793,7 +796,7 @@ Future<void> _pgInstallInstance(int version, int port) async {
   }
 
   await _sudo('apt-get', ['update', '-qq']);
-  await _sudo('apt-get', ['-qq', '-y', 'install', 'postgresql-$version']);
+  await _aptInstall(['postgresql-$version']);
 
   // 3. Configure port in postgresql.conf.
   final confPath = '/etc/postgresql/$version/main/postgresql.conf';
@@ -961,10 +964,7 @@ Future<void> _pyenvInstallVersion(String version) async {
         '$_pyenvRoot/bin:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
   };
   // pyenv needs build deps.
-  await _sudo('apt-get', [
-    '-qq',
-    '-y',
-    'install',
+  await _aptInstall([
     'build-essential',
     'libssl-dev',
     'zlib1g-dev',

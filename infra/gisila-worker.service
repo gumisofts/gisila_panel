@@ -14,13 +14,20 @@ ExecStart=/usr/local/bin/gisila-worker
 Restart=on-failure
 RestartSec=5
 
-# The worker shells out to gisila-agent via sudo. It does NOT need root
-# itself, but it does need to read /etc/gisila/.env and write to /srv/gisila.
+# The worker shells out to `gisila-agent` via `sudo` to perform host
+# management: installing apt packages, creating Linux users, writing nginx
+# vhosts and systemd units, provisioning Postgres, etc.
+#
+# IMPORTANT: systemd sandbox directives (ProtectSystem, ProtectHome,
+# PrivateTmp, …) install a private mount namespace that is INHERITED by every
+# child process — including the root agent spawned via sudo. With
+# `ProtectSystem=strict` the whole filesystem is mounted read-only except the
+# listed ReadWritePaths, so the agent (even as root) cannot write to
+# /var/cache/apt, /var/lib/dpkg, /usr, /etc, … and *every* install fails with
+# "Read-only file system". The worker must therefore run without a filesystem
+# sandbox. Defense-in-depth is preserved by the sudoers rule, which only lets
+# `gisila` execute the single `gisila-agent` binary as root.
 NoNewPrivileges=false
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/gisila /var/log/gisila /etc/gisila /srv/apps
 RestrictRealtime=true
 
 [Install]
