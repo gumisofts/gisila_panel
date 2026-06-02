@@ -2517,6 +2517,7 @@ class PostgresInstance with Preloadable {
   final int port;
   final String? status;
   final bool? isDefault;
+  final String? monitorPassword;
   final String? dataDirectory;
   final String? errorMessage;
   final DateTime? installedAt;
@@ -2530,6 +2531,7 @@ class PostgresInstance with Preloadable {
     required this.port,
     this.status,
     this.isDefault,
+    this.monitorPassword,
     this.dataDirectory,
     this.errorMessage,
     this.installedAt,
@@ -2545,6 +2547,7 @@ class PostgresInstance with Preloadable {
         port: row['port'] as int,
         status: row['status'] as String?,
         isDefault: row['is_default'] as bool?,
+        monitorPassword: row['monitor_password'] as String?,
         dataDirectory: row['data_directory'] as String?,
         errorMessage: row['error_message'] as String?,
         installedAt: row['installed_at'] == null
@@ -2569,6 +2572,7 @@ class PostgresInstance with Preloadable {
     'port': port,
     'status': status,
     'is_default': isDefault,
+    'monitor_password': monitorPassword,
     'data_directory': dataDirectory,
     'error_message': errorMessage,
     'installed_at': installedAt,
@@ -2596,6 +2600,7 @@ class PostgresInstance with Preloadable {
     int? port,
     String? status,
     bool? isDefault,
+    String? monitorPassword,
     String? dataDirectory,
     String? errorMessage,
     DateTime? installedAt,
@@ -2608,6 +2613,7 @@ class PostgresInstance with Preloadable {
     port: port ?? this.port,
     status: status ?? this.status,
     isDefault: isDefault ?? this.isDefault,
+    monitorPassword: monitorPassword ?? this.monitorPassword,
     dataDirectory: dataDirectory ?? this.dataDirectory,
     errorMessage: errorMessage ?? this.errorMessage,
     installedAt: installedAt ?? this.installedAt,
@@ -2655,6 +2661,10 @@ class PostgresInstanceTable {
     table: 'postgres_instances',
     column: 'is_default',
   );
+  static const ColumnRef<String?> monitorPassword = ColumnRef<String?>(
+    table: 'postgres_instances',
+    column: 'monitor_password',
+  );
   static const ColumnRef<String?> dataDirectory = ColumnRef<String?>(
     table: 'postgres_instances',
     column: 'data_directory',
@@ -2687,6 +2697,7 @@ class PostgresInstanceTable {
           'port',
           'status',
           'is_default',
+          'monitor_password',
           'data_directory',
           'error_message',
           'installed_at',
@@ -2874,6 +2885,253 @@ class PostgresDatabaseTable {
 
 Query<PostgresDatabase> postgresDatabases() =>
     Query<PostgresDatabase>(PostgresDatabaseTable.metadata);
+
+class MailDomain with Preloadable {
+  final int? id;
+  final String domain;
+  final bool? isActive;
+  final DateTime createdAt;
+
+  MailDomain({
+    this.id,
+    required this.domain,
+    this.isActive,
+    required this.createdAt,
+  });
+
+  factory MailDomain.fromRow(Map<String, dynamic> row) => MailDomain(
+    id: row['id'] as int?,
+    domain: row['domain'] as String,
+    isActive: row['is_active'] as bool?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'domain': domain,
+    'is_active': isActive,
+    'created_at': createdAt,
+  };
+
+  factory MailDomain.fromJson(Map<String, dynamic> json) =>
+      MailDomain.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MailDomain copyWith({
+    int? id,
+    String? domain,
+    bool? isActive,
+    DateTime? createdAt,
+  }) => MailDomain(
+    id: id ?? this.id,
+    domain: domain ?? this.domain,
+    isActive: isActive ?? this.isActive,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  static final Relation<MailDomain, MailAccount> accounts =
+      HasManyRelation<MailDomain, MailAccount>(
+        parentTable: 'mail_domains',
+        childTable: 'mail_accounts',
+        name: 'accounts',
+        childForeignKey: 'mail_domain_id',
+        childMeta: MailAccountTable.metadata,
+      );
+
+  /// Preloaded accounts; empty list when not preloaded.
+  List<MailAccount> get accountsList =>
+      preloaded<List<MailAccount>>('accounts') ?? const [];
+}
+
+class MailDomainTable {
+  MailDomainTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mail_domains',
+    column: 'id',
+  );
+  static const ColumnRef<String> domain = ColumnRef<String>(
+    table: 'mail_domains',
+    column: 'domain',
+  );
+  static const ColumnRef<bool?> isActive = ColumnRef<bool?>(
+    table: 'mail_domains',
+    column: 'is_active',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mail_domains',
+    column: 'created_at',
+  );
+
+  static const TableMeta<MailDomain> metadata = TableMeta<MailDomain>(
+    tableName: 'mail_domains',
+    primaryKey: 'id',
+    columnNames: ['id', 'domain', 'is_active', 'created_at'],
+    fromRow: MailDomain.fromRow,
+  );
+}
+
+Query<MailDomain> mailDomains() => Query<MailDomain>(MailDomainTable.metadata);
+
+class MailAccount with Preloadable {
+  final int? id;
+  final int mailDomainId;
+  final String address;
+  final String passwordHash;
+  final int? quotaMb;
+  final bool? isActive;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  MailAccount({
+    this.id,
+    required this.mailDomainId,
+    required this.address,
+    required this.passwordHash,
+    this.quotaMb,
+    this.isActive,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MailAccount.fromRow(Map<String, dynamic> row) => MailAccount(
+    id: row['id'] as int?,
+    mailDomainId: row['mail_domain_id'] as int,
+    address: row['address'] as String,
+    passwordHash: row['password_hash'] as String,
+    quotaMb: row['quota_mb'] as int?,
+    isActive: row['is_active'] as bool?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'mail_domain_id': mailDomainId,
+    'address': address,
+    'password_hash': passwordHash,
+    'quota_mb': quotaMb,
+    'is_active': isActive,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory MailAccount.fromJson(Map<String, dynamic> json) =>
+      MailAccount.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MailAccount copyWith({
+    int? id,
+    int? mailDomainId,
+    String? address,
+    String? passwordHash,
+    int? quotaMb,
+    bool? isActive,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => MailAccount(
+    id: id ?? this.id,
+    mailDomainId: mailDomainId ?? this.mailDomainId,
+    address: address ?? this.address,
+    passwordHash: passwordHash ?? this.passwordHash,
+    quotaMb: quotaMb ?? this.quotaMb,
+    isActive: isActive ?? this.isActive,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<MailAccount, MailDomain> mailDomain =
+      BelongsToRelation<MailAccount, MailDomain>(
+        parentTable: 'mail_accounts',
+        childTable: 'mail_domains',
+        name: 'mailDomain',
+        parentForeignKey: 'mail_domain_id',
+        childMeta: MailDomainTable.metadata,
+      );
+
+  /// Preloaded mailDomain; null when not preloaded or absent.
+  MailDomain? get mailDomainLoaded => preloaded<MailDomain>('mailDomain');
+}
+
+class MailAccountTable {
+  MailAccountTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mail_accounts',
+    column: 'id',
+  );
+  static const ColumnRef<int> mailDomainId = ColumnRef<int>(
+    table: 'mail_accounts',
+    column: 'mail_domain_id',
+  );
+  static const ColumnRef<String> address = ColumnRef<String>(
+    table: 'mail_accounts',
+    column: 'address',
+  );
+  static const ColumnRef<String> passwordHash = ColumnRef<String>(
+    table: 'mail_accounts',
+    column: 'password_hash',
+  );
+  static const ColumnRef<int?> quotaMb = ColumnRef<int?>(
+    table: 'mail_accounts',
+    column: 'quota_mb',
+  );
+  static const ColumnRef<bool?> isActive = ColumnRef<bool?>(
+    table: 'mail_accounts',
+    column: 'is_active',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mail_accounts',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'mail_accounts',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<MailAccount> metadata = TableMeta<MailAccount>(
+    tableName: 'mail_accounts',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'mail_domain_id',
+      'address',
+      'password_hash',
+      'quota_mb',
+      'is_active',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: MailAccount.fromRow,
+  );
+}
+
+Query<MailAccount> mailAccounts() =>
+    Query<MailAccount>(MailAccountTable.metadata);
 
 class AuditLog with Preloadable {
   final int? id;

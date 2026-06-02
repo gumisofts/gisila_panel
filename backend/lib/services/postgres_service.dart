@@ -5,6 +5,28 @@ import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:postgres/postgres.dart' as pg;
+
+/// Postgres settings the panel lets users tune via the Configuration tab.
+/// Keys must match `pg_settings.name`; the agent applies them with
+/// `ALTER SYSTEM SET` and restarts the cluster.
+const kTunableSettings = <String>[
+  'max_connections',
+  'shared_buffers',
+  'effective_cache_size',
+  'work_mem',
+  'maintenance_work_mem',
+  'wal_buffers',
+  'min_wal_size',
+  'max_wal_size',
+  'checkpoint_completion_target',
+  'random_page_cost',
+  'effective_io_concurrency',
+  'max_worker_processes',
+  'max_parallel_workers',
+  'max_parallel_workers_per_gather',
+  'log_min_duration_statement',
+];
 
 // Postgres major versions available from the pgdg repository.
 const kSupportedVersions = [14, 15, 16, 17, 18];
@@ -223,6 +245,252 @@ class PostgresService extends Service {
       'password': db.password,
       'url': url,
     };
+  }
+
+  // ── Metrics ───────────────────────────────────────────────────────────────
+
+  /// Live metrics for an instance: connection counts, throughput, cache hit
+  /// ratio, per-database sizes, plus host CPU/RAM sampled by the worker.
+  ///
+  /// Connection/DB stats are read directly over a localhost connection using
+  /// the read-only `gisila_monitor` role. If that role is not provisioned yet,
+  /// returns `{status: 'initializing'}` and triggers provisioning in the
+  /// background; the UI polls until it flips to `ok`.
+  Future<Map<String, Object?>> metrics(int id) async {
+    final inst = await findInstance(id);
+    if (inst.status != 'running') {
+      return {'status': 'not_running'};
+    }
+    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
+      await _ensureMonitor(inst);
+      return {'status': 'initializing'};
+    }
+    try {
+      final sql = await _queryStats(inst);
+      final host = await _hostStats(id);
+      return {'status': 'ok', 'host': host, ...sql};
+    } catch (e) {
+      // Most likely the monitor role isn't created yet (auth failure) — kick off
+      // provisioning and ask the client to retry.
+      await _ensureMonitor(inst);
+      return {'status': 'initializing', 'detail': e.toString()};
+    }
+  }
+
+  Future<Map<String, Object?>> _queryStats(PostgresInstance inst) async {
+    final conn = await pg.Connection.open(
+      pg.Endpoint(
+        host: '127.0.0.1',
+        port: inst.port,
+        database: 'postgres',
+        username: 'gisila_monitor',
+        password: inst.monitorPassword,
+      ),
+      settings: pg.ConnectionSettings(
+        sslMode: pg.SslMode.disable,
+        connectTimeout: const Duration(seconds: 5),
+        queryTimeout: const Duration(seconds: 10),
+      ),
+    );
+    try {
+      final activity = (await conn.execute(
+        "SELECT count(*) AS total, "
+        "count(*) FILTER (WHERE state='active') AS active, "
+        "count(*) FILTER (WHERE state='idle') AS idle, "
+        "count(*) FILTER (WHERE state='idle in transaction') AS idle_in_txn, "
+        "count(*) FILTER (WHERE wait_event_type='Lock') AS waiting "
+        "FROM pg_stat_activity WHERE backend_type='client backend'",
+      ))
+          .first
+          .toColumnMap();
+
+      final maxConn = _toInt((await conn.execute(
+        "SELECT setting::int AS v FROM pg_settings WHERE name='max_connections'",
+      ))
+          .first
+          .toColumnMap()['v']);
+
+      final db = (await conn.execute(
+        "SELECT coalesce(sum(xact_commit),0)::bigint AS commits, "
+        "coalesce(sum(xact_rollback),0)::bigint AS rollbacks, "
+        "coalesce(sum(blks_hit),0)::bigint AS hits, "
+        "coalesce(sum(blks_read),0)::bigint AS reads, "
+        "coalesce(sum(tup_inserted),0)::bigint AS inserted, "
+        "coalesce(sum(tup_updated),0)::bigint AS updated, "
+        "coalesce(sum(tup_deleted),0)::bigint AS deleted, "
+        "coalesce(sum(deadlocks),0)::bigint AS deadlocks "
+        "FROM pg_stat_database",
+      ))
+          .first
+          .toColumnMap();
+
+      final sizes = (await conn.execute(
+        "SELECT datname, pg_database_size(datname)::bigint AS size "
+        "FROM pg_database WHERE datname NOT IN ('template0','template1') "
+        "ORDER BY size DESC",
+      ))
+          .map((r) {
+        final m = r.toColumnMap();
+        return {'name': m['datname'], 'sizeBytes': _toInt(m['size'])};
+      }).toList();
+
+      final uptime = _toInt((await conn.execute(
+        "SELECT EXTRACT(EPOCH FROM (now()-pg_postmaster_start_time()))::bigint AS s",
+      ))
+          .first
+          .toColumnMap()['s']);
+
+      final hits = _toInt(db['hits']);
+      final reads = _toInt(db['reads']);
+      final total = hits + reads;
+      final cacheHitRatio = total > 0 ? hits / total : 1.0;
+
+      return {
+        'connections': {
+          'total': _toInt(activity['total']),
+          'active': _toInt(activity['active']),
+          'idle': _toInt(activity['idle']),
+          'idleInTransaction': _toInt(activity['idle_in_txn']),
+          'waiting': _toInt(activity['waiting']),
+          'max': maxConn,
+        },
+        'throughput': {
+          'commits': _toInt(db['commits']),
+          'rollbacks': _toInt(db['rollbacks']),
+          'inserted': _toInt(db['inserted']),
+          'updated': _toInt(db['updated']),
+          'deleted': _toInt(db['deleted']),
+          'deadlocks': _toInt(db['deadlocks']),
+        },
+        'cacheHitRatio': cacheHitRatio,
+        'uptimeSeconds': uptime,
+        'databases': sizes,
+      };
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /// Read the host CPU%/RAM snapshot the worker writes to Redis for this
+  /// instance's systemd unit, if present.
+  Future<Map<String, Object?>?> _hostStats(int id) async {
+    try {
+      final raw = await RedisClient.instance.get('gisila:pgstat:$id');
+      if (raw == null) return null;
+      return jsonDecode(raw) as Map<String, Object?>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Configuration ──────────────────────────────────────────────────────────
+
+  /// Read the current value of every tunable setting from `pg_settings`.
+  Future<Map<String, Object?>> getConfig(int id) async {
+    final inst = await findInstance(id);
+    if (inst.status != 'running') {
+      return {'status': 'not_running', 'settings': []};
+    }
+    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
+      await _ensureMonitor(inst);
+      return {'status': 'initializing', 'settings': []};
+    }
+    try {
+      final conn = await pg.Connection.open(
+        pg.Endpoint(
+          host: '127.0.0.1',
+          port: inst.port,
+          database: 'postgres',
+          username: 'gisila_monitor',
+          password: inst.monitorPassword,
+        ),
+        settings: pg.ConnectionSettings(
+          sslMode: pg.SslMode.disable,
+          connectTimeout: const Duration(seconds: 5),
+        ),
+      );
+      try {
+        final names = kTunableSettings.map((s) => "'$s'").join(',');
+        final rows = (await conn.execute(
+          "SELECT name, setting, unit, short_desc, context, vartype, "
+          "min_val, max_val, enumvals, boot_val, pending_restart "
+          "FROM pg_settings WHERE name IN ($names)",
+        ))
+            .map((r) {
+          final m = r.toColumnMap();
+          return {
+            'name': m['name'],
+            'value': m['setting']?.toString(),
+            'unit': m['unit']?.toString(),
+            'description': m['short_desc']?.toString(),
+            'context': m['context']?.toString(),
+            'type': m['vartype']?.toString(),
+            'min': m['min_val']?.toString(),
+            'max': m['max_val']?.toString(),
+            'enumVals': m['enumvals']?.toString(),
+            'bootValue': m['boot_val']?.toString(),
+            'pendingRestart': m['pending_restart'] == true,
+          };
+        }).toList();
+        // Preserve the curated order.
+        rows.sort((a, b) => kTunableSettings
+            .indexOf(a['name'] as String)
+            .compareTo(kTunableSettings.indexOf(b['name'] as String)));
+        return {'status': 'ok', 'settings': rows};
+      } finally {
+        await conn.close();
+      }
+    } catch (e) {
+      await _ensureMonitor(inst);
+      return {'status': 'initializing', 'settings': [], 'detail': e.toString()};
+    }
+  }
+
+  /// Apply configuration changes. Only whitelisted keys are accepted; the
+  /// change is applied with `ALTER SYSTEM SET` and the cluster restarted by the
+  /// worker (some settings such as `max_connections` require a restart).
+  Future<PostgresInstance> updateConfig(
+      int id, Map<String, String> settings) async {
+    final inst = await findInstance(id);
+    if (inst.status != 'running') {
+      throw HttpException(422, 'Instance must be running to change settings.');
+    }
+    final clean = <String, String>{};
+    settings.forEach((key, value) {
+      if (!kTunableSettings.contains(key)) return;
+      final v = value.trim();
+      // Reject values containing quotes/backslashes to keep ALTER SYSTEM safe.
+      if (v.contains("'") || v.contains(r'\')) {
+        throw HttpException(422, 'Invalid value for $key.');
+      }
+      clean[key] = v;
+    });
+    if (clean.isEmpty) {
+      throw HttpException(422, 'No valid settings to apply.');
+    }
+    await _patchInstance(id, {'status': 'pending'});
+    await _enqueue('configure_instance', {
+      'instanceId': id,
+      'settings': clean,
+    });
+    return findInstance(id);
+  }
+
+  /// Generate + persist a monitor password (if missing) and enqueue creation of
+  /// the `gisila_monitor` role on the instance.
+  Future<void> _ensureMonitor(PostgresInstance inst) async {
+    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
+      await _patchInstance(inst.id!, {'monitorPassword': generatePassword()});
+    }
+    await _enqueue('ensure_monitor', {'instanceId': inst.id});
+  }
+
+  static int _toInt(Object? v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is BigInt) return v.toInt();
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

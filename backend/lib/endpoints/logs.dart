@@ -36,10 +36,30 @@ Router logsRouter({required Database database}) {
     '/apps/<id|[0-9]+>/build-logs/<deploymentId|[0-9]+>',
     _buildLogSocket(database),
   );
+  router.get('/apps/<id|[0-9]+>/exec/<execId>', _execLogSocket(database));
   router.get('/services/<id|[0-9]+>/logs', _serviceLogSocket(database));
 
   return router;
 }
+
+/// Live command-execution logs — replays the buffered history then tails the
+/// channel the exec worker publishes to.
+Handler _execLogSocket(Database database) => webSocketHandler((webSocket) async {
+      await _authThen(webSocket, database: database,
+          handler: (auth, closed) async {
+        final execId = auth.execId;
+        if (execId == null) {
+          _sendError(webSocket, 'exec_required');
+          return;
+        }
+        await _bridgeRedis(
+          webSocket,
+          channel: 'gisila:logs:exec:$execId',
+          historyKey: 'gisila:logs:exec:$execId:history',
+          closed: closed,
+        );
+      });
+    });
 
 /// Live runtime logs — tails the app's systemd journal through the agent.
 Handler _logSocket(Database database) => webSocketHandler((webSocket) async {
@@ -98,10 +118,11 @@ Handler _serviceLogSocket(Database database) =>
 // ── Auth handshake ───────────────────────────────────────────────────────────
 
 class _Auth {
-  _Auth({this.app, this.deploymentId, this.serviceId});
+  _Auth({this.app, this.deploymentId, this.serviceId, this.execId});
   final App? app;
   final int? deploymentId;
   final int? serviceId;
+  final String? execId;
 }
 
 /// Drives the whole socket lifecycle with a **single** subscription (the
@@ -170,6 +191,7 @@ Future<_Auth?> _authenticate(
   final appId = msg['appId'] as int?;
   final deploymentId = msg['deploymentId'] as int?;
   final serviceId = msg['serviceId'] as int?;
+  final execId = msg['execId'] as String?;
 
   Future<_Auth?> fail(String error) async {
     _sendError(webSocket, error);
@@ -198,7 +220,12 @@ Future<_Auth?> _authenticate(
     if (app == null) return fail('app_not_found');
   }
 
-  return _Auth(app: app, deploymentId: deploymentId, serviceId: serviceId);
+  return _Auth(
+    app: app,
+    deploymentId: deploymentId,
+    serviceId: serviceId,
+    execId: execId,
+  );
 }
 
 void _sendError(dynamic webSocket, String error) {

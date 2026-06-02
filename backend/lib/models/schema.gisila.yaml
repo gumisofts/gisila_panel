@@ -515,6 +515,12 @@ PostgresInstance:
     is_default:
       type: boolean
       default: false
+    # Password for the read-only `gisila_monitor` role the panel uses to query
+    # pg_stat_* metrics. Created on install; null on legacy instances until the
+    # first metrics request provisions it.
+    monitor_password:
+      type: varchar
+      is_null: true
     data_directory:
       type: varchar
       is_null: true
@@ -557,6 +563,56 @@ PostgresDatabase:
     error_message:
       type: text
       is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+# ─────────────────────────── Mail server ─────────────────────────────────────
+#
+# Virtual-mailbox email hosting on top of Postfix (MTA) + Dovecot (IMAP/POP3).
+# Domains and mailboxes are stored here and synced to the host's virtual maps by
+# the agent, so a single Postfix/Dovecot install can serve many domains/accounts.
+
+MailDomain:
+  columns:
+    domain:
+      type: varchar
+      is_unique: true
+      is_index: true
+      is_null: false
+    is_active:
+      type: boolean
+      default: true
+    created_at:
+      type: timestamp
+      is_null: false
+
+MailAccount:
+  columns:
+    mail_domain:
+      type: foreign_key
+      references: MailDomain
+      is_null: false
+      reverse_name: accounts
+      on_delete: cascade
+    address:                      # full email address local@domain
+      type: varchar
+      is_unique: true
+      is_index: true
+      is_null: false
+    # Dovecot/Postfix-compatible password hash (e.g. {SHA512-CRYPT}…).
+    password_hash:
+      type: varchar
+      is_null: false
+    quota_mb:
+      type: integer
+      is_null: true               # null = unlimited
+    is_active:
+      type: boolean
+      default: true
     created_at:
       type: timestamp
       is_null: false

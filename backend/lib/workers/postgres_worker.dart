@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/services/postgres_service.dart' show generatePassword;
 
 /// Handles async PostgreSQL jobs from the [gisila:queue:postgres] queue.
 ///
@@ -37,6 +38,13 @@ class PostgresWorker {
           payload['instanceId'] as int,
           payload['databaseId'] as int,
         );
+      case 'ensure_monitor':
+        await _ensureMonitor(payload['instanceId'] as int);
+      case 'configure_instance':
+        await _configureInstance(
+          payload['instanceId'] as int,
+          payload['settings'],
+        );
       default:
         logger.w('postgres_worker: unknown action $action — skipping');
     }
@@ -59,11 +67,28 @@ class PostgresWorker {
         '${instance.port}',
       ]);
 
+      // Provision the read-only monitoring role used by the metrics endpoint.
+      final monitorPassword = generatePassword();
       await _patchInstance(instanceId, {
         'status': 'running',
         'installedAt': DateTime.now().toUtc().toIso8601String(),
         'errorMessage': null,
+        'monitorPassword': monitorPassword,
       });
+      try {
+        await _runAgent([
+          'postgres',
+          'ensure-monitor',
+          '--version',
+          '${instance.version}',
+          '--port',
+          '${instance.port}',
+          '--password',
+          monitorPassword,
+        ]);
+      } catch (e) {
+        logger.w('postgres_worker: monitor role provisioning failed: $e');
+      }
     } catch (e) {
       // Attempt best-effort rollback to avoid leaving a partially-installed
       // PostgreSQL package on the host.
@@ -148,6 +173,59 @@ class PostgresWorker {
         '${instance.version}',
       ]);
       await _patchInstance(instanceId, {'status': 'stopped'});
+    } catch (e) {
+      await _patchInstance(instanceId, {
+        'status': 'failed',
+        'errorMessage': e.toString(),
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureMonitor(int instanceId) async {
+    final instance = await _findInstance(instanceId);
+    if (instance == null) return;
+    final password = instance.monitorPassword;
+    if (password == null || password.isEmpty) {
+      logger.w('postgres_worker: ensure_monitor with no password — skipping');
+      return;
+    }
+    try {
+      await _runAgent([
+        'postgres',
+        'ensure-monitor',
+        '--version',
+        '${instance.version}',
+        '--port',
+        '${instance.port}',
+        '--password',
+        password,
+      ]);
+    } catch (e) {
+      logger.w('postgres_worker: ensure-monitor failed (will retry): $e');
+    }
+  }
+
+  Future<void> _configureInstance(int instanceId, Object? settings) async {
+    final instance = await _findInstance(instanceId);
+    if (instance == null) return;
+    try {
+      final json = jsonEncode(settings is Map ? settings : <String, Object?>{});
+      await _runAgent([
+        'postgres',
+        'configure',
+        '--version',
+        '${instance.version}',
+        '--port',
+        '${instance.port}',
+        '--settings',
+        json,
+      ]);
+      await _patchInstance(instanceId, {
+        'status': 'running',
+        'errorMessage': null,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      });
     } catch (e) {
       await _patchInstance(instanceId, {
         'status': 'failed',

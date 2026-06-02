@@ -255,3 +255,20 @@ export interface ManagedService {
   updatedAt?: string | null;
   _def?: ServiceDef; // injected by the retrieve endpoint
 }
+
+export interface MailDomain {
+  id: ID;
+  domain: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface MailAccount {
+  id: ID;
+  mailDomainId: ID;
+  address: string;
+  quotaMb?: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+}

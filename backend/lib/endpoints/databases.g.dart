@@ -33,6 +33,12 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
         'port': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
+    spec.putSchema('UpdateConfigForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'settings': <String, Object?>{'type': 'object'}
+      }
+    });
     spec.putSchema('CreateDatabaseForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -377,6 +383,165 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
             ],
             responses: <String, ResponseSpec>{
               '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/metrics';
+      final openApiPath = '$prefix/databases/{id}/metrics';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.metrics(id, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Live metrics for an instance',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/config';
+      final openApiPath = '$prefix/databases/{id}/config';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.getConfig(id, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Read tunable Postgres settings',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/config';
+      final openApiPath = '$prefix/databases/{id}/config';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.put(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, UpdateConfigForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.updateConfig(id, form, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'put',
+          Operation(
+            summary: 'Update tunable Postgres settings',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/UpdateConfigForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

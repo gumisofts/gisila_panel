@@ -104,6 +104,12 @@ extension AppsApiGisilaDoc on AppsApi {
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
+    spec.putSchema('ExecCommandForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'command': <String, Object?>{'type': 'string'}
+      }
+    });
     spec.putSchema('EnvVarForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -523,6 +529,63 @@ extension AppsApiGisilaDoc on AppsApi {
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
               )
             ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/apps/<id>/exec';
+      final openApiPath = '$prefix/apps/{id}/exec';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, ExecCommandForm.new);
+                final apps = ctx.service<AppsService>();
+                final result = await this.exec(id, form, apps, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Run a one-off command in the app environment',
+            tags: <String>['Apps'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/ExecCommandForm'
+              })
+            }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
                 'application/json': MediaType(schema: <String, Object?>{

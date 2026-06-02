@@ -11,6 +11,15 @@ class CreateInstanceForm extends Form {
   List<FormField<Object?>> collectFields() => [version, displayName, port];
 }
 
+/// `PUT /databases/{id}/config` — update tunable Postgres settings.
+class UpdateConfigForm extends Form {
+  // JSON object of { settingName: "value", … }.
+  final settings = JsonField(name: 'settings', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() => [settings];
+}
+
 /// `POST /databases/{id}/dbs` — create a role + database inside an instance.
 class CreateDatabaseForm extends Form {
   final dbName = StringField(name: 'dbName', required: true, maxLength: 63);

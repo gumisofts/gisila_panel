@@ -70,4 +70,18 @@ class RedisClient {
     final cmd = await connection();
     await cmd.send_object(['EXPIRE', key, '$seconds']);
   }
+
+  /// Set [key] to [value] with a [seconds] TTL (used for short-lived metrics
+  /// snapshots written by the worker and read by the API).
+  Future<void> setEx(String key, int seconds, String value) async {
+    final cmd = await connection();
+    await cmd.send_object(['SET', key, value, 'EX', '$seconds']);
+  }
+
+  /// Get the string value of [key], or null when it does not exist.
+  Future<String?> get(String key) async {
+    final cmd = await connection();
+    final result = await cmd.send_object(['GET', key]);
+    return result?.toString();
+  }
 }

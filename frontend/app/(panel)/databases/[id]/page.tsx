@@ -33,6 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, fetcher } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { MetricsPanel } from "./_panels/metrics-panel";
+import { ConfigPanel } from "./_panels/config-panel";
 import type {
   PostgresInstance,
   PostgresDatabase,
@@ -282,6 +284,9 @@ export default function InstancePage() {
         </div>
       )}
 
+      {/* Metrics */}
+      <MetricsPanel id={String(id)} running={isRunning} />
+
       {/* Databases section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -369,6 +374,9 @@ export default function InstancePage() {
           </div>
         )}
       </div>
+
+      {/* Configuration */}
+      <ConfigPanel id={String(id)} running={isRunning} />
 
       {/* Create database dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

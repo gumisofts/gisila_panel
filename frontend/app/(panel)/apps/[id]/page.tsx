@@ -22,6 +22,7 @@ import { DeploymentsTab } from "./_tabs/deployments";
 import { EnvsTab } from "./_tabs/envs";
 import { DomainsTab } from "./_tabs/domains";
 import { LogsTab } from "./_tabs/logs";
+import { ConsoleTab } from "./_tabs/console";
 import { MetricsTab } from "./_tabs/metrics";
 import { SettingsTab } from "./_tabs/settings";
 
@@ -104,6 +105,7 @@ export default function AppDetailPage() {
           <TabsTrigger value="envs">Environment</TabsTrigger>
           <TabsTrigger value="domains">Domains</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
@@ -112,6 +114,7 @@ export default function AppDetailPage() {
         <TabsContent value="envs"><EnvsTab appId={appId} /></TabsContent>
         <TabsContent value="domains"><DomainsTab appId={appId} /></TabsContent>
         <TabsContent value="logs"><LogsTab appId={appId} /></TabsContent>
+        <TabsContent value="console"><ConsoleTab appId={appId} /></TabsContent>
         <TabsContent value="metrics"><MetricsTab appId={appId} /></TabsContent>
         <TabsContent value="settings">
           <SettingsTab app={app} onSaved={mutate} />

@@ -12,6 +12,7 @@ import 'package:gisila_panel/endpoints/auth.dart';
 import 'package:gisila_panel/endpoints/deployments.dart';
 import 'package:gisila_panel/endpoints/domains.dart';
 import 'package:gisila_panel/endpoints/logs.dart' as live_logs;
+import 'package:gisila_panel/endpoints/mail.dart';
 import 'package:gisila_panel/endpoints/metrics.dart';
 import 'package:gisila_panel/endpoints/projects.dart';
 import 'package:gisila_panel/endpoints/security.dart';
@@ -28,6 +29,7 @@ import 'package:gisila_panel/services/domains_service.dart';
 import 'package:gisila_panel/services/envs_service.dart';
 import 'package:gisila_panel/services/lifecycle_service.dart';
 import 'package:gisila_panel/services/projects_service.dart';
+import 'package:gisila_panel/services/mail_service.dart';
 import 'package:gisila_panel/services/managed_service_service.dart';
 import 'package:gisila_panel/services/postgres_service.dart';
 import 'package:gisila_panel/services/security_service.dart';
@@ -75,6 +77,7 @@ Future<Handler> application() async {
   app.registerService<SecurityService>(SecurityService.new);
   app.registerService<ManagedServiceService>(ManagedServiceService.new);
   app.registerService<PostgresService>(PostgresService.new);
+  app.registerService<MailService>(MailService.new);
 
   // ── Controllers + admin + docs ───────────────────────────────────────
   app.registerController(
@@ -89,6 +92,7 @@ Future<Handler> application() async {
       SecurityApi().attachToApp(app, router, spec, prefix: prefix);
       ServicesApi().attachToApp(app, router, spec, prefix: prefix);
       DatabasesApi().attachToApp(app, router, spec, prefix: prefix);
+      MailApi().attachToApp(app, router, spec, prefix: prefix);
 
       router.mount('/ws', live_logs.logsRouter(database: database).call);
       router.mount('/admin', adminHandler());

@@ -95,7 +95,8 @@ export function MetricsTab({ appId }: { appId: number }) {
 
       {points.length === 0 && (
         <div className="md:col-span-2 rounded-xl border border-dashed border-border/60 p-12 text-center text-sm text-muted-foreground">
-          No samples yet. Metrics start streaming once the app is running.
+          No samples yet. The collector records CPU and memory every ~20s while
+          the app is running — give it a minute after a deploy.
         </div>
       )}
     </div>

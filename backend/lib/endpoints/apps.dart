@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:gisila_doc/gisila_doc.dart';
 import 'package:gisila_panel/forms/app_forms.dart';
+import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
 import 'package:gisila_panel/services/envs_service.dart';
 import 'package:gisila_panel/services/lifecycle_service.dart';
+import 'package:uuid/uuid.dart';
 
 part 'apps.g.dart';
 
@@ -155,6 +159,38 @@ class AppsApi {
     final user = ctx.principal!.claims['user'] as User;
     await lifecycle.restart(user, id);
     return <String, Object?>{'detail': 'Restart requested.'};
+  }
+
+  // ── Command execution ────────────────────────────────────────────────
+
+  /// Queue a one-off command to run inside the app's environment (as the app's
+  /// Linux user, with the Python virtualenv activated for python apps).
+  ///
+  /// Returns an `execId`; the caller then opens the WebSocket
+  /// `/ws/apps/{id}/exec/{execId}` to stream stdout/stderr live.
+  @Post('/{id}/exec', summary: 'Run a one-off command in the app environment')
+  Future<Map<String, Object?>> exec(
+    int id,
+    ExecCommandForm form,
+    AppsService apps,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final app = await apps.findForUser(user, id);
+    final command = form.command.value!.trim();
+    if (command.isEmpty) {
+      throw HttpException(422, 'command is required');
+    }
+    final execId = const Uuid().v4();
+    await RedisClient.instance.rpush(
+      'gisila:queue:exec',
+      jsonEncode({
+        'appId': app.id,
+        'execId': execId,
+        'command': command,
+      }),
+    );
+    return <String, Object?>{'execId': execId};
   }
 
   // ── Env vars ─────────────────────────────────────────────────────────

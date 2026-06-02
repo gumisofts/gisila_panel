@@ -78,6 +78,34 @@ class DatabasesApi {
     return {'detail': 'Uninstall queued.'};
   }
 
+  // ── Metrics & configuration ─────────────────────────────────────────────────
+
+  @Get('/{id}/metrics', summary: 'Live metrics for an instance')
+  Future<Map<String, Object?>> metrics(
+    int id,
+    PostgresService svc,
+  ) async {
+    return svc.metrics(id);
+  }
+
+  @Get('/{id}/config', summary: 'Read tunable Postgres settings')
+  Future<Map<String, Object?>> getConfig(
+    int id,
+    PostgresService svc,
+  ) async {
+    return svc.getConfig(id);
+  }
+
+  @Put('/{id}/config', summary: 'Update tunable Postgres settings')
+  Future<Map<String, Object?>> updateConfig(
+    int id,
+    UpdateConfigForm form,
+    PostgresService svc,
+  ) async {
+    final instance = await svc.updateConfig(id, _toStringMap(form.settings.value));
+    return _serializeInstance(instance);
+  }
+
   // ── Databases ─────────────────────────────────────────────────────────────
 
   @Get('/{id}/dbs', summary: 'List databases in this instance')
@@ -188,4 +216,11 @@ List<String> _toStringList(Object? raw) {
   if (raw == null) return [];
   if (raw is List) return raw.map((e) => e.toString()).toList();
   return [];
+}
+
+Map<String, String> _toStringMap(Object? raw) {
+  if (raw is Map) {
+    return raw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+  }
+  return {};
 }

@@ -47,8 +47,17 @@ Future<void> main(List<String> args) async {
       case 'logs':
         await _logs(rest);
         return; // _logs streams and exits on its own.
+      case 'stat':
+        await _stat(rest);
+        return; // _stat prints a single JSON line and exits.
+      case 'exec':
+        await _exec(rest);
+        return; // _exec streams output and sets exitCode itself.
       case 'service':
         await _service(rest);
+        break;
+      case 'mail':
+        await _mail(rest);
         break;
       case 'postgres':
         await _postgres(rest);
@@ -387,6 +396,332 @@ Future<void> _logs(List<String> args) async {
   await intSub.cancel();
   await stdout.flush();
   exit(code);
+}
+
+// ── One-off command execution ────────────────────────────────────────────────
+
+/// Run an arbitrary command as the app's Linux user, inside the app's working
+/// directory. For Python apps the project virtualenv is activated first so that
+/// `python`, `pip`, `manage.py`, etc. resolve against the app's interpreter.
+///
+/// stdout/stderr are streamed line-by-line to this process's stdout/stderr (the
+/// worker forwards them to the live console). The process exit code becomes this
+/// agent invocation's exit code.
+Future<void> _exec(List<String> args) async {
+  final r = _parse(args, (p) {
+    p.addOption('user', mandatory: true);
+    p.addOption('work-dir', mandatory: true);
+    p.addOption('runtime', defaultsTo: 'binary');
+    p.addOption('command', mandatory: true);
+    p.addOption('timeout', defaultsTo: '300'); // seconds
+  });
+  final user = AgentValidators.requireUser(r['user'] as String?);
+  final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  final runtime = r['runtime'] as String;
+  final command = (r['command'] as String?)?.trim() ?? '';
+  if (command.isEmpty) throw ArgumentError('--command is required');
+  final timeout = int.tryParse(r['timeout'] as String? ?? '300') ?? 300;
+
+  final isPython = runtime == 'python';
+  // Python source (with .venv) lives under releases/current_build; other
+  // runtimes keep their artifact under current/.
+  final runDir =
+      isPython ? '$workDir/releases/current_build' : '$workDir/current';
+  final activate = isPython
+      ? '[ -f .venv/bin/activate ] && source .venv/bin/activate; '
+      : '';
+  final script = 'cd "$runDir" 2>/dev/null || cd "$workDir"; $activate$command';
+
+  final invocation = _isRoot
+      ? ['runuser', '-u', user, '--', 'bash', '-lc', script]
+      : ['sudo', '-u', user, 'bash', '-lc', script];
+
+  final proc =
+      await Process.start(invocation.first, invocation.skip(1).toList());
+
+  final outSub = proc.stdout
+      .transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(stdout.writeln);
+  final errSub = proc.stderr
+      .transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(stderr.writeln);
+
+  var timedOut = false;
+  final timer = Timer(Duration(seconds: timeout), () {
+    timedOut = true;
+    proc.kill(ProcessSignal.sigkill);
+  });
+
+  final code = await proc.exitCode;
+  timer.cancel();
+  await outSub.cancel();
+  await errSub.cancel();
+  if (timedOut) {
+    stderr.writeln('[exec] command timed out after ${timeout}s and was killed');
+  }
+  await stdout.flush();
+  exitCode = code;
+}
+
+// ── Resource sampling ────────────────────────────────────────────────────────
+
+/// Sample a running unit's resource usage and print a single JSON line:
+///   {"ok":true,"memBytes":N,"rssBytes":N,"cpuUsageNsec":N,"tasks":N,"active":S}
+///
+/// On a systemd host this reads `systemctl show` (cgroup accounting — covers the
+/// whole process tree, e.g. gunicorn masters + workers). In Docker (supervisord)
+/// it falls back to reading `/proc/<pid>` for the program's main process.
+///
+/// `cpuUsageNsec` is cumulative CPU time since the unit started; the caller
+/// computes a percentage from the delta between two samples.
+Future<void> _stat(List<String> args) async {
+  final r = _parse(args, (p) {
+    p.addOption('user'); // app linux user → unit gisila-<user>.service
+    p.addOption('unit'); // explicit systemd unit (e.g. postgresql@16-main)
+    p.addOption('program'); // explicit supervisord program name (Docker)
+  });
+  final user = r['user'] as String?;
+  final explicitUnit = r['unit'] as String?;
+  final program = r['program'] as String? ?? (user != null ? 'gisila-$user' : null);
+  final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
+
+  var memBytes = 0;
+  var cpuNsec = 0;
+  var tasks = 0;
+  var active = 'unknown';
+
+  if (isDocker) {
+    if (program == null) throw ArgumentError('--user or --program required');
+    final stat = await _statFromProc(program);
+    memBytes = stat.$1;
+    cpuNsec = stat.$2;
+    active = stat.$3;
+  } else {
+    final unit = explicitUnit ?? (user != null ? 'gisila-$user.service' : null);
+    if (unit == null) throw ArgumentError('--user or --unit required');
+    final res = await Process.run('systemctl', [
+      'show',
+      unit,
+      '--property=MemoryCurrent',
+      '--property=CPUUsageNSec',
+      '--property=TasksCurrent',
+      '--property=ActiveState',
+    ]);
+    final map = <String, String>{};
+    for (final line in (res.stdout as String).split('\n')) {
+      final i = line.indexOf('=');
+      if (i > 0) map[line.substring(0, i)] = line.substring(i + 1).trim();
+    }
+    memBytes = _statInt(map['MemoryCurrent']);
+    cpuNsec = _statInt(map['CPUUsageNSec']);
+    tasks = _statInt(map['TasksCurrent']);
+    active = map['ActiveState'] ?? 'unknown';
+  }
+
+  stdout.writeln(jsonEncode({
+    'ok': true,
+    'memBytes': memBytes,
+    'rssBytes': memBytes,
+    'cpuUsageNsec': cpuNsec,
+    'tasks': tasks,
+    'active': active,
+  }));
+}
+
+/// Parse a systemd numeric property value, treating "[not set]" / non-numeric
+/// (e.g. the sentinel `18446744073709551615` meaning "unset") as zero.
+int _statInt(String? raw) {
+  if (raw == null) return 0;
+  final v = int.tryParse(raw.trim());
+  if (v == null || v < 0) return 0;
+  // systemd reports unset 64-bit counters as UINT64_MAX, which Dart parses as a
+  // negative int; the < 0 guard above already handles that case.
+  return v;
+}
+
+/// Docker fallback: resolve a supervisord program's PID and read `/proc/<pid>`.
+/// Returns (memBytes, cpuNsec, activeState).
+Future<(int, int, String)> _statFromProc(String program) async {
+  final pidRes =
+      await Process.run('supervisorctl', ['pid', program]);
+  final pid = int.tryParse((pidRes.stdout as String).trim());
+  if (pid == null || pid <= 0) return (0, 0, 'inactive');
+
+  // Memory: VmRSS (kB) from /proc/<pid>/status.
+  var memBytes = 0;
+  try {
+    final status = await File('/proc/$pid/status').readAsString();
+    final m = RegExp(r'VmRSS:\s+(\d+)\s+kB').firstMatch(status);
+    if (m != null) memBytes = int.parse(m.group(1)!) * 1024;
+  } catch (_) {}
+
+  // CPU: utime + stime (fields 14,15 in /proc/<pid>/stat) in clock ticks.
+  // Assume the conventional 100 Hz tick (1 tick = 10 ms = 1e7 ns).
+  var cpuNsec = 0;
+  try {
+    final stat = await File('/proc/$pid/stat').readAsString();
+    // The comm field (2nd) may contain spaces/parens; split after the last ')'.
+    final after = stat.substring(stat.lastIndexOf(')') + 1).trim();
+    final fields = after.split(RegExp(r'\s+'));
+    // fields[0] is state (field 3). utime=field14→index 11, stime=field15→12.
+    final utime = int.tryParse(fields[11]) ?? 0;
+    final stime = int.tryParse(fields[12]) ?? 0;
+    cpuNsec = (utime + stime) * 10000000;
+  } catch (_) {}
+
+  return (memBytes, cpuNsec, 'active');
+}
+
+// ── Mail server (Postfix + Dovecot virtual mailboxes) ────────────────────────
+
+Future<void> _mail(List<String> args) async {
+  if (args.isEmpty) {
+    stderr.writeln('Usage: gisila-agent mail <setup|sync> [flags]');
+    exitCode = 64;
+    return;
+  }
+  final action = args.first;
+  final parser = ArgParser()
+    ..addOption('domains', help: 'JSON array of domain strings')
+    ..addOption('accounts',
+        help: 'JSON array of {address, hash, quota} objects');
+  final r = parser.parse(args.sublist(1));
+
+  switch (action) {
+    case 'setup':
+      await _mailEnsureStack();
+    case 'sync':
+      final domains = (jsonDecode(r['domains'] as String? ?? '[]') as List)
+          .map((e) => e.toString())
+          .toList();
+      final accounts = (jsonDecode(r['accounts'] as String? ?? '[]') as List)
+          .whereType<Map>()
+          .toList();
+      await _mailSync(domains, accounts);
+    default:
+      throw ArgumentError('Unknown mail action: $action');
+  }
+}
+
+/// Install Postfix + Dovecot (if missing) and lay down the base virtual-mailbox
+/// configuration. Idempotent — safe to run before every sync.
+Future<void> _mailEnsureStack() async {
+  await _aptInstall([
+    'postfix',
+    'dovecot-core',
+    'dovecot-imapd',
+    'dovecot-lmtpd',
+  ]);
+
+  // Dedicated virtual-mail user owning every mailbox on disk.
+  await _sudo('groupadd', ['-g', '5000', 'vmail'], failOk: true);
+  await _sudo('useradd', [
+    '-r',
+    '-g',
+    'vmail',
+    '-u',
+    '5000',
+    'vmail',
+    '-d',
+    '/var/mail/vhosts',
+    '-s',
+    '/usr/sbin/nologin',
+  ], failOk: true);
+  await _sudo('mkdir', ['-p', '/var/mail/vhosts'], failOk: true);
+  await _sudo('chown', ['-R', 'vmail:vmail', '/var/mail/vhosts'], failOk: true);
+
+  // Postfix: route virtual domains to Dovecot LMTP, auth via Dovecot SASL.
+  const postconf = <String>[
+    'virtual_mailbox_base=/var/mail/vhosts',
+    'virtual_mailbox_maps=hash:/etc/postfix/vmailbox',
+    'virtual_minimum_uid=5000',
+    'virtual_uid_maps=static:5000',
+    'virtual_gid_maps=static:5000',
+    'virtual_transport=lmtp:unix:private/dovecot-lmtp',
+    'smtpd_sasl_type=dovecot',
+    'smtpd_sasl_path=private/auth',
+    'smtpd_sasl_auth_enable=yes',
+    'smtpd_recipient_restrictions='
+        'permit_sasl_authenticated, permit_mynetworks, reject_unauth_destination',
+  ];
+  for (final kv in postconf) {
+    await _sudo('postconf', ['-e', kv]);
+  }
+
+  // Dovecot: virtual users from a passwd-file, static userdb mapping to vmail.
+  const dovecotConf = r'''
+# Generated by gisila-agent — virtual mailbox hosting. Do not edit by hand.
+protocols = imap lmtp
+mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_privileged_group = vmail
+disable_plaintext_auth = no
+auth_mechanisms = plain login
+
+passdb {
+  driver = passwd-file
+  args = scheme=SSHA512 username_format=%u /etc/dovecot/users
+}
+userdb {
+  driver = static
+  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
+}
+
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = postfix
+    group = postfix
+  }
+}
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0660
+    user = postfix
+    group = postfix
+  }
+}
+''';
+  await _sudo('mkdir', ['-p', '/etc/dovecot/conf.d'], failOk: true);
+  await _writeFileSudo('/etc/dovecot/conf.d/99-gisila-mail.conf', dovecotConf);
+}
+
+/// Write the per-domain/per-account virtual maps and reload Postfix + Dovecot.
+Future<void> _mailSync(List<String> domains, List<Map> accounts) async {
+  await _mailEnsureStack();
+
+  // Which domains we are authoritative for (handled by the virtual transport).
+  await _sudo('postconf', ['-e', 'virtual_mailbox_domains=${domains.join(' ')}']);
+  await _sudo('postconf', ['-e', 'mydestination=localhost']);
+
+  for (final d in domains) {
+    await _sudo('mkdir', ['-p', '/var/mail/vhosts/$d'], failOk: true);
+  }
+  await _sudo('chown', ['-R', 'vmail:vmail', '/var/mail/vhosts'], failOk: true);
+
+  final vmailbox = StringBuffer();
+  final users = StringBuffer();
+  for (final a in accounts) {
+    final address = a['address']?.toString() ?? '';
+    final hash = a['hash']?.toString() ?? '';
+    final at = address.indexOf('@');
+    if (at <= 0 || hash.isEmpty) continue;
+    final local = address.substring(0, at);
+    final domain = address.substring(at + 1);
+    vmailbox.writeln('$address $domain/$local/');
+    users.writeln('$address:$hash::::::');
+  }
+
+  await _writeFileSudo('/etc/postfix/vmailbox', vmailbox.toString());
+  await _sudo('postmap', ['/etc/postfix/vmailbox']);
+
+  await _writeFileSudo('/etc/dovecot/users', users.toString());
+  await _sudo('chown', ['root:dovecot', '/etc/dovecot/users'], failOk: true);
+  await _sudo('chmod', ['640', '/etc/dovecot/users'], failOk: true);
+
+  await _serviceCtl('reload-or-restart', 'postfix');
+  await _serviceCtl('restart', 'dovecot');
 }
 
 // ── Service management ───────────────────────────────────────────────────────
@@ -833,7 +1168,9 @@ Future<void> _postgres(List<String> args) async {
     ..addOption('role', help: 'Role / user name')
     ..addOption('password', help: 'Role password')
     ..addOption('extensions',
-        help: 'Comma-separated extension names to CREATE EXTENSION');
+        help: 'Comma-separated extension names to CREATE EXTENSION')
+    ..addOption('settings',
+        help: 'JSON object of postgresql.conf settings to ALTER SYSTEM SET');
 
   final opts = parser.parse(args.sublist(1));
   final version = int.tryParse(opts['version'] as String? ?? '');
@@ -880,6 +1217,18 @@ Future<void> _postgres(List<String> args) async {
         throw ArgumentError('--db and --role required');
       }
       await _pgDropDatabase(version, db, role);
+
+    case 'ensure-monitor':
+      if (version == null) throw ArgumentError('--version required');
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      final pass = opts['password'] as String? ?? '';
+      if (pass.isEmpty) throw ArgumentError('--password required');
+      await _pgEnsureMonitor(version, port, pass);
+
+    case 'configure':
+      if (version == null) throw ArgumentError('--version required');
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgConfigure(version, port, opts['settings'] as String? ?? '{}');
 
     default:
       throw ArgumentError('Unknown postgres subcommand: $sub');
@@ -1011,6 +1360,53 @@ Future<void> _pgCreateDatabase(
       'CREATE EXTENSION IF NOT EXISTS "$ext";',
     ]);
   }
+}
+
+/// Create or update the read-only `gisila_monitor` role used by the panel to
+/// read pg_stat_* metrics. Idempotent. The password is always alphanumeric
+/// (panel-generated) so it is safe to embed in the SQL literal.
+Future<void> _pgEnsureMonitor(int version, int port, String password) async {
+  final pgBin = '/usr/lib/postgresql/$version/bin/psql';
+  Future<void> sql(String statement) =>
+      _runAs('postgres', [pgBin, '-p', '$port', '-c', statement]);
+
+  await sql("DO \$\$ BEGIN "
+      "IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'gisila_monitor') THEN "
+      "ALTER ROLE gisila_monitor WITH LOGIN PASSWORD '$password'; "
+      "ELSE "
+      "CREATE ROLE gisila_monitor WITH LOGIN PASSWORD '$password'; "
+      "END IF; END \$\$;");
+  // pg_monitor (PG 10+) grants read access to pg_stat_* views.
+  await sql('GRANT pg_monitor TO gisila_monitor;');
+}
+
+/// Apply tunable settings via `ALTER SYSTEM SET` then restart the cluster so
+/// restart-only settings (max_connections, shared_buffers, …) take effect.
+Future<void> _pgConfigure(int version, int port, String settingsJson) async {
+  final pgBin = '/usr/lib/postgresql/$version/bin/psql';
+  final settings = jsonDecode(settingsJson) as Map<String, dynamic>;
+  final keyRe = RegExp(r'^[a-z_][a-z0-9_]*$');
+
+  Future<void> sql(String statement) =>
+      _runAs('postgres', [pgBin, '-p', '$port', '-c', statement]);
+
+  for (final entry in settings.entries) {
+    final key = entry.key;
+    if (!keyRe.hasMatch(key)) {
+      throw ArgumentError('Invalid setting key: $key');
+    }
+    final value = entry.value?.toString() ?? '';
+    if (value.contains("'") || value.contains(r'\')) {
+      throw ArgumentError('Invalid value for $key');
+    }
+    if (value.isEmpty) {
+      await sql('ALTER SYSTEM RESET $key;');
+    } else {
+      await sql("ALTER SYSTEM SET $key = '$value';");
+    }
+  }
+
+  await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
 }
 
 Future<void> _pgDropDatabase(int version, String dbName, String role) async {
@@ -1223,13 +1619,20 @@ Subcommands:
   start|stop|restart  --user app_xxx
   uninstall     --user app_xxx [--app-id ID]
   logs          --user app_xxx [--work-dir PATH] [--lines N] [--follow]
+  stat          --user app_xxx | --unit UNIT   (prints resource-usage JSON)
+  exec          --user app_xxx --work-dir PATH --command CMD \\
+                [--runtime RT] [--timeout SECONDS]
   service       install|configure|start|stop|uninstall \\
                 --type redis|memcached|smtp|mailpit|postfix|dovecot [--config JSON]
+  mail          setup
+                sync --domains JSON --accounts JSON
   postgres      install-instance --version VER [--port PORT]
                 uninstall-instance --version VER
                 start-instance|stop-instance --version VER
                 create-db --version VER --db DB --role ROLE --password PASS
                           [--extensions ext1,ext2,…]
                 drop-db   --version VER --db DB --role ROLE
+                ensure-monitor --version VER --port PORT --password PASS
+                configure --version VER --port PORT --settings JSON
 ''');
 }

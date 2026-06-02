@@ -118,3 +118,11 @@ class BulkEnvVarForm extends Form {
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[entries];
 }
+
+/// `POST /apps/{id}/exec` — run a one-off command in the app environment.
+class ExecCommandForm extends Form {
+  final command = StringField(name: 'command', required: true, maxLength: 4000);
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[command];
+}

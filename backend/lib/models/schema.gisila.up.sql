@@ -198,6 +198,7 @@ CREATE TABLE "postgres_instances" (
   "port" INTEGER NOT NULL UNIQUE,
   "status" VARCHAR(255) DEFAULT 'pending',
   "is_default" BOOLEAN DEFAULT FALSE,
+  "monitor_password" VARCHAR(255),
   "data_directory" VARCHAR(255),
   "error_message" TEXT,
   "installed_at" TIMESTAMP WITH TIME ZONE,
@@ -215,6 +216,26 @@ CREATE TABLE "postgres_databases" (
   "extensions" TEXT DEFAULT '[]',
   "status" VARCHAR(255) DEFAULT 'pending',
   "error_message" TEXT,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "mail_domains" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "domain" VARCHAR(255) NOT NULL UNIQUE,
+  "is_active" BOOLEAN DEFAULT TRUE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+
+CREATE TABLE "mail_accounts" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "mail_domain_id" INTEGER NOT NULL,
+  "address" VARCHAR(255) NOT NULL UNIQUE,
+  "password_hash" VARCHAR(255) NOT NULL,
+  "quota_mb" INTEGER,
+  "is_active" BOOLEAN DEFAULT TRUE,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
   "updated_at" TIMESTAMP WITH TIME ZONE
 );
@@ -263,6 +284,8 @@ ALTER TABLE "app_events" ADD CONSTRAINT "app_events_app_fkey" FOREIGN KEY ("app_
 ALTER TABLE "app_events" ADD CONSTRAINT "app_events_actor_fkey" FOREIGN KEY ("actor_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "postgres_databases" ADD CONSTRAINT "postgres_databases_instance_fkey" FOREIGN KEY ("instance_id") REFERENCES "postgres_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "mail_accounts" ADD CONSTRAINT "mail_accounts_mail_domain_fkey" FOREIGN KEY ("mail_domain_id") REFERENCES "mail_domains" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_fkey" FOREIGN KEY ("actor_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_team_fkey" FOREIGN KEY ("team_id") REFERENCES "teams" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
