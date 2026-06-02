@@ -31,6 +31,13 @@ extension MailApiGisilaDoc on MailApi {
         'domain': <String, Object?>{'type': 'string'}
       }
     });
+    spec.putSchema('MailDomainUpdateForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'mailHostname': <String, Object?>{'type': 'string'},
+        'dmarcPolicy': <String, Object?>{'type': 'string'}
+      }
+    });
     spec.putSchema('MailAccountForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -138,6 +145,63 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.patch(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, MailDomainUpdateForm.new);
+                final svc = ctx.service<MailService>();
+                final result = await this.updateDomain(id, form, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'patch',
+          Operation(
+            summary: 'Update mail hostname / DMARC policy',
+            tags: <String>['Mail'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/MailDomainUpdateForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/mail/domains/<id>';
+      final openApiPath = '$prefix/mail/domains/{id}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.delete(
           basePath,
           gisilaRoute(
@@ -176,6 +240,57 @@ extension MailApiGisilaDoc on MailApi {
             ],
             responses: <String, ResponseSpec>{
               '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/mail/domains/<id>/dns';
+      final openApiPath = '$prefix/mail/domains/{id}/dns';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final svc = ctx.service<MailService>();
+                final result = await this.domainDns(id, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'DNS records to publish for a domain',
+            tags: <String>['Mail'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

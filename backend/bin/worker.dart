@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
@@ -31,5 +33,19 @@ Future<void> main(List<String> args) async {
   MetricsCollector(database).start();
 
   logger.i('gisila-worker: starting');
+
+  // Provision the Postfix + Dovecot + OpenDKIM mail stack on boot so it is
+  // always available without a catalog install. Runs in the background so it
+  // never delays the job loop; failures are logged and retried on the next sync.
+  unawaited(() async {
+    try {
+      await mailWorker.onMailJob({'action': 'sync'});
+      logger.i('gisila-worker: mail stack provisioned');
+    } catch (e, st) {
+      logger.w('gisila-worker: mail bootstrap failed (will retry on next sync)',
+          error: e, stackTrace: st);
+    }
+  }());
+
   await queue.run();
 }

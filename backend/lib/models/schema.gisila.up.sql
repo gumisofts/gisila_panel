@@ -224,6 +224,11 @@ CREATE TABLE "postgres_databases" (
 CREATE TABLE "mail_domains" (
   "id" BIGSERIAL PRIMARY KEY,
   "domain" VARCHAR(255) NOT NULL UNIQUE,
+  "mail_hostname" VARCHAR(255),
+  "dkim_selector" VARCHAR(255) DEFAULT 'gisila',
+  "dkim_public_key" TEXT,
+  "dmarc_policy" VARCHAR(255) DEFAULT 'none',
+  "public_ip" VARCHAR(255),
   "is_active" BOOLEAN DEFAULT TRUE,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
 );

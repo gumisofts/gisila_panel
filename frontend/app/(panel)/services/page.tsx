@@ -58,7 +58,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 const SERVICE_CATEGORY: Record<string, string> = {
   redis: "cache", memcached: "cache",
-  smtp: "email", mailpit: "email", postfix: "email", dovecot: "email",
+  smtp: "email", mailpit: "email",
 };
 
 /** Pull the most useful config key-values to surface on the card. */
@@ -95,17 +95,6 @@ function summaryFields(
       add("SMTP port", "smtp_port");
       add("UI port", "ui_port");
       add("Max messages", "max_messages");
-      break;
-    case "postfix":
-      add("Mode", "mode");
-      add("Relay host", "relay_host");
-      add("Hostname", "myhostname");
-      add("SMTP port", "smtp_port");
-      break;
-    case "dovecot":
-      add("Protocols", "protocols");
-      add("IMAP port", "imap_port");
-      add("Maildir", "mail_location");
       break;
     default:
       // Show the first 3 non-empty values generically.

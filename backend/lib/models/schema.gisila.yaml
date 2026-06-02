@@ -583,6 +583,26 @@ MailDomain:
       is_unique: true
       is_index: true
       is_null: false
+    # Public hostname the MX/A records point at (e.g. mail.example.com).
+    # Editable per domain; defaults to mail.<domain> when null.
+    mail_hostname:
+      type: varchar
+      is_null: true
+    # DKIM signing selector and the public key (filled in by the agent on sync).
+    dkim_selector:
+      type: varchar
+      default: gisila
+    dkim_public_key:
+      type: text
+      is_null: true
+    # DMARC policy advertised in the _dmarc TXT record: none | quarantine | reject.
+    dmarc_policy:
+      type: varchar
+      default: none
+    # Public IP detected by the agent on the last sync (for the A record).
+    public_ip:
+      type: varchar
+      is_null: true
     is_active:
       type: boolean
       default: true

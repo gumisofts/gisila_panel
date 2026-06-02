@@ -25,3 +25,12 @@ class MailPasswordForm extends Form {
   @override
   List<FormField<Object?>> collectFields() => [password];
 }
+
+/// `PATCH /mail/domains/{id}` — update DNS-facing domain settings.
+class MailDomainUpdateForm extends Form {
+  final mailHostname = StringField(name: 'mailHostname', maxLength: 253);
+  final dmarcPolicy = StringField(name: 'dmarcPolicy', maxLength: 16);
+
+  @override
+  List<FormField<Object?>> collectFields() => [mailHostname, dmarcPolicy];
+}

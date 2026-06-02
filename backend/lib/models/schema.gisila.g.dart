@@ -2889,12 +2889,22 @@ Query<PostgresDatabase> postgresDatabases() =>
 class MailDomain with Preloadable {
   final int? id;
   final String domain;
+  final String? mailHostname;
+  final String? dkimSelector;
+  final String? dkimPublicKey;
+  final String? dmarcPolicy;
+  final String? publicIp;
   final bool? isActive;
   final DateTime createdAt;
 
   MailDomain({
     this.id,
     required this.domain,
+    this.mailHostname,
+    this.dkimSelector,
+    this.dkimPublicKey,
+    this.dmarcPolicy,
+    this.publicIp,
     this.isActive,
     required this.createdAt,
   });
@@ -2902,6 +2912,11 @@ class MailDomain with Preloadable {
   factory MailDomain.fromRow(Map<String, dynamic> row) => MailDomain(
     id: row['id'] as int?,
     domain: row['domain'] as String,
+    mailHostname: row['mail_hostname'] as String?,
+    dkimSelector: row['dkim_selector'] as String?,
+    dkimPublicKey: row['dkim_public_key'] as String?,
+    dmarcPolicy: row['dmarc_policy'] as String?,
+    publicIp: row['public_ip'] as String?,
     isActive: row['is_active'] as bool?,
     createdAt: row['created_at'] is DateTime
         ? row['created_at'] as DateTime
@@ -2911,6 +2926,11 @@ class MailDomain with Preloadable {
   Map<String, dynamic> toRow() => {
     'id': id,
     'domain': domain,
+    'mail_hostname': mailHostname,
+    'dkim_selector': dkimSelector,
+    'dkim_public_key': dkimPublicKey,
+    'dmarc_policy': dmarcPolicy,
+    'public_ip': publicIp,
     'is_active': isActive,
     'created_at': createdAt,
   };
@@ -2931,11 +2951,21 @@ class MailDomain with Preloadable {
   MailDomain copyWith({
     int? id,
     String? domain,
+    String? mailHostname,
+    String? dkimSelector,
+    String? dkimPublicKey,
+    String? dmarcPolicy,
+    String? publicIp,
     bool? isActive,
     DateTime? createdAt,
   }) => MailDomain(
     id: id ?? this.id,
     domain: domain ?? this.domain,
+    mailHostname: mailHostname ?? this.mailHostname,
+    dkimSelector: dkimSelector ?? this.dkimSelector,
+    dkimPublicKey: dkimPublicKey ?? this.dkimPublicKey,
+    dmarcPolicy: dmarcPolicy ?? this.dmarcPolicy,
+    publicIp: publicIp ?? this.publicIp,
     isActive: isActive ?? this.isActive,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -2964,6 +2994,26 @@ class MailDomainTable {
     table: 'mail_domains',
     column: 'domain',
   );
+  static const ColumnRef<String?> mailHostname = ColumnRef<String?>(
+    table: 'mail_domains',
+    column: 'mail_hostname',
+  );
+  static const ColumnRef<String?> dkimSelector = ColumnRef<String?>(
+    table: 'mail_domains',
+    column: 'dkim_selector',
+  );
+  static const ColumnRef<String?> dkimPublicKey = ColumnRef<String?>(
+    table: 'mail_domains',
+    column: 'dkim_public_key',
+  );
+  static const ColumnRef<String?> dmarcPolicy = ColumnRef<String?>(
+    table: 'mail_domains',
+    column: 'dmarc_policy',
+  );
+  static const ColumnRef<String?> publicIp = ColumnRef<String?>(
+    table: 'mail_domains',
+    column: 'public_ip',
+  );
   static const ColumnRef<bool?> isActive = ColumnRef<bool?>(
     table: 'mail_domains',
     column: 'is_active',
@@ -2976,7 +3026,17 @@ class MailDomainTable {
   static const TableMeta<MailDomain> metadata = TableMeta<MailDomain>(
     tableName: 'mail_domains',
     primaryKey: 'id',
-    columnNames: ['id', 'domain', 'is_active', 'created_at'],
+    columnNames: [
+      'id',
+      'domain',
+      'mail_hostname',
+      'dkim_selector',
+      'dkim_public_key',
+      'dmarc_policy',
+      'public_ip',
+      'is_active',
+      'created_at',
+    ],
     fromRow: MailDomain.fromRow,
   );
 }

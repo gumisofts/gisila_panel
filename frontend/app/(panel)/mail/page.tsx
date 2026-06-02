@@ -12,6 +12,11 @@ import {
   KeyRound,
   ChevronDown,
   ChevronRight,
+  ShieldCheck,
+  Server,
+  Copy,
+  Check,
+  Settings2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,10 +28,54 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, fetcher } from "@/lib/api";
-import type { ListResponse, MailDomain, MailAccount } from "@/lib/types";
+import type {
+  ListResponse,
+  MailDomain,
+  MailAccount,
+  MailDnsResponse,
+  MailConnectionSettings,
+} from "@/lib/types";
+
+// ── Copy-to-clipboard button ─────────────────────────────────────────────────
+
+function CopyButton({ value, className }: { value: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={
+        "shrink-0 text-muted-foreground transition-colors hover:text-foreground " +
+        (className ?? "")
+      }
+      title="Copy"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard unavailable */
+        }
+      }}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
 
 export default function MailPage() {
   const { data, isLoading } = useSWR<ListResponse<MailDomain>>(
@@ -164,8 +213,34 @@ function DomainCard({ domain }: { domain: MailDomain }) {
   const [pwAccount, setPwAccount] = useState<MailAccount | null>(null);
   const [newPw, setNewPw] = useState("");
 
+  // DNS-facing settings (hostname + DMARC policy).
+  const [hostname, setHostname] = useState(domain.mailHostname);
+  const [dmarc, setDmarc] = useState(domain.dmarcPolicy);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const settingsDirty =
+    hostname.trim() !== domain.mailHostname || dmarc !== domain.dmarcPolicy;
+
+  // Connection settings dialog for a specific mailbox.
+  const [connAccount, setConnAccount] = useState<MailAccount | null>(null);
+
   function reloadAccounts() {
     mutate(`/mail/domains/${domain.id}/accounts`);
+  }
+
+  async function handleSaveSettings() {
+    setSavingSettings(true);
+    try {
+      await api(`/mail/domains/${domain.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ mailHostname: hostname.trim(), dmarcPolicy: dmarc }),
+      });
+      mutate("/mail/domains");
+      mutate(`/mail/domains/${domain.id}/dns`);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to save settings.");
+    } finally {
+      setSavingSettings(false);
+    }
   }
 
   async function handleRemoveDomain() {
@@ -274,14 +349,82 @@ function DomainCard({ domain }: { domain: MailDomain }) {
         </div>
 
         {open && (
-          <div className="border-t py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Mailboxes</p>
-              <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New mailbox
-              </Button>
+          <div className="border-t py-4 space-y-6">
+            {/* ── Settings: hostname + DMARC ─────────────────────────────── */}
+            <div className="space-y-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                Settings
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Mail hostname</Label>
+                  <Input
+                    value={hostname}
+                    placeholder={`mail.${domain.domain}`}
+                    onChange={(e) => setHostname(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    The host MX / A records point at. Needs a real or self-signed
+                    TLS cert for clients to connect securely.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">DMARC policy</Label>
+                  <Select
+                    value={dmarc}
+                    onValueChange={(v) =>
+                      setDmarc(v as MailDomain["dmarcPolicy"])
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">none — monitor only</SelectItem>
+                      <SelectItem value="quarantine">
+                        quarantine — send failures to spam
+                      </SelectItem>
+                      <SelectItem value="reject">
+                        reject — block failures
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    How receivers treat mail that fails SPF/DKIM.
+                  </p>
+                </div>
+              </div>
+              {settingsDirty && (
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveSettings}
+                    disabled={savingSettings}
+                  >
+                    {savingSettings ? (
+                      <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Save settings
+                  </Button>
+                </div>
+              )}
             </div>
+
+            {/* ── DNS records ────────────────────────────────────────────── */}
+            <DnsPanel domain={domain} />
+
+            {/* ── Mailboxes ──────────────────────────────────────────────── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Mailboxes</p>
+                <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  New mailbox
+                </Button>
+              </div>
 
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
@@ -314,6 +457,15 @@ function DomainCard({ domain }: { domain: MailDomain }) {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground"
+                      title="Connection settings (SMTP / IMAP / POP3)"
+                      onClick={() => setConnAccount(acc)}
+                    >
+                      <Server className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground"
                       title="Reset password"
                       onClick={() => {
                         setPwAccount(acc);
@@ -336,6 +488,7 @@ function DomainCard({ domain }: { domain: MailDomain }) {
                 ))}
               </div>
             )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -439,6 +592,202 @@ function DomainCard({ domain }: { domain: MailDomain }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Connection settings dialog */}
+      <ConnectionDialog
+        account={connAccount}
+        onClose={() => setConnAccount(null)}
+      />
     </Card>
+  );
+}
+
+// ── DNS records panel ─────────────────────────────────────────────────────────
+
+function DnsPanel({ domain }: { domain: MailDomain }) {
+  const { data, isLoading } = useSWR<MailDnsResponse>(
+    `/mail/domains/${domain.id}/dns`,
+    fetcher
+  );
+  const records = data?.records ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
+          DNS records
+        </p>
+        {domain.dkimConfigured ? (
+          <Badge variant="secondary" className="text-[10px]">
+            DKIM ready
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-[10px]">
+            DKIM pending sync
+          </Badge>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Publish these records at your DNS provider so mail delivers and passes
+        SPF, DKIM, and DMARC. Also set reverse DNS (PTR) for the server IP.
+      </p>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="space-y-2">
+          {records.map((r, i) => (
+            <div key={i} className="rounded-md border bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[10px] uppercase shrink-0"
+                >
+                  {r.label ?? r.type}
+                </Badge>
+                <code className="text-xs text-muted-foreground truncate">
+                  {r.host}
+                </code>
+                {typeof r.priority === "number" && (
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    pri {r.priority}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1.5 flex items-start gap-2">
+                <code className="flex-1 break-all text-xs font-mono">
+                  {r.value}
+                </code>
+                <CopyButton value={r.value} className="mt-0.5" />
+              </div>
+              {r.note && (
+                <p className="mt-1 text-[11px] text-muted-foreground">{r.note}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Connection settings dialog ────────────────────────────────────────────────
+
+function ConnectionRow({
+  label,
+  host,
+  port,
+  security,
+}: {
+  label: string;
+  host: string;
+  port: number;
+  security: string;
+}) {
+  const summary = `${host}:${port} (${security})`;
+  return (
+    <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+      <span className="w-28 shrink-0 text-xs font-medium">{label}</span>
+      <code className="flex-1 truncate text-xs font-mono text-muted-foreground">
+        {summary}
+      </code>
+      <CopyButton value={`${host}:${port}`} />
+    </div>
+  );
+}
+
+function ConnectionDialog({
+  account,
+  onClose,
+}: {
+  account: MailAccount | null;
+  onClose: () => void;
+}) {
+  const c: MailConnectionSettings | undefined = account?.connection;
+  return (
+    <Dialog open={!!account} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Connection settings</DialogTitle>
+        </DialogHeader>
+        {c && account && (
+          <div className="space-y-4 py-2">
+            <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Username</span>
+                <span className="flex items-center gap-2 font-mono text-xs">
+                  {account.address}
+                  <CopyButton value={account.address} />
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Password is the mailbox password you set. Use STARTTLS or SSL/TLS
+                depending on your client; both ports are open.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Outgoing (SMTP)
+              </p>
+              <ConnectionRow
+                label="STARTTLS"
+                host={c.smtp.host}
+                port={c.smtp.starttls.port}
+                security={c.smtp.starttls.security}
+              />
+              <ConnectionRow
+                label="SSL/TLS"
+                host={c.smtp.host}
+                port={c.smtp.ssl.port}
+                security={c.smtp.ssl.security}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Incoming (IMAP)
+              </p>
+              <ConnectionRow
+                label="SSL/TLS"
+                host={c.imap.host}
+                port={c.imap.ssl.port}
+                security={c.imap.ssl.security}
+              />
+              <ConnectionRow
+                label="STARTTLS"
+                host={c.imap.host}
+                port={c.imap.starttls.port}
+                security={c.imap.starttls.security}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Incoming (POP3)
+              </p>
+              <ConnectionRow
+                label="SSL/TLS"
+                host={c.pop3.host}
+                port={c.pop3.ssl.port}
+                security={c.pop3.ssl.security}
+              />
+              <ConnectionRow
+                label="STARTTLS"
+                host={c.pop3.host}
+                port={c.pop3.starttls.port}
+                security={c.pop3.starttls.security}
+              />
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

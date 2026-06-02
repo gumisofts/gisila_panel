@@ -259,8 +259,26 @@ export interface ManagedService {
 export interface MailDomain {
   id: ID;
   domain: string;
+  mailHostname: string;
+  dkimSelector?: string | null;
+  dkimConfigured: boolean;
+  dmarcPolicy: "none" | "quarantine" | "reject";
+  publicIp?: string | null;
   isActive: boolean;
   createdAt: string;
+}
+
+export interface MailConnectionEndpoint {
+  port: number;
+  security: string;
+}
+
+export interface MailConnectionSettings {
+  host: string;
+  username: string;
+  smtp: { host: string; starttls: MailConnectionEndpoint; ssl: MailConnectionEndpoint };
+  imap: { host: string; ssl: MailConnectionEndpoint; starttls: MailConnectionEndpoint };
+  pop3: { host: string; ssl: MailConnectionEndpoint; starttls: MailConnectionEndpoint };
 }
 
 export interface MailAccount {
@@ -271,4 +289,21 @@ export interface MailAccount {
   isActive: boolean;
   createdAt: string;
   updatedAt?: string | null;
+  connection: MailConnectionSettings;
+}
+
+export interface MailDnsRecord {
+  type: "A" | "MX" | "TXT";
+  host: string;
+  value: string;
+  priority?: number;
+  label?: string;
+  note?: string;
+}
+
+export interface MailDnsResponse {
+  domain: string;
+  mailHostname: string;
+  publicIp?: string | null;
+  records: MailDnsRecord[];
 }

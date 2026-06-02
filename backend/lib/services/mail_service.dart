@@ -61,6 +61,61 @@ class MailService extends Service {
     await _enqueueSync();
   }
 
+  /// Update the editable, DNS-facing settings of a domain: the public mail
+  /// hostname (MX/A target) and the advertised DMARC policy.
+  Future<MailDomain> updateDomain(
+    int id, {
+    String? mailHostname,
+    String? dmarcPolicy,
+  }) async {
+    await findDomain(id);
+    final patch = <String, Object?>{};
+    if (mailHostname != null) {
+      final h = mailHostname.trim().toLowerCase();
+      if (h.isEmpty) {
+        patch['mailHostname'] = null;
+      } else {
+        if (!RegExp(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
+            .hasMatch(h)) {
+          throw HttpException(422, 'Invalid mail hostname.');
+        }
+        patch['mailHostname'] = h;
+      }
+    }
+    if (dmarcPolicy != null) {
+      const allowed = {'none', 'quarantine', 'reject'};
+      if (!allowed.contains(dmarcPolicy)) {
+        throw HttpException(422, 'DMARC policy must be none, quarantine, or reject.');
+      }
+      patch['dmarcPolicy'] = dmarcPolicy;
+    }
+    if (patch.isNotEmpty) {
+      await Query<MailDomain>(MailDomainTable.metadata)
+          .where(MailDomainTable.id.eq(id))
+          .update(patch)
+          .run(_db.context());
+      await _enqueueSync();
+    }
+    return findDomain(id);
+  }
+
+  /// Persist DKIM public key + detected public IP reported by the agent after a
+  /// sync. Looked up by domain name since the agent only knows the domain.
+  Future<void> persistDkim({
+    required String domain,
+    required String selector,
+    required String publicKey,
+    String? publicIp,
+  }) async {
+    await Query<MailDomain>(MailDomainTable.metadata)
+        .where(MailDomainTable.domain.eq(domain.trim().toLowerCase()))
+        .update(<String, Object?>{
+      'dkimSelector': selector,
+      'dkimPublicKey': publicKey,
+      if (publicIp != null && publicIp.isNotEmpty) 'publicIp': publicIp,
+    }).run(_db.context());
+  }
+
   // ── Accounts ───────────────────────────────────────────────────────────────
 
   Future<List<MailAccount>> listAccounts(int domainId) =>
@@ -149,4 +204,99 @@ class MailService extends Service {
         'gisila:queue:mail',
         jsonEncode({'action': 'sync'}),
       );
+}
+
+/// Standard ports the agent configures for mail clients.
+class MailPorts {
+  static const submission = 587; // SMTP submission, STARTTLS
+  static const smtps = 465; // SMTP, implicit TLS
+  static const imap = 143; // IMAP, STARTTLS
+  static const imaps = 993; // IMAP, implicit TLS
+  static const pop3 = 110; // POP3, STARTTLS
+  static const pop3s = 995; // POP3, implicit TLS
+}
+
+/// The public hostname mail clients connect to and DNS records point at.
+/// Falls back to `mail.<domain>` when no hostname has been set.
+String effectiveMailHostname(MailDomain d) {
+  final h = d.mailHostname?.trim();
+  if (h != null && h.isNotEmpty) return h;
+  return 'mail.${d.domain}';
+}
+
+/// Build the list of DNS records the operator must publish for [d] so that mail
+/// delivers and passes SPF/DKIM/DMARC. Returned as plain maps ready for JSON.
+List<Map<String, Object?>> buildDnsRecords(MailDomain d) {
+  final host = effectiveMailHostname(d);
+  final selector = (d.dkimSelector?.trim().isNotEmpty ?? false)
+      ? d.dkimSelector!.trim()
+      : 'gisila';
+  final policy = (d.dmarcPolicy?.trim().isNotEmpty ?? false)
+      ? d.dmarcPolicy!.trim()
+      : 'none';
+
+  final records = <Map<String, Object?>>[
+    {
+      'type': 'A',
+      'host': host,
+      'value': d.publicIp ?? '<server-public-ip>',
+      'note': 'Points the mail hostname at this server. '
+          'Set reverse DNS (PTR) for this IP at your hosting provider.',
+    },
+    {
+      'type': 'MX',
+      'host': d.domain,
+      'value': host,
+      'priority': 10,
+      'note': 'Routes inbound mail for the domain to this server.',
+    },
+    {
+      'type': 'TXT',
+      'host': d.domain,
+      'value': 'v=spf1 mx ~all',
+      'label': 'SPF',
+      'note': 'Authorises this server (via its MX) to send for the domain.',
+    },
+    {
+      'type': 'TXT',
+      'host': '$selector._domainkey.${d.domain}',
+      'value': d.dkimPublicKey == null || d.dkimPublicKey!.isEmpty
+          ? '<generated after first sync>'
+          : 'v=DKIM1; k=rsa; p=${d.dkimPublicKey}',
+      'label': 'DKIM',
+      'note': 'Public key used to verify DKIM signatures added by this server.',
+    },
+    {
+      'type': 'TXT',
+      'host': '_dmarc.${d.domain}',
+      'value': 'v=DMARC1; p=$policy; rua=mailto:postmaster@${d.domain}',
+      'label': 'DMARC',
+      'note': 'Tells receivers how to handle mail that fails SPF/DKIM.',
+    },
+  ];
+  return records;
+}
+
+/// Build the IMAP/POP3/SMTP client connection settings for [address] on [d].
+Map<String, Object?> buildConnectionSettings(MailDomain d, String address) {
+  final host = effectiveMailHostname(d);
+  return {
+    'host': host,
+    'username': address,
+    'smtp': {
+      'host': host,
+      'starttls': {'port': MailPorts.submission, 'security': 'STARTTLS'},
+      'ssl': {'port': MailPorts.smtps, 'security': 'SSL/TLS'},
+    },
+    'imap': {
+      'host': host,
+      'ssl': {'port': MailPorts.imaps, 'security': 'SSL/TLS'},
+      'starttls': {'port': MailPorts.imap, 'security': 'STARTTLS'},
+    },
+    'pop3': {
+      'host': host,
+      'ssl': {'port': MailPorts.pop3s, 'security': 'SSL/TLS'},
+      'starttls': {'port': MailPorts.pop3, 'security': 'STARTTLS'},
+    },
+  };
 }
