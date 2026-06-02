@@ -755,6 +755,13 @@ service auth {
 ''';
   // local.conf wins over all conf.d/* settings on Ubuntu (loaded last).
   await _writeFileSudo('/etc/dovecot/local.conf', dovecotConf);
+  // Remove any old Gisila conf.d file from previous agent versions so that
+  // service unix_listener blocks are not defined twice (would prevent startup).
+  await _sudo(
+    'rm',
+    ['-f', '/etc/dovecot/conf.d/99-gisila-mail.conf'],
+    failOk: true,
+  );
 
   // OpenDKIM base config + runtime dir. Per-domain key tables are written on
   // sync; this lays down the daemon configuration once.
@@ -776,7 +783,8 @@ Canonicalization        relaxed/simple
 Socket                  inet:8891@127.0.0.1
 PidFile                 /run/opendkim/opendkim.pid
 OversignHeaders         From
-TrustedHostsFile        /etc/opendkim/TrustedHosts
+ExternalIgnoreList      refile:/etc/opendkim/TrustedHosts
+InternalHosts           refile:/etc/opendkim/TrustedHosts
 KeyTable                /etc/opendkim/KeyTable
 SigningTable            refile:/etc/opendkim/SigningTable
 ''';
