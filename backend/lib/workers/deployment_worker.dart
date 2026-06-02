@@ -89,6 +89,13 @@ class DeploymentWorker {
       ], deploymentId: deploymentId);
 
       // 3. Generate systemd + AppArmor + nginx vhost (idempotent).
+      //    Env vars are fetched from the DB and embedded directly into the
+      //    unit file as Environment= lines — no separate .env file needed.
+      final appEnvVars = await Query<EnvVar>(EnvVarTable.metadata)
+          .where(EnvVarTable.appId.eq(app.id!))
+          .all(database.context());
+      final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
+
       await _runAgent([
         'apply-unit',
         '--app-id', '${app.id}',
@@ -96,6 +103,7 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--port', '${app.internalPort}',
         '--runtime', app.runtime,
+        '--env-json', jsonEncode(envMap),
         if (app.startCommand != null) ...['--start-command', app.startCommand!],
         '--memory-mb', '${app.memoryMbLimit ?? 256}',
         '--cpu-quota', '${app.cpuQuotaPercent ?? 50}',

@@ -16,6 +16,7 @@ class SystemdUnit {
     this.tasksMax = 100,
     this.apparmorProfile,
     this.isPython = false,
+    this.envVars = const {},
   });
 
   final int appId;
@@ -27,6 +28,7 @@ class SystemdUnit {
   final int cpuQuotaPercent;
   final int tasksMax;
   final String? apparmorProfile;
+  final Map<String, String> envVars;
 
   /// When true, relax sandbox flags that break the CPython interpreter:
   ///   - `MemoryDenyWriteExecute` must be off (Python JIT / .pyc bytecode)
@@ -52,6 +54,16 @@ class SystemdUnit {
     final workingDir =
         isPython ? '$workDir/releases/current_build' : '$workDir/current';
 
+    // Embed each user-defined env var as its own Environment= line.
+    // Values are double-quoted; embedded double-quotes and backslashes are
+    // escaped so systemd parses them correctly.
+    final envLines = StringBuffer();
+    for (final entry in envVars.entries) {
+      final escaped =
+          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      envLines.writeln('Environment=${entry.key}="$escaped"');
+    }
+
     return '''
 [Unit]
 Description=Gisila app $linuxUser (id=$appId)
@@ -67,9 +79,9 @@ ExecStart=$startCommand
 Restart=always
 RestartSec=5
 
-EnvironmentFile=$workDir/.env
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
+${envLines.toString().trimRight()}
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true

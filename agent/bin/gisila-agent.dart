@@ -189,6 +189,7 @@ Future<void> _applyUnit(List<String> args) async {
     p.addOption('memory-mb', defaultsTo: '256');
     p.addOption('cpu-quota', defaultsTo: '50');
     p.addOption('tasks-max', defaultsTo: '100');
+    p.addOption('env-json', defaultsTo: '{}');
     // Python-specific
     p.addOption('python-mode', defaultsTo: 'wsgi');
     p.addOption('wsgi-app');
@@ -254,6 +255,10 @@ Future<void> _applyUnit(List<String> args) async {
     startCommand = '$workDir/current/app';
   }
 
+  final envJson = r['env-json'] as String;
+  final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
+      .map((k, v) => MapEntry(k, (v as String?) ?? ''));
+
   await Applier().applyUnit(
     appId: appId,
     linuxUser: user,
@@ -264,6 +269,7 @@ Future<void> _applyUnit(List<String> args) async {
     cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
     tasksMax: int.parse(r['tasks-max'] as String),
     isPython: isPython,
+    envVars: envVars,
   );
 }
 
@@ -1210,7 +1216,7 @@ Subcommands:
                 [--git-url URL] [--git-branch B] \\
                 [--build-command CMD] [--artifact-path PATH]
   apply-unit    --app-id ID --user app_xxx --work-dir PATH --port N \\
-                [--start-command CMD] \\
+                [--start-command CMD] [--env-json JSON] \\
                 [--memory-mb MB] [--cpu-quota PCT] [--tasks-max N]
   apply-vhost   --app-id ID --port N [--hostname host …]
   issue-cert    --hostname HOSTNAME

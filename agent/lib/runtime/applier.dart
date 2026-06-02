@@ -47,6 +47,7 @@ class Applier {
     required int cpuQuotaPercent,
     required int tasksMax,
     bool isPython = false,
+    Map<String, String> envVars = const {},
   }) async {
     if (isDocker) {
       await _applyUnitDocker(
@@ -55,6 +56,7 @@ class Applier {
         workDir: workDir,
         startCommand: startCommand,
         port: port,
+        envVars: envVars,
       );
     } else {
       await _applyUnitSystemd(
@@ -67,6 +69,7 @@ class Applier {
         cpuQuotaPercent: cpuQuotaPercent,
         tasksMax: tasksMax,
         isPython: isPython,
+        envVars: envVars,
       );
     }
   }
@@ -77,6 +80,7 @@ class Applier {
     required String workDir,
     required String startCommand,
     required int port,
+    Map<String, String> envVars = const {},
   }) async {
     final conf = SupervisorConf(
       appId: appId,
@@ -84,6 +88,7 @@ class Applier {
       workDir: workDir,
       startCommand: startCommand,
       port: port,
+      envVars: envVars,
     );
     Directory(supervisorConfDir).createSync(recursive: true);
     File('$supervisorConfDir/${conf.programName}.conf')
@@ -102,6 +107,7 @@ class Applier {
     required int cpuQuotaPercent,
     required int tasksMax,
     required bool isPython,
+    Map<String, String> envVars = const {},
   }) async {
     final profile = ApparmorProfile(linuxUser: linuxUser, workDir: workDir);
     final apparmorPath = '$apparmorDir/gisila-$linuxUser';
@@ -120,6 +126,7 @@ class Applier {
       tasksMax: tasksMax,
       apparmorProfile: profile.profileName,
       isPython: isPython,
+      envVars: envVars,
     );
     final unitPath = '$systemdDir/gisila-$linuxUser.service';
     File(unitPath).writeAsStringSync(unit.render());
