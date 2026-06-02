@@ -189,6 +189,20 @@ class Builders {
         '.venv/bin/pip install --no-cache-dir -q '
         '"gunicorn>=21.0" "uvicorn[standard]>=0.29"');
 
+    // 5b. Django out-of-the-box support. A Django project ships a manage.py at
+    //     its root; detect it and run the two management commands every Django
+    //     deployment needs so the app boots cleanly with no manual steps:
+    //       - migrate      → creates/updates the database schema (without this
+    //                        the very first request that touches the ORM — admin,
+    //                        auth, sessions — raises OperationalError and the
+    //                        worker 500s / fails to boot under --preload).
+    //       - collectstatic → gathers static assets into STATIC_ROOT.
+    //     Both run with the venv active so `python` resolves to the project's
+    //     interpreter. They are best-effort: collectstatic is skipped silently
+    //     when STATIC_ROOT is not configured, and migrate failures are surfaced
+    //     in the build log without aborting the whole deployment.
+    await _runDjangoManagementCommands(user, src);
+
     // 6. Symlink the venv into <workDir>/current so the systemd ExecStart
     //    path is stable across deployments.
     await ShellExec.run('mkdir', ['-p', '$workDir/current']);
@@ -197,6 +211,54 @@ class Builders {
     await ShellExec.run('ln', ['-sfn', venv, currentVenv]);
     await ShellExec.run('chown', ['-hR', '$user:$user', venv]);
   }
+
+  /// Detect a Django project and run its standard deploy-time management
+  /// commands. No-op for non-Django Python apps.
+  static Future<void> _runDjangoManagementCommands(
+      String user, String src) async {
+    if (!File('$src/manage.py').existsSync()) return;
+
+    // Confirm Django is actually installed in the venv before invoking
+    // manage.py (a stray manage.py without the framework should not fail here).
+    final hasDjango = await _runAsUserStatus(
+      user,
+      src,
+      '.venv/bin/python -c "import django"',
+    );
+    if (hasDjango != 0) return;
+
+    stdout.writeln('[agent] Django project detected — running migrate');
+    // migrate is idempotent. Best-effort: a deliberately external DB that is
+    // unreachable at build time should not block the release.
+    await ShellExec.run(
+      'runuser',
+      ['-u', user, '--', 'bash', '-lc',
+        'source .venv/bin/activate && python manage.py migrate --noinput'],
+      cwd: src,
+      requireSuccess: false,
+    );
+
+    stdout.writeln('[agent] Django project detected — running collectstatic');
+    // collectstatic exits non-zero when STATIC_ROOT is unset; that is a valid
+    // configuration (e.g. DEBUG=True dev serving), so failures are ignored.
+    await ShellExec.run(
+      'runuser',
+      ['-u', user, '--', 'bash', '-lc',
+        'source .venv/bin/activate && '
+            'python manage.py collectstatic --noinput'],
+      cwd: src,
+      requireSuccess: false,
+    );
+  }
+
+  /// Run a command as [user] in [cwd] and return its exit code without throwing.
+  static Future<int> _runAsUserStatus(String user, String cwd, String command) =>
+      ShellExec.run(
+        'runuser',
+        ['-u', user, '--', 'bash', '-lc', command],
+        cwd: cwd,
+        requireSuccess: false,
+      );
 
   /// Install pyenv at [root] if absent.
   static Future<void> _ensurePyenv(String root) async {
@@ -215,25 +277,62 @@ class Builders {
         requireSuccess: false);
   }
 
-  /// Install [version] via pyenv if not present and return the Python binary.
+  /// Ensure [version] is installed via pyenv AND has its core C extension
+  /// modules, returning the Python binary path.
+  ///
+  /// A version directory existing is NOT enough: if Python was compiled when
+  /// the build libraries were missing, extensions like `_sqlite3`, `_ssl`, and
+  /// `_lzma` are silently omitted and stay broken on every reuse. We therefore
+  /// verify the interpreter can import the critical modules and force a rebuild
+  /// (`pyenv install --force`) when it cannot — by this point
+  /// [_ensurePythonBuildDeps] has already installed the required headers.
   static Future<String> _pyenvPython(String root, String version) async {
     final versionDir = '$root/versions/$version';
-    if (!Directory(versionDir).existsSync()) {
-      final env = {
-        ...Platform.environment,
-        'PYENV_ROOT': root,
-        'PATH': '$root/bin:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
-      };
+    final pythonBin = '$versionDir/bin/python';
+    final env = {
+      ...Platform.environment,
+      'PYENV_ROOT': root,
+      'PATH': '$root/bin:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
+    };
+
+    final installed = Directory(versionDir).existsSync();
+    final healthy = installed && await _pythonExtensionsOk(pythonBin);
+
+    if (!healthy) {
+      // Force a clean rebuild when a broken install already exists; otherwise
+      // a plain install is enough.
       final result = await Process.run(
         '$root/bin/pyenv',
-        ['install', '--skip-existing', version],
+        ['install', if (installed) '--force' else '--skip-existing', version],
         environment: env,
       );
+      stdout.write(result.stdout);
       if (result.exitCode != 0) {
         throw Exception('pyenv install $version failed: ${result.stderr}');
       }
+      // Sanity-check the freshly built interpreter so a still-broken build
+      // fails the deployment loudly instead of looping at runtime.
+      if (!await _pythonExtensionsOk(pythonBin)) {
+        throw Exception(
+          'Python $version was rebuilt but still lacks required C extension '
+          'modules (e.g. _sqlite3). Ensure the build libraries '
+          '(libsqlite3-dev, libssl-dev, liblzma-dev, …) are installed on the '
+          'host, then redeploy.',
+        );
+      }
     }
-    return '$versionDir/bin/python';
+    return pythonBin;
+  }
+
+  /// Whether [pythonBin] can import the C extension modules apps commonly need.
+  /// Returns false if the binary is missing or any import fails.
+  static Future<bool> _pythonExtensionsOk(String pythonBin) async {
+    if (!File(pythonBin).existsSync()) return false;
+    final result = await Process.run(
+      pythonBin,
+      ['-c', 'import sqlite3, ssl, lzma, ctypes, zlib, bz2'],
+    );
+    return result.exitCode == 0;
   }
 
   static Future<void> binaryArtifact({
