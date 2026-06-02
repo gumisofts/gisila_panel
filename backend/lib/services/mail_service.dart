@@ -200,10 +200,13 @@ class MailService extends Service {
     return '{SSHA512}${base64.encode([...digest, ...salt])}';
   }
 
-  Future<void> _enqueueSync() => RedisClient.instance.rpush(
+  /// Enqueue a full sync. Public so the endpoint and worker can both call it.
+  Future<void> enqueueSync() => RedisClient.instance.rpush(
         'gisila:queue:mail',
         jsonEncode({'action': 'sync'}),
       );
+
+  Future<void> _enqueueSync() => enqueueSync();
 }
 
 /// Standard ports the agent configures for mail clients.

@@ -17,6 +17,7 @@ import {
   Copy,
   Check,
   Settings2,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,13 @@ export default function MailPage() {
   const { data, isLoading } = useSWR<ListResponse<MailDomain>>(
     "/mail/domains",
     fetcher,
-    { refreshInterval: 15000 }
+    {
+      // Poll faster while any domain is still waiting for its DKIM key.
+      refreshInterval(latestData) {
+        const anyPending = latestData?.results.some((d) => !d.dkimConfigured);
+        return anyPending ? 5_000 : 15_000;
+      },
+    }
   );
 
   const [showAdd, setShowAdd] = useState(false);
@@ -605,11 +612,32 @@ function DomainCard({ domain }: { domain: MailDomain }) {
 // ── DNS records panel ─────────────────────────────────────────────────────────
 
 function DnsPanel({ domain }: { domain: MailDomain }) {
-  const { data, isLoading } = useSWR<MailDnsResponse>(
-    `/mail/domains/${domain.id}/dns`,
-    fetcher
-  );
+  const dnsKey = `/mail/domains/${domain.id}/dns`;
+
+  // Poll every 5 s while DKIM is not yet configured; back off to 30 s once ready.
+  const { data, isLoading } = useSWR<MailDnsResponse>(dnsKey, fetcher, {
+    refreshInterval: domain.dkimConfigured ? 30_000 : 5_000,
+    revalidateOnFocus: true,
+  });
+
+  const dkimReady = data?.dkimConfigured ?? domain.dkimConfigured;
   const records = data?.records ?? [];
+
+  const [syncing, setSyncing] = useState(false);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      await api(`/mail/domains/${domain.id}/sync`, { method: "POST" });
+      // Optimistically start polling; the badge will update once the worker responds.
+      mutate(dnsKey);
+      mutate("/mail/domains");
+    } catch {
+      // ignore — worker will retry
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -618,22 +646,46 @@ function DnsPanel({ domain }: { domain: MailDomain }) {
           <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
           DNS records
         </p>
-        {domain.dkimConfigured ? (
-          <Badge variant="secondary" className="text-[10px]">
-            DKIM ready
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="text-[10px]">
-            DKIM pending sync
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {dkimReady ? (
+            <Badge variant="secondary" className="text-[10px] text-emerald-600">
+              <Check className="mr-1 h-3 w-3" />
+              DKIM configured
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[10px]">
+              <Loader className="mr-1 h-3 w-3 animate-spin" />
+              Waiting for DKIM key…
+            </Badge>
+          )}
+          <button
+            type="button"
+            title="Trigger sync now"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            <RefreshCw
+              className={"h-3.5 w-3.5" + (syncing ? " animate-spin" : "")}
+            />
+          </button>
+        </div>
       </div>
+
+      {!dkimReady && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+          The DKIM signing key is generated on the first sync after the agent
+          provisions OpenDKIM. Click the refresh icon to trigger one now, or
+          wait — this panel polls automatically every 5 s.
+        </div>
+      )}
+
       <p className="text-[11px] text-muted-foreground">
         Publish these records at your DNS provider so mail delivers and passes
         SPF, DKIM, and DMARC. Also set reverse DNS (PTR) for the server IP.
       </p>
 
-      {isLoading ? (
+      {isLoading && records.length === 0 ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div className="space-y-2">
@@ -656,10 +708,17 @@ function DnsPanel({ domain }: { domain: MailDomain }) {
                 )}
               </div>
               <div className="mt-1.5 flex items-start gap-2">
-                <code className="flex-1 break-all text-xs font-mono">
+                <code
+                  className={
+                    "flex-1 break-all text-xs font-mono" +
+                    (r.value.startsWith("<") ? " text-muted-foreground italic" : "")
+                  }
+                >
                   {r.value}
                 </code>
-                <CopyButton value={r.value} className="mt-0.5" />
+                {!r.value.startsWith("<") && (
+                  <CopyButton value={r.value} className="mt-0.5" />
+                )}
               </div>
               {r.note && (
                 <p className="mt-1 text-[11px] text-muted-foreground">{r.note}</p>

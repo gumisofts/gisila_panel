@@ -52,8 +52,16 @@ class MailApi {
       'domain': domain.domain,
       'mailHostname': effectiveMailHostname(domain),
       'publicIp': domain.publicIp,
+      'dkimConfigured': domain.dkimPublicKey != null && domain.dkimPublicKey!.isNotEmpty,
       'records': buildDnsRecords(domain),
     };
+  }
+
+  @Post('/domains/{id}/sync', summary: 'Re-queue a mail sync for this domain')
+  Future<Map<String, Object?>> syncDomain(int id, MailService svc) async {
+    await svc.findDomain(id); // validates existence
+    await svc.enqueueSync();
+    return {'detail': 'Sync queued.'};
   }
 
   // ── Mailboxes ──────────────────────────────────────────────────────────────

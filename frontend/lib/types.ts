@@ -305,5 +305,6 @@ export interface MailDnsResponse {
   domain: string;
   mailHostname: string;
   publicIp?: string | null;
+  dkimConfigured: boolean;
   records: MailDnsRecord[];
 }
