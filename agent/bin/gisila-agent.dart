@@ -659,11 +659,14 @@ Future<void> _mailEnsureStack() async {
     'smtpd_recipient_restrictions='
         'permit_sasl_authenticated, permit_mynetworks, reject_unauth_destination',
     // TLS — self-signed cert by default (swap in a real cert in production).
+    // postfix won't start if these files don't exist, so we write them first
+    // via _mailEnsureCert above.
     'smtpd_tls_cert_file=$_mailCertPath',
     'smtpd_tls_key_file=$_mailKeyPath',
     'smtpd_tls_security_level=may',
     'smtp_tls_security_level=may',
     'smtpd_tls_auth_only=no',
+    'smtpd_tls_loglevel=1',
     // DKIM signing milter.
     'milter_default_action=accept',
     'milter_protocol=6',
@@ -777,6 +780,18 @@ UserID                  opendkim
         'GROUP=opendkim\nPIDFILE=\$RUNDIR/\$NAME.pid\n',
   );
 
+  // Validate Postfix config before touching running services.
+  final cfgCheck = await Process.run(
+    _isRoot ? 'postfix' : 'sudo',
+    [if (!_isRoot) '--non-interactive', 'postfix', 'check'],
+  );
+  if (cfgCheck.exitCode != 0) {
+    stderr.writeln(
+        'mail_ensure_stack: postfix check:\n${cfgCheck.stderr}');
+    // Log but continue — a misconfigured Postfix is still better than one
+    // that was never started. The error surfaces in the worker log.
+  }
+
   // Make sure every daemon is enabled (survives reboot) and running. opendkim
   // first so Postfix can reach the milter as soon as it (re)starts.
   for (final svc in <String>['opendkim', 'postfix', 'dovecot']) {
@@ -792,39 +807,82 @@ UserID                  opendkim
 /// point these at a real (Let's Encrypt) certificate for full client trust.
 const _mailCertPath = '/etc/gisila/mail/mail.crt';
 const _mailKeyPath = '/etc/gisila/mail/mail.key';
+const _mailCertDir = '/etc/gisila/mail';
 
 /// Generate a self-signed certificate for the mail daemons. When [hostnames]
-/// are supplied (during sync) the cert's CN + SANs cover them so mail clients
-/// connecting to those hostnames don't see a name-mismatch error; otherwise a
-/// generic certificate is created so the daemons can start before any domain
-/// exists. Existing certs are only regenerated when the hostname set changes.
+/// are supplied the cert's CN + SANs cover them so clients don't see a
+/// name-mismatch error; otherwise a generic cert is created so daemons can
+/// start before any domain exists. Existing certs are only regenerated when
+/// the hostname set changes.
+///
+/// Uses a temp openssl.cnf file for SANs — compatible with all Ubuntu LTS
+/// versions including 20.04 which does not have `openssl req -addext`.
 Future<void> _mailEnsureCert(List<String> hostnames) async {
-  await _sudo('mkdir', ['-p', '/etc/gisila/mail'], failOk: true);
+  // Ensure the `ssl-cert` group exists and both Postfix and Dovecot are
+  // members so they can read the private key (mode 640, group ssl-cert).
+  await _sudo('groupadd', ['--force', '--system', 'ssl-cert'], failOk: true);
+  for (final user in <String>['postfix', 'dovecot']) {
+    await _sudo('usermod', ['-aG', 'ssl-cert', user], failOk: true);
+  }
+
+  await _sudo('mkdir', ['-p', _mailCertDir], failOk: true);
+  await _sudo('chmod', ['755', _mailCertDir], failOk: true);
 
   final names = hostnames.where((h) => h.trim().isNotEmpty).toSet().toList();
   final primary = names.isNotEmpty ? names.first : _systemMailname();
   final desired = names.isEmpty ? primary : names.join(',');
 
   // Skip regeneration when a cert already exists for the same hostname set.
-  final stamp = '/etc/gisila/mail/.cn';
+  final stamp = '$_mailCertDir/.cn';
   final existing = await _readPrivFile(stamp);
   final certExists = await _privFileExists(_mailCertPath);
   if (certExists && existing?.trim() == desired) return;
 
-  final san = names.isEmpty
-      ? 'DNS:$primary'
-      : names.map((h) => 'DNS:$h').join(',');
+  // Build a temporary openssl.cnf that includes a SAN extension, so this
+  // works on Ubuntu 20.04 (OpenSSL 1.1.1) which lacks `req -addext`.
+  final sanEntries = (names.isEmpty ? [primary] : names)
+      .map((h) => 'DNS:$h')
+      .join(', ');
+  final opensslCnf = '''
+[req]
+distinguished_name = dn
+x509_extensions    = v3_req
+prompt             = no
+
+[dn]
+CN = $primary
+
+[v3_req]
+subjectAltName = $sanEntries
+keyUsage       = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+''';
+
+  const tmpConf = '/tmp/gisila-mail-openssl.cnf';
+  await _writeFileSudo(tmpConf, opensslCnf);
+
   final cmd = _priv('sh', [
     '-c',
     'openssl req -new -x509 -nodes -days 3650 -newkey rsa:2048 '
-        "-keyout '$_mailKeyPath' -out '$_mailCertPath' "
-        "-subj '/CN=$primary' -addext 'subjectAltName=$san'",
+        '-config $tmpConf '
+        "-keyout '$_mailKeyPath' -out '$_mailCertPath' 2>/dev/null",
   ]);
   await _run(cmd.first, cmd.skip(1).toList(), failOk: true);
+
+  // If openssl failed (e.g. not installed), fall back to snakeoil so the
+  // daemons can still start — better than refusing to configure at all.
+  if (!await _privFileExists(_mailCertPath)) {
+    await _sudo('cp', ['/etc/ssl/certs/ssl-cert-snakeoil.pem', _mailCertPath],
+        failOk: true);
+    await _sudo('cp', ['/etc/ssl/private/ssl-cert-snakeoil.key', _mailKeyPath],
+        failOk: true);
+  }
+
   await _sudo('chmod', ['644', _mailCertPath], failOk: true);
   await _sudo('chmod', ['640', _mailKeyPath], failOk: true);
-  await _sudo('chgrp', ['ssl-cert', _mailKeyPath], failOk: true);
+  await _sudo('chown', ['root:ssl-cert', _mailKeyPath], failOk: true);
   await _writeFileSudo(stamp, desired);
+  await _sudo('rm', ['-f', tmpConf], failOk: true);
 }
 
 /// Open the standard SMTP/IMAP/POP3 ports when `ufw` is present. Harmless
@@ -898,6 +956,18 @@ Future<void> _mailSync(
       .where((h) => h.isNotEmpty)
       .toList();
   await _mailEnsureCert(hostnames);
+
+  // Validate Postfix config before restarting — a broken config causes smtpd
+  // to accept TCP connections then immediately drop them with no banner.
+  final checkResult = await Process.run(
+    _isRoot ? 'postfix' : 'sudo',
+    [if (!_isRoot) '--non-interactive', 'postfix', 'check'],
+  );
+  if (checkResult.exitCode != 0) {
+    stderr.writeln(
+        'mail_sync: postfix check failed:\n${checkResult.stderr}');
+    throw Exception('Postfix configuration check failed; aborting restart.');
+  }
 
   await _serviceCtl('restart', 'opendkim');
   await _serviceCtl('reload-or-restart', 'postfix');
