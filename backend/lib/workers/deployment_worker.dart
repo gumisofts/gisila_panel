@@ -129,12 +129,20 @@ class DeploymentWorker {
         ],
       ], deploymentId: deploymentId);
 
+      final appDomains = await Query<Domain>(DomainTable.metadata)
+          .where(DomainTable.appId.eq(app.id!))
+          .all(database.context());
+      final hostnames = appDomains
+          .where((d) => d.hostname != null)
+          .map((d) => d.hostname!)
+          .toList();
       await _runAgent([
         'apply-vhost',
         '--app-id',
         '${app.id}',
         '--port',
         '${app.internalPort}',
+        for (final h in hostnames) ...['--hostname', h],
       ], deploymentId: deploymentId);
 
       // 4. Start / restart the service.
@@ -189,12 +197,20 @@ class DeploymentWorker {
     if (appId == null) return;
     final app = await _findApp(appId);
     if (app == null) return;
+    final domains = await Query<Domain>(DomainTable.metadata)
+        .where(DomainTable.appId.eq(app.id!))
+        .all(database.context());
+    final hostnames = domains
+        .where((d) => d.hostname != null)
+        .map((d) => d.hostname!)
+        .toList();
     await _runAgent([
       'apply-vhost',
       '--app-id',
       '${app.id}',
       '--port',
       '${app.internalPort}',
+      for (final h in hostnames) ...['--hostname', h],
     ]);
   }
 

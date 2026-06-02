@@ -358,24 +358,30 @@ class Builders {
   /// files, producing hard-to-diagnose "No module named '_sqlite3'" errors at
   /// runtime.  Running this before every pyenv call is safe — apt-get is a
   /// no-op when packages are already at the latest version.
-  static Future<void> _ensurePythonBuildDeps() => ShellExec.run(
-        'apt-get',
-        [
-          'install', '-y', '-qq',
-          'libsqlite3-dev',
-          'libssl-dev',
-          'zlib1g-dev',
-          'libbz2-dev',
-          'libreadline-dev',
-          'libncursesw5-dev',
-          'xz-utils',
-          'libxml2-dev',
-          'libxmlsec1-dev',
-          'libffi-dev',
-          'liblzma-dev',
-        ],
-        requireSuccess: false,
-      );
+  static Future<void> _ensurePythonBuildDeps() async {
+    // Refresh package lists first so the install below can't fail because of a
+    // stale/empty apt cache (common on minimal VPS images). Best-effort: a
+    // failing mirror should not abort the build outright.
+    await ShellExec.run('apt-get', ['update', '-qq'], requireSuccess: false);
+    await ShellExec.run(
+      'apt-get',
+      [
+        'install', '-y', '-qq',
+        'libsqlite3-dev',
+        'libssl-dev',
+        'zlib1g-dev',
+        'libbz2-dev',
+        'libreadline-dev',
+        'libncursesw5-dev',
+        'xz-utils',
+        'libxml2-dev',
+        'libxmlsec1-dev',
+        'libffi-dev',
+        'liblzma-dev',
+      ],
+      requireSuccess: false,
+    );
+  }
 
   static Future<void> _runAsUser(String user, String cwd, String command) =>
       ShellExec.run(
