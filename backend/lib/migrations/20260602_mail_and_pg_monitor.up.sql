@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS "mail_domains" (
 
 CREATE TABLE IF NOT EXISTS "mail_accounts" (
   "id" BIGSERIAL PRIMARY KEY,
-  "mail_domain_id" INTEGER NOT NULL,
+  "mail_domain_id" INTEGER NOT NULL
+    REFERENCES "mail_domains" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
   "address" VARCHAR(255) NOT NULL UNIQUE,
   "password_hash" VARCHAR(255) NOT NULL,
   "quota_mb" INTEGER,
@@ -22,15 +23,3 @@ CREATE TABLE IF NOT EXISTS "mail_accounts" (
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
   "updated_at" TIMESTAMP WITH TIME ZONE
 );
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'mail_accounts_mail_domain_fkey'
-  ) THEN
-    ALTER TABLE "mail_accounts"
-      ADD CONSTRAINT "mail_accounts_mail_domain_fkey"
-      FOREIGN KEY ("mail_domain_id") REFERENCES "mail_domains" ("id")
-      ON DELETE CASCADE ON UPDATE CASCADE;
-  END IF;
-END$$;
