@@ -146,37 +146,50 @@ class Builders {
       ], requireSuccess: false);
     }
 
-    // 3. Always install dependencies first.
-    //
-    //    We assemble an environment that defuses two separate footguns:
-    //
-    //    a) corepack — its shims intercept package-manager calls and try to
-    //       download the version pinned in package.json's `packageManager` field
-    //       into the user's home cache, which the unprivileged app user may not
-    //       be able to write to.  We neuter it without removing any shims:
-    //         COREPACK_ENABLE_STRICT=0          — fall back to the system PM.
-    //         COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
-    //
-    //    b) pnpm 10+ dependency-build gate — build scripts for packages like
-    //       @prisma/client, esbuild and sharp are ignored by default and the
-    //       install aborts with ERR_PNPM_IGNORED_BUILDS.  Setting the npm-config
-    //       env var below approves all builds non-interactively.  It is also
-    //       inherited by the nested `pnpm install` that `pnpm build` triggers
-    //       via its deps-status check, and is harmlessly ignored by npm / yarn /
-    //       bun and by pnpm versions that predate the setting.
+    // 3. Neutralise corepack.  Its shims intercept package-manager calls and
+    //    try to download the version pinned in package.json's `packageManager`
+    //    field into the user's home cache, which the unprivileged app user may
+    //    not be able to write to.  We defuse it without removing any shims:
+    //      COREPACK_ENABLE_STRICT=0          — fall back to the system PM.
+    //      COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
     final nodeEnv = <String, String>{
       'COREPACK_ENABLE_STRICT': '0',
       'COREPACK_HOME': '$workDir/.corepack',
-      if (pkgMgr == 'pnpm') 'npm_config_dangerously_allow_all_builds': 'true',
     };
     final installEnv = env != null
         ? {...env, ...nodeEnv}
         : {...Platform.environment, ...nodeEnv};
 
+    // 4. pnpm 10+ ignores dependency build scripts (Prisma, esbuild, sharp, …)
+    //    by default and aborts with ERR_PNPM_IGNORED_BUILDS.  Approving them
+    //    non-interactively is the only viable path for an automated deploy.
+    //
+    //    The setting must live in `pnpm-workspace.yaml` as `dangerouslyAllowAllBuilds`:
+    //      - pnpm 11 reads pnpm-specific settings ONLY from pnpm-workspace.yaml;
+    //        `.npmrc` is auth/registry-only and env vars use the pnpm_config_*
+    //        (not npm_config_*) prefix — which is why earlier attempts no-oped.
+    //      - pnpm 10.9+ also honours this key in pnpm-workspace.yaml, so a single
+    //        file works across both major versions.
+    //
+    //    We merge rather than overwrite: a repo may already ship a
+    //    pnpm-workspace.yaml defining workspace packages.  Appending a
+    //    top-level key (at column 0, on its own line) is valid YAML and the
+    //    grep guard keeps it idempotent.  `>>` creates the file when absent.
+    if (pkgMgr == 'pnpm') {
+      await _runAsUserWithEnv(
+        user,
+        src,
+        "grep -qF 'dangerouslyAllowAllBuilds' pnpm-workspace.yaml 2>/dev/null "
+        "|| printf '\\ndangerouslyAllowAllBuilds: true\\n' >> pnpm-workspace.yaml",
+        installEnv,
+      );
+    }
+
+    // 5. Install dependencies.
     final installCmd = _nodeInstallCommand(pkgMgr);
     await _runAsUserWithEnv(user, src, installCmd, installEnv);
 
-    // 4. Run the caller-supplied build command on top of the freshly installed
+    // 6. Run the caller-supplied build command on top of the freshly installed
     //    node_modules (e.g. `pnpm build`, `npm run build`, `tsc`).
     //    Reuse installEnv so corepack stays neutralised for this step too.
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
