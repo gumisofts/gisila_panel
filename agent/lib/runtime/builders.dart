@@ -146,25 +146,28 @@ class Builders {
       ], requireSuccess: false);
     }
 
-    // 3. Build the install command from the detected package manager when the
-    //    caller has not provided an explicit build command.
-    final cmd = buildCommand ?? _nodeInstallCommand(pkgMgr);
+    // 3. Always install dependencies first.
+    //    yarn and pnpm are managed by corepack (bundled with Node 16.9+) so we
+    //    enable it before running the install.  npm ci works without corepack.
+    final installCmd = _nodeInstallCommand(pkgMgr);
+    final fullInstall = (pkgMgr == 'yarn' || pkgMgr == 'pnpm')
+        ? 'corepack enable && $installCmd'
+        : installCmd;
 
-    // 4. Some package managers (yarn, pnpm) are managed by corepack which is
-    //    bundled with Node 16.9+.  Enable it before running the install so the
-    //    correct package manager version is used even on a fresh machine.
-    if (buildCommand == null && (pkgMgr == 'yarn' || pkgMgr == 'pnpm')) {
-      final corepackCmd = 'corepack enable && $cmd';
-      if (env != null) {
-        await _runAsUserWithEnv(user, src, corepackCmd, env);
-      } else {
-        await _runAsUser(user, src, corepackCmd);
-      }
+    if (env != null) {
+      await _runAsUserWithEnv(user, src, fullInstall, env);
     } else {
+      await _runAsUser(user, src, fullInstall);
+    }
+
+    // 4. Run the caller-supplied build command on top of the freshly installed
+    //    node_modules (e.g. `pnpm build`, `npm run build`, `tsc`).
+    //    When no build command is given, the install step above is sufficient.
+    if (buildCommand != null && buildCommand.trim().isNotEmpty) {
       if (env != null) {
-        await _runAsUserWithEnv(user, src, cmd, env);
+        await _runAsUserWithEnv(user, src, buildCommand, env);
       } else {
-        await _runAsUser(user, src, cmd);
+        await _runAsUser(user, src, buildCommand);
       }
     }
   }
@@ -196,11 +199,15 @@ class Builders {
       case 'bun':
         return 'bun install --frozen-lockfile';
       case 'pnpm':
-        return 'pnpm install --frozen-lockfile';
+        // --frozen-lockfile: refuse to update the lock file (CI-safe).
+        // --unsafe-perm: allow postinstall/lifecycle build scripts for packages
+        //   such as @prisma/client, esbuild, and sharp that pnpm 10+ blocks by
+        //   default (ERR_PNPM_IGNORED_BUILDS).  This is the recommended way to
+        //   permit build scripts in automated / server deployments.
+        return 'pnpm install --frozen-lockfile --unsafe-perm';
       case 'yarn':
         // yarn v1 uses --frozen-lockfile; yarn v2+ (Berry) uses --immutable.
-        // `yarn install` respects YARN_ENABLE_IMMUTABLE_INSTALLS=1 in CI,
-        // but --frozen-lockfile is universally understood by both versions.
+        // --frozen-lockfile is universally understood by both versions.
         return 'yarn install --frozen-lockfile';
       default:
         return 'npm ci';
