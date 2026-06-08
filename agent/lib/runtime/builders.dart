@@ -59,18 +59,17 @@ class Builders {
     required String workDir,
     required String user,
     String? buildCommand,
+    String? dartVersion,
   }) async {
     final src = '$workDir/releases/current_build';
+    final dart = dartVersion != null
+        ? await _ensureDartSdk(dartVersion)
+        : 'dart';
     final cmd = buildCommand ??
-        'dart pub get && dart compile exe bin/server.dart -o build/app';
+        '$dart pub get && $dart compile exe bin/server.dart -o build/app';
     await _runAsUser(user, src, cmd);
     await ShellExec.run('install', [
-      '-m',
-      '0755',
-      '-o',
-      user,
-      '-g',
-      user,
+      '-m', '0755', '-o', user, '-g', user,
       '$src/build/app',
       '$workDir/current/app',
     ]);
@@ -80,17 +79,19 @@ class Builders {
     required String workDir,
     required String user,
     String? buildCommand,
+    String? goVersion,
   }) async {
     final src = '$workDir/releases/current_build';
+    final goEnv = goVersion != null ? await _ensureGo(goVersion) : null;
+    // When a versioned Go is available, prepend its bin dir to PATH.
     final cmd = buildCommand ?? 'go build -o build/app ./...';
-    await _runAsUser(user, src, cmd);
+    if (goEnv != null) {
+      await _runAsUserWithEnv(user, src, cmd, goEnv);
+    } else {
+      await _runAsUser(user, src, cmd);
+    }
     await ShellExec.run('install', [
-      '-m',
-      '0755',
-      '-o',
-      user,
-      '-g',
-      user,
+      '-m', '0755', '-o', user, '-g', user,
       '$src/build/app',
       '$workDir/current/app',
     ]);
@@ -100,22 +101,143 @@ class Builders {
     required String workDir,
     required String user,
     String? buildCommand,
+    String? rustVersion,
   }) async {
     final src = '$workDir/releases/current_build';
-    final cmd = buildCommand ?? 'cargo build --release';
+    await _ensureRustup();
+    final toolchain = (rustVersion != null && rustVersion.isNotEmpty)
+        ? rustVersion
+        : 'stable';
+    // Install / update the toolchain
+    await ShellExec.run('rustup', ['toolchain', 'install', toolchain],
+        requireSuccess: false);
+    final cmd = buildCommand ??
+        'rustup run $toolchain cargo build --release';
     await _runAsUser(user, src, cmd);
-    // Cargo emits binaries under target/release/<crate-name>; we expect the
-    // start_command to point at the right one.
+    // Cargo emits binaries under target/release/<crate-name>; start_command
+    // must point at the right one.
   }
 
   static Future<void> buildNode({
     required String workDir,
     required String user,
     String? buildCommand,
+    String? nodeVersion,
   }) async {
     final src = '$workDir/releases/current_build';
-    final cmd = buildCommand ?? 'npm ci';
-    await _runAsUser(user, src, cmd);
+
+    // 1. Detect the package manager from lock files before the build starts.
+    //    This determines the default install command and whether corepack is
+    //    needed.  If the caller supplies a buildCommand we still log the
+    //    detected manager for observability.
+    final pkgMgr = _detectNodePackageManager(src);
+    stdout.writeln('[agent] detected Node.js package manager: $pkgMgr');
+
+    // 2. Optionally set up a pinned Node.js version via fnm.
+    Map<String, String>? env;
+    if (nodeVersion != null) {
+      env = await _ensureFnmNode(nodeVersion);
+      // Stable symlink so the systemd unit can prepend the right bin dir to PATH.
+      final nodeInstallDir =
+          '/opt/fnm/node-versions/v$nodeVersion/installation';
+      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+      await ShellExec.run('ln', [
+        '-sfn', nodeInstallDir, '$workDir/current/.runtime'
+      ], requireSuccess: false);
+    }
+
+    // 3. Build the install command from the detected package manager when the
+    //    caller has not provided an explicit build command.
+    final cmd = buildCommand ?? _nodeInstallCommand(pkgMgr);
+
+    // 4. Some package managers (yarn, pnpm) are managed by corepack which is
+    //    bundled with Node 16.9+.  Enable it before running the install so the
+    //    correct package manager version is used even on a fresh machine.
+    if (buildCommand == null && (pkgMgr == 'yarn' || pkgMgr == 'pnpm')) {
+      final corepackCmd = 'corepack enable && $cmd';
+      if (env != null) {
+        await _runAsUserWithEnv(user, src, corepackCmd, env);
+      } else {
+        await _runAsUser(user, src, corepackCmd);
+      }
+    } else {
+      if (env != null) {
+        await _runAsUserWithEnv(user, src, cmd, env);
+      } else {
+        await _runAsUser(user, src, cmd);
+      }
+    }
+  }
+
+  /// Sniff the source directory for well-known lock files and return the name
+  /// of the package manager that owns them.
+  ///
+  /// Detection order (most-specific first):
+  ///  1. `bun.lockb` / `bun.lock`  → **bun**
+  ///  2. `pnpm-lock.yaml`          → **pnpm**
+  ///  3. `yarn.lock`               → **yarn**
+  ///  4. *(fallback)*              → **npm**
+  static String _detectNodePackageManager(String srcDir) {
+    if (File('$srcDir/bun.lockb').existsSync() ||
+        File('$srcDir/bun.lock').existsSync()) {
+      return 'bun';
+    }
+    if (File('$srcDir/pnpm-lock.yaml').existsSync()) return 'pnpm';
+    if (File('$srcDir/yarn.lock').existsSync()) return 'yarn';
+    return 'npm';
+  }
+
+  /// Returns the CI-safe install command for [pkgMgr].
+  ///
+  /// Each command installs exactly the versions recorded in the lock file and
+  /// refuses to modify it (equivalent to `npm ci`).
+  static String _nodeInstallCommand(String pkgMgr) {
+    switch (pkgMgr) {
+      case 'bun':
+        return 'bun install --frozen-lockfile';
+      case 'pnpm':
+        return 'pnpm install --frozen-lockfile';
+      case 'yarn':
+        // yarn v1 uses --frozen-lockfile; yarn v2+ (Berry) uses --immutable.
+        // `yarn install` respects YARN_ENABLE_IMMUTABLE_INSTALLS=1 in CI,
+        // but --frozen-lockfile is universally understood by both versions.
+        return 'yarn install --frozen-lockfile';
+      default:
+        return 'npm ci';
+    }
+  }
+
+  /// Build a Bun application with optional version pinning.
+  ///
+  /// Called for runtime=bun. A versioned Bun binary is downloaded once to
+  /// `/opt/bun-versions/{version}/bun` and symlinked at
+  /// `workDir/current/.runtime` (single binary, no bin/ subdirectory).
+  static Future<void> buildBun({
+    required String workDir,
+    required String user,
+    String? buildCommand,
+    String? bunVersion,
+  }) async {
+    final src = '$workDir/releases/current_build';
+    Map<String, String>? env;
+    if (bunVersion != null) {
+      final bunBin = await _ensureBun(bunVersion);
+      env = {
+        ...Platform.environment,
+        'PATH': '${bunBin.parent.path}:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
+      };
+      // Stable symlink for runtime
+      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+      await ShellExec.run('ln', [
+        '-sfn', bunBin.path, '$workDir/current/.runtime'
+      ], requireSuccess: false);
+    }
+    final cmd = buildCommand ?? 'bun install';
+    if (env != null) {
+      await _runAsUserWithEnv(user, src, cmd, env);
+    } else {
+      await _runAsUser(user, src, cmd);
+    }
   }
 
   /// Build a Python app using pyenv + venv.
@@ -335,6 +457,78 @@ class Builders {
     return result.exitCode == 0;
   }
 
+  /// Build a Celery app using pyenv + venv.
+  ///
+  /// Identical to [buildPython] in the setup phase, but installs Celery and
+  /// Flower instead of (or in addition to) gunicorn/uvicorn. Django management
+  /// commands are still run automatically when `manage.py` is found.
+  static Future<void> buildCelery({
+    required String workDir,
+    required String user,
+    String? buildCommand,
+    String? pythonVersion,
+    String pyenvRoot = '/opt/pyenv',
+  }) async {
+    final src = '$workDir/releases/current_build';
+    final venv = '$src/.venv';
+    final currentVenv = '$workDir/current/.venv';
+
+    final version = pythonVersion?.trim();
+
+    await _ensurePythonBuildDeps();
+    await _ensurePyenv(pyenvRoot);
+    final pythonBin = version != null
+        ? await _pyenvPython(pyenvRoot, version)
+        : 'python3';
+
+    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
+
+    if (buildCommand != null) {
+      await _runAsUser(user, src, 'source .venv/bin/activate && $buildCommand');
+    } else {
+      final hasDeps = File('$src/requirements.txt').existsSync();
+      if (hasDeps) {
+        await _runAsUser(user, src,
+            '.venv/bin/pip install --no-cache-dir -q -r requirements.txt');
+      }
+    }
+
+    // Always install celery and flower so the generated unit commands work.
+    await _runAsUser(
+        user,
+        src,
+        '.venv/bin/pip install --no-cache-dir -q '
+        '"celery>=5.3" "flower>=2.0"');
+
+    // Run Django management commands if applicable.
+    await _runDjangoManagementCommands(user, src);
+
+    // Symlink venv for stable path in systemd units.
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    final link = Link(currentVenv);
+    if (link.existsSync()) link.deleteSync();
+    await ShellExec.run('ln', ['-sfn', venv, currentVenv]);
+    await ShellExec.run('chown', ['-hR', '$user:$user', venv]);
+  }
+
+  /// "Build" a static site deployment.
+  ///
+  /// If a [buildCommand] is provided (e.g. `npm run build`) it is run inside
+  /// a Node.js / Bun context after dependencies are installed via [buildNode].
+  /// Without a build command the source tree is used as-is (plain HTML/CSS/JS).
+  static Future<void> buildStatic({
+    required String workDir,
+    required String user,
+    String? buildCommand,
+  }) async {
+    if (buildCommand != null && buildCommand.trim().isNotEmpty) {
+      // Install deps first (npm ci / bun install), then run the build.
+      await buildNode(workDir: workDir, user: user, buildCommand: buildCommand);
+    }
+    // No compiled binary to install — Nginx will serve the files directly
+    // from releases/current_build/<static_root>.
+  }
+
   static Future<void> binaryArtifact({
     required String workDir,
     required String user,
@@ -383,16 +577,152 @@ class Builders {
     );
   }
 
+  // ── Dart SDK version management ──────────────────────────────────────────
+
+  static const _dartBase = '/opt/dart-versions';
+
+  /// Ensure a specific Dart SDK version is available and return its `dart`
+  /// binary path. Downloads and extracts from the official archive if absent.
+  static Future<String> _ensureDartSdk(String version) async {
+    final dir = '$_dartBase/$version';
+    final bin = '$dir/dart-sdk/bin/dart';
+    if (File(bin).existsSync()) return bin;
+
+    Directory(dir).createSync(recursive: true);
+    stdout.writeln('[agent] Downloading Dart SDK $version…');
+    final archive = '$dir/dart-sdk.zip';
+    await ShellExec.run('curl', [
+      '-fSL', '--output', archive,
+      'https://storage.googleapis.com/dart-archive/channels/stable/release/$version/sdk/dartsdk-linux-x64-release.zip',
+    ]);
+    await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
+    await ShellExec.run('rm', ['-f', archive]);
+    return bin;
+  }
+
+  // ── Go version management ─────────────────────────────────────────────────
+
+  static const _goBase = '/opt/go-versions';
+
+  /// Ensure a specific Go version is installed under [_goBase] and return an
+  /// env map with PATH prepended so `go` resolves to that version.
+  static Future<Map<String, String>> _ensureGo(String version) async {
+    final dir = '$_goBase/$version';
+    final bin = '$dir/go/bin/go';
+    if (!File(bin).existsSync()) {
+      Directory(dir).createSync(recursive: true);
+      stdout.writeln('[agent] Downloading Go $version…');
+      final archive = '$dir/go.tar.gz';
+      await ShellExec.run('curl', [
+        '-fSL', '--output', archive,
+        'https://go.dev/dl/go$version.linux-amd64.tar.gz',
+      ]);
+      await ShellExec.run('tar', ['-C', dir, '-xzf', archive]);
+      await ShellExec.run('rm', ['-f', archive]);
+    }
+    final goBin = '$dir/go/bin';
+    return {
+      ...Platform.environment,
+      'PATH': '$goBin:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
+      'GOROOT': '$dir/go',
+    };
+  }
+
+  // ── Rust / rustup version management ─────────────────────────────────────
+
+  /// Ensure rustup is installed system-wide (at `/usr/local/rustup`).
+  static Future<void> _ensureRustup() async {
+    final result = await Process.run('which', ['rustup']);
+    if (result.exitCode == 0) return;
+    stdout.writeln('[agent] Installing rustup…');
+    await ShellExec.run('bash', [
+      '-c',
+      'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path',
+    ], requireSuccess: false);
+  }
+
+  // ── Node.js / fnm version management ─────────────────────────────────────
+
+  static const _fnmDir = '/opt/fnm';
+  static const _fnmBin = '/usr/local/bin/fnm';
+
+  /// Ensure fnm is installed at [_fnmBin] and the requested Node version is
+  /// available. Returns an env map suitable for `_runAsUserWithEnv`.
+  static Future<Map<String, String>> _ensureFnmNode(String version) async {
+    // 1. Install fnm if absent.
+    if (!File(_fnmBin).existsSync()) {
+      stdout.writeln('[agent] Installing fnm…');
+      await ShellExec.run('bash', [
+        '-c',
+        'curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir /usr/local/bin --skip-shell',
+      ]);
+    }
+
+    // 2. Install the requested Node version if absent.
+    final nodeDir = '$_fnmDir/node-versions/v$version/installation';
+    if (!Directory(nodeDir).existsSync()) {
+      stdout.writeln('[agent] Installing Node.js $version via fnm…');
+      await ShellExec.run(_fnmBin, [
+        'install', version, '--fnm-dir', _fnmDir,
+      ]);
+    }
+
+    final nodeBin = '$nodeDir/bin';
+    return {
+      ...Platform.environment,
+      'PATH': '$nodeBin:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
+      'FNM_DIR': _fnmDir,
+    };
+  }
+
+  // ── Bun version management ────────────────────────────────────────────────
+
+  static const _bunBase = '/opt/bun-versions';
+
+  /// Ensure a specific Bun version binary is available at
+  /// `/opt/bun-versions/{version}/bun` and return its [File].
+  static Future<File> _ensureBun(String version) async {
+    final dir = '$_bunBase/$version';
+    final bin = File('$dir/bun');
+    if (bin.existsSync()) return bin;
+
+    Directory(dir).createSync(recursive: true);
+    stdout.writeln('[agent] Downloading Bun $version…');
+    final archive = '$dir/bun-linux-x64.zip';
+    await ShellExec.run('curl', [
+      '-fSL', '--output', archive,
+      'https://github.com/oven-sh/bun/releases/download/bun-v$version/bun-linux-x64.zip',
+    ]);
+    await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
+    // The zip extracts to `bun-linux-x64/bun` — move it up.
+    final extracted = File('$dir/bun-linux-x64/bun');
+    if (extracted.existsSync()) {
+      await ShellExec.run('mv', [extracted.path, bin.path]);
+      await ShellExec.run('rm', ['-rf', '$dir/bun-linux-x64']);
+    }
+    await ShellExec.run('chmod', ['+x', bin.path]);
+    await ShellExec.run('rm', ['-f', archive]);
+    return bin;
+  }
+
+  // ── Shared helpers ────────────────────────────────────────────────────────
+
   static Future<void> _runAsUser(String user, String cwd, String command) =>
       ShellExec.run(
           'runuser',
-          [
-            '-u',
-            user,
-            '--',
-            'bash',
-            '-lc',
-            command,
-          ],
+          ['-u', user, '--', 'bash', '-lc', command],
           cwd: cwd);
+
+  static Future<void> _runAsUserWithEnv(
+    String user,
+    String cwd,
+    String command,
+    Map<String, String> env,
+  ) =>
+      ShellExec.run(
+        'runuser',
+        ['-u', user, '--', 'bash', '-lc', command],
+        cwd: cwd,
+        env: env,
+      );
 }

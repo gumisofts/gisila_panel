@@ -212,7 +212,7 @@ App:
       is_index: true
     # Runtime + source.
     runtime:
-      type: varchar          # dart | go | rust | zig | bun | node | python | binary
+      type: varchar          # dart | go | rust | zig | bun | node | python | binary | celery | static
       is_null: false
     source_type:
       type: varchar          # binary | git | zip
@@ -265,6 +265,49 @@ App:
     gunicorn_extra_args:
       type: varchar
       is_null: true          # extra raw gunicorn flags appended verbatim
+    # Runtime version pins (each only relevant for its respective runtime).
+    # When null the agent falls back to whatever is installed on the host.
+    node_version:
+      type: varchar
+      is_null: true          # e.g. 20.18.0 | 22.11.0
+    dart_version:
+      type: varchar
+      is_null: true          # e.g. 3.4.4
+    go_version:
+      type: varchar
+      is_null: true          # e.g. 1.22.9
+    rust_version:
+      type: varchar
+      is_null: true          # e.g. stable | 1.81.0 | nightly
+    bun_version:
+      type: varchar
+      is_null: true          # e.g. 1.1.38
+    # Celery-specific fields (only relevant when runtime = celery).
+    celery_app:
+      type: varchar
+      is_null: true          # Celery app import path, e.g. myproject.celery or proj.celery:app
+    celery_worker_count:
+      type: integer
+      is_null: true          # number of worker processes (default 2)
+    celery_concurrency:
+      type: integer
+      is_null: true          # concurrency per worker process (default 4)
+    celery_queues:
+      type: varchar
+      is_null: true          # comma-separated queue names (default: celery)
+    celery_beat_enabled:
+      type: boolean
+      default: false         # launch celery beat scheduler alongside workers
+    celery_extra_args:
+      type: varchar
+      is_null: true          # extra raw celery worker flags appended verbatim
+    # Static serving fields (only relevant when runtime = static).
+    static_root:
+      type: varchar
+      is_null: true          # path within the repo to serve, e.g. dist or public
+    static_spa:
+      type: boolean
+      default: false         # SPA mode: fall back all routes to index.html
     # Resource limits (translated into systemd MemoryMax / CPUQuota / TasksMax).
     memory_mb_limit:
       type: integer

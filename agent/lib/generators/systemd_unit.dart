@@ -1,3 +1,297 @@
+/// Systemd .target that groups all Celery services for one app.
+///
+/// Lifecycle commands (`systemctl start gisila-<user>.target`) cascade to all
+/// WantedBy / BindsTo members (workers, beat, flower).
+class CeleryTarget {
+  CeleryTarget({required this.linuxUser, required this.appId});
+
+  final String linuxUser;
+  final int appId;
+
+  String get targetName => 'gisila-$linuxUser.target';
+
+  String render() => '''
+[Unit]
+Description=Gisila Celery stack $linuxUser (id=$appId)
+After=network.target
+PartOf=gisila-apps.target
+
+[Install]
+WantedBy=gisila-apps.target
+''';
+}
+
+/// A single Celery worker process unit.
+class CeleryWorkerUnit {
+  CeleryWorkerUnit({
+    required this.appId,
+    required this.linuxUser,
+    required this.workDir,
+    required this.celeryApp,
+    required this.workerIndex,
+    this.concurrency = 4,
+    this.queues,
+    this.extraArgs,
+    this.memoryMb = 512,
+    this.cpuQuotaPercent = 50,
+    this.tasksMax = 512,
+    this.envVars = const {},
+  });
+
+  final int appId;
+  final String linuxUser;
+  final String workDir;
+  final String celeryApp;
+  final int workerIndex;
+  final int concurrency;
+  final String? queues;
+  final String? extraArgs;
+  final int memoryMb;
+  final int cpuQuotaPercent;
+  final int tasksMax;
+  final Map<String, String> envVars;
+
+  String get serviceName => 'gisila-$linuxUser-worker-$workerIndex';
+
+  String render() {
+    final venv = '$workDir/current/.venv';
+    final src = '$workDir/releases/current_build';
+    final logs = '$workDir/logs';
+    final queuesArg =
+        (queues != null && queues!.isNotEmpty) ? ' -Q $queues' : '';
+    final extraArgsStr =
+        (extraArgs != null && extraArgs!.isNotEmpty) ? ' ${extraArgs!.trim()}' : '';
+
+    final envLines = StringBuffer();
+    for (final entry in envVars.entries) {
+      final escaped =
+          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      envLines.writeln('Environment=${entry.key}="$escaped"');
+    }
+
+    return '''
+[Unit]
+Description=Gisila Celery worker $workerIndex for $linuxUser (id=$appId)
+After=network.target
+PartOf=gisila-$linuxUser.target
+WantedBy=gisila-$linuxUser.target
+
+[Service]
+Type=simple
+User=$linuxUser
+Group=$linuxUser
+WorkingDirectory=$src
+ExecStart=$venv/bin/celery -A $celeryApp worker -n worker-$workerIndex@%h --loglevel=info -c $concurrency$queuesArg$extraArgsStr --logfile=$logs/worker-$workerIndex.log
+Restart=always
+RestartSec=10
+
+Environment=GISILA_APP_ID=$appId
+${envLines.toString().trimRight()}
+
+# ── Sandboxing ─────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+# MemoryDenyWriteExecute disabled for CPython (bytecode compilation)
+SystemCallArchitectures=native
+
+# Filesystem
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadOnlyPaths=$workDir/current $workDir/releases
+PrivateMounts=true
+
+# ── Resource limits (cgroups v2) ───────────────────────────────
+MemoryMax=${memoryMb}M
+CPUQuota=$cpuQuotaPercent%
+TasksMax=$tasksMax
+LimitNOFILE=4096
+''';
+  }
+}
+
+/// Celery beat scheduler unit.
+class CeleryBeatUnit {
+  CeleryBeatUnit({
+    required this.appId,
+    required this.linuxUser,
+    required this.workDir,
+    required this.celeryApp,
+    this.memoryMb = 128,
+    this.cpuQuotaPercent = 10,
+    this.envVars = const {},
+  });
+
+  final int appId;
+  final String linuxUser;
+  final String workDir;
+  final String celeryApp;
+  final int memoryMb;
+  final int cpuQuotaPercent;
+  final Map<String, String> envVars;
+
+  String get serviceName => 'gisila-$linuxUser-beat';
+
+  String render() {
+    final venv = '$workDir/current/.venv';
+    final src = '$workDir/releases/current_build';
+    final logs = '$workDir/logs';
+    final tmp = '$workDir/tmp';
+
+    final envLines = StringBuffer();
+    for (final entry in envVars.entries) {
+      final escaped =
+          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      envLines.writeln('Environment=${entry.key}="$escaped"');
+    }
+
+    return '''
+[Unit]
+Description=Gisila Celery beat scheduler for $linuxUser (id=$appId)
+After=network.target
+PartOf=gisila-$linuxUser.target
+WantedBy=gisila-$linuxUser.target
+
+[Service]
+Type=simple
+User=$linuxUser
+Group=$linuxUser
+WorkingDirectory=$src
+ExecStart=$venv/bin/celery -A $celeryApp beat --loglevel=info --logfile=$logs/beat.log --pidfile=$tmp/celerybeat.pid
+Restart=always
+RestartSec=10
+
+Environment=GISILA_APP_ID=$appId
+${envLines.toString().trimRight()}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native
+
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadOnlyPaths=$workDir/current $workDir/releases
+
+MemoryMax=${memoryMb}M
+CPUQuota=$cpuQuotaPercent%
+TasksMax=64
+LimitNOFILE=1024
+''';
+  }
+}
+
+/// Celery Flower monitoring UI unit.
+///
+/// Flower is always deployed alongside Celery workers. The nginx vhost
+/// reverse-proxies the assigned [port] so Flower is accessible via the
+/// app's domain without exposing the raw port.
+class CeleryFlowerUnit {
+  CeleryFlowerUnit({
+    required this.appId,
+    required this.linuxUser,
+    required this.workDir,
+    required this.celeryApp,
+    required this.port,
+    this.memoryMb = 128,
+    this.cpuQuotaPercent = 10,
+    this.envVars = const {},
+  });
+
+  final int appId;
+  final String linuxUser;
+  final String workDir;
+  final String celeryApp;
+  final int port;
+  final int memoryMb;
+  final int cpuQuotaPercent;
+  final Map<String, String> envVars;
+
+  String get serviceName => 'gisila-$linuxUser-flower';
+
+  String render() {
+    final venv = '$workDir/current/.venv';
+    final src = '$workDir/releases/current_build';
+    final logs = '$workDir/logs';
+
+    final envLines = StringBuffer();
+    for (final entry in envVars.entries) {
+      final escaped =
+          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      envLines.writeln('Environment=${entry.key}="$escaped"');
+    }
+
+    return '''
+[Unit]
+Description=Gisila Celery Flower UI for $linuxUser (id=$appId)
+After=network.target
+PartOf=gisila-$linuxUser.target
+WantedBy=gisila-$linuxUser.target
+
+[Service]
+Type=simple
+User=$linuxUser
+Group=$linuxUser
+WorkingDirectory=$src
+ExecStart=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info --logfile=$logs/flower.log
+Restart=always
+RestartSec=5
+
+Environment=PORT=$port
+Environment=GISILA_APP_ID=$appId
+${envLines.toString().trimRight()}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native
+
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadOnlyPaths=$workDir/current $workDir/releases
+
+MemoryMax=${memoryMb}M
+CPUQuota=$cpuQuotaPercent%
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=gisila-$linuxUser.target
+''';
+  }
+}
+
 /// Generate a hardened systemd unit for a per-app service.
 ///
 /// The output is intentionally close to what the gisila-panel docs prescribe
@@ -16,6 +310,7 @@ class SystemdUnit {
     this.tasksMax = 100,
     this.apparmorProfile,
     this.isPython = false,
+    this.runtimeBinDir,
     this.envVars = const {},
   });
 
@@ -29,6 +324,11 @@ class SystemdUnit {
   final int tasksMax;
   final String? apparmorProfile;
   final Map<String, String> envVars;
+
+  /// When set (e.g. for Node.js or Bun deployments with a pinned version),
+  /// this directory is prepended to the service's PATH so commands like
+  /// `node` or `bun` in [startCommand] resolve to the correct version.
+  final String? runtimeBinDir;
 
   /// When true, relax sandbox flags that break the CPython interpreter:
   ///   - `MemoryDenyWriteExecute` must be off (Python JIT / .pyc bytecode)
@@ -64,6 +364,13 @@ class SystemdUnit {
       envLines.writeln('Environment=${entry.key}="$escaped"');
     }
 
+    // For Node.js / Bun apps pinned to a specific version, prepend the
+    // versioned runtime's bin directory to PATH so `node` / `bun` in the
+    // start command resolves to the right binary.
+    final pathLine = runtimeBinDir != null
+        ? 'Environment=PATH=$runtimeBinDir:/usr/local/bin:/usr/bin:/bin\n'
+        : '';
+
     return '''
 [Unit]
 Description=Gisila app $linuxUser (id=$appId)
@@ -81,7 +388,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${envLines.toString().trimRight()}
+${pathLine}${envLines.toString().trimRight()}
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true

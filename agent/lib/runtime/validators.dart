@@ -8,7 +8,7 @@ class AgentValidators {
   static final _workDirRe =
       RegExp(r'^/srv/apps/app_[a-z0-9]{6,}(/[a-zA-Z0-9_.\-]+)*/?$');
   static final _runtimeRe =
-      RegExp(r'^(dart|go|rust|zig|bun|node|python|binary)$');
+      RegExp(r'^(dart|go|rust|zig|bun|node|python|binary|celery|static)$');
   static final _sourceTypeRe = RegExp(r'^(binary|git|zip)$');
   static final _hostnameRe =
       RegExp(r'^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$');

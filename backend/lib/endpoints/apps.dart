@@ -56,6 +56,19 @@ class AppsApi {
       gunicornTimeout: form.gunicornTimeout.value,
       gunicornBind: form.gunicornBind.value,
       gunicornExtraArgs: form.gunicornExtraArgs.value,
+      nodeVersion: form.nodeVersion.value,
+      dartVersion: form.dartVersion.value,
+      goVersion: form.goVersion.value,
+      rustVersion: form.rustVersion.value,
+      bunVersion: form.bunVersion.value,
+      celeryApp: form.celeryApp.value,
+      celeryWorkerCount: form.celeryWorkerCount.value,
+      celeryConcurrency: form.celeryConcurrency.value,
+      celeryQueues: form.celeryQueues.value,
+      celeryBeatEnabled: form.celeryBeatEnabled.value,
+      celeryExtraArgs: form.celeryExtraArgs.value,
+      staticRoot: form.staticRoot.value,
+      staticSpa: form.staticSpa.value,
       deployKeyId: form.deployKeyId.value,
     );
     return app.toJson();
@@ -109,6 +122,11 @@ class AppsApi {
         'gunicornBind': form.gunicornBind.value,
       if (form.gunicornExtraArgs.value != null)
         'gunicornExtraArgs': form.gunicornExtraArgs.value,
+      if (form.nodeVersion.value != null) 'nodeVersion': form.nodeVersion.value,
+      if (form.dartVersion.value != null) 'dartVersion': form.dartVersion.value,
+      if (form.goVersion.value != null) 'goVersion': form.goVersion.value,
+      if (form.rustVersion.value != null) 'rustVersion': form.rustVersion.value,
+      if (form.bunVersion.value != null) 'bunVersion': form.bunVersion.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
     };
     final app = await apps.update(user, id, patch);

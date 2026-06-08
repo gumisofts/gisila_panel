@@ -81,10 +81,27 @@ class DeploymentWorker {
         ],
         // SSH deploy key for authenticated git clone.
         if (keyFile != null) ...['--deploy-key-path', keyFile.path],
-        // Python-specific build options.
-        if (app.runtime == 'python' && app.pythonVersion != null) ...[
+        // Python / Celery: shared Python version selection.
+        if ((app.runtime == 'python' || app.runtime == 'celery') &&
+            app.pythonVersion != null) ...[
           '--python-version',
           app.pythonVersion!
+        ],
+        // Runtime version pins for other runtimes.
+        if (app.runtime == 'node' && app.nodeVersion != null) ...[
+          '--node-version', app.nodeVersion!
+        ],
+        if (app.runtime == 'bun' && app.bunVersion != null) ...[
+          '--bun-version', app.bunVersion!
+        ],
+        if (app.runtime == 'dart' && app.dartVersion != null) ...[
+          '--dart-version', app.dartVersion!
+        ],
+        if (app.runtime == 'go' && app.goVersion != null) ...[
+          '--go-version', app.goVersion!
+        ],
+        if (app.runtime == 'rust' && app.rustVersion != null) ...[
+          '--rust-version', app.rustVersion!
         ],
       ], deploymentId: deploymentId);
 
@@ -135,6 +152,31 @@ class DeploymentWorker {
             app.gunicornExtraArgs!,
           ],
         ],
+        // Node.js / Bun: pass the runtime bin dir so the unit's PATH is correct.
+        // The build step has already created the symlink at .runtime.
+        if (app.runtime == 'node' && app.nodeVersion != null)
+          ...['--runtime-bin-dir', '${app.workDir}/current/.runtime/bin'],
+        if (app.runtime == 'bun' && app.bunVersion != null)
+          // Bun is a single binary — its "bin dir" is the parent of .runtime.
+          ...['--runtime-bin-dir', '${app.workDir}/current'],
+        // Celery-specific unit options.
+        if (app.runtime == 'celery') ...[
+          if (app.celeryApp != null) ...['--celery-app', app.celeryApp!],
+          '--celery-worker-count',
+          '${app.celeryWorkerCount ?? 2}',
+          '--celery-concurrency',
+          '${app.celeryConcurrency ?? 4}',
+          if (app.celeryQueues != null && app.celeryQueues!.isNotEmpty) ...[
+            '--celery-queues',
+            app.celeryQueues!,
+          ],
+          if (app.celeryExtraArgs != null &&
+              app.celeryExtraArgs!.isNotEmpty) ...[
+            '--celery-extra-args',
+            app.celeryExtraArgs!,
+          ],
+          if (app.celeryBeatEnabled == true) '--celery-beat',
+        ],
       ], deploymentId: deploymentId);
 
       final appDomains = await Query<Domain>(DomainTable.metadata)
@@ -144,17 +186,37 @@ class DeploymentWorker {
           .where((d) => d.hostname != null)
           .map((d) => d.hostname!)
           .toList();
-      await _runAgent([
-        'apply-vhost',
-        '--app-id',
-        '${app.id}',
-        '--port',
-        '${app.internalPort}',
-        for (final h in hostnames) ...['--hostname', h],
-      ], deploymentId: deploymentId);
 
-      // 4. Start / restart the service.
-      await _runAgent(['restart', '--user', app.linuxUser!],
+      if (app.runtime == 'static') {
+        // Static sites are served directly by Nginx — pass the static dir.
+        final staticRoot =
+            (app.staticRoot != null && app.staticRoot!.isNotEmpty)
+                ? app.staticRoot!
+                : '';
+        final staticDir = staticRoot.isNotEmpty
+            ? '${app.workDir}/releases/current_build/$staticRoot'
+            : '${app.workDir}/releases/current_build';
+        await _runAgent([
+          'apply-vhost',
+          '--app-id', '${app.id}',
+          '--port', '${app.internalPort}',
+          '--runtime', 'static',
+          '--static-dir', staticDir,
+          if (app.staticSpa == true) '--static-spa',
+          for (final h in hostnames) ...['--hostname', h],
+        ], deploymentId: deploymentId);
+      } else {
+        await _runAgent([
+          'apply-vhost',
+          '--app-id', '${app.id}',
+          '--port', '${app.internalPort}',
+          for (final h in hostnames) ...['--hostname', h],
+        ], deploymentId: deploymentId);
+      }
+
+      // 4. Start / restart the service (runtime-aware).
+      await _runAgent(
+          ['restart', '--user', app.linuxUser!, '--runtime', app.runtime],
           deploymentId: deploymentId);
 
       await _markStatus(deploymentId, 'succeeded', activate: true, app: app);
@@ -191,7 +253,7 @@ class DeploymentWorker {
     };
     if (agentAction == null) return;
 
-    await _runAgent([agentAction, '--user', app.linuxUser!]);
+    await _runAgent([agentAction, '--user', app.linuxUser!, '--runtime', app.runtime]);
     await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(app.id!))
         .update(<String, Object?>{
@@ -212,6 +274,27 @@ class DeploymentWorker {
         .where((d) => d.hostname != null)
         .map((d) => d.hostname!)
         .toList();
+
+    if (app.runtime == 'static') {
+      final staticRoot =
+          (app.staticRoot != null && app.staticRoot!.isNotEmpty)
+              ? app.staticRoot!
+              : '';
+      final staticDir = staticRoot.isNotEmpty
+          ? '${app.workDir}/releases/current_build/$staticRoot'
+          : '${app.workDir}/releases/current_build';
+      await _runAgent([
+        'apply-vhost',
+        '--app-id', '${app.id}',
+        '--port', '${app.internalPort}',
+        '--runtime', 'static',
+        '--static-dir', staticDir,
+        if (app.staticSpa == true) '--static-spa',
+        for (final h in hostnames) ...['--hostname', h],
+      ]);
+      return;
+    }
+
     await _runAgent([
       'apply-vhost',
       '--app-id',

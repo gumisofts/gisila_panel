@@ -113,9 +113,15 @@ Future<void> _build(List<String> args) async {
     p.addOption('artifact-path');
     // SSH deploy key path (optional — for private git repos).
     p.addOption('deploy-key-path');
-    // Python-specific
+    // Python / Celery
     p.addOption('python-version');
     p.addOption('wsgi-app');
+    // Runtime version pins (one per runtime)
+    p.addOption('node-version');
+    p.addOption('dart-version');
+    p.addOption('go-version');
+    p.addOption('rust-version');
+    p.addOption('bun-version');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -157,20 +163,43 @@ Future<void> _build(List<String> args) async {
   switch (runtime) {
     case 'dart':
       await Builders.buildDart(
-          workDir: workDir, user: user, buildCommand: buildCommand);
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        dartVersion: r['dart-version'] as String?,
+      );
       break;
     case 'go':
       await Builders.buildGo(
-          workDir: workDir, user: user, buildCommand: buildCommand);
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        goVersion: r['go-version'] as String?,
+      );
       break;
     case 'rust':
       await Builders.buildRust(
-          workDir: workDir, user: user, buildCommand: buildCommand);
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        rustVersion: r['rust-version'] as String?,
+      );
       break;
     case 'node':
-    case 'bun':
       await Builders.buildNode(
-          workDir: workDir, user: user, buildCommand: buildCommand);
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        nodeVersion: r['node-version'] as String?,
+      );
+      break;
+    case 'bun':
+      await Builders.buildBun(
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        bunVersion: r['bun-version'] as String?,
+      );
       break;
     case 'python':
       await Builders.buildPython(
@@ -179,6 +208,18 @@ Future<void> _build(List<String> args) async {
         buildCommand: buildCommand,
         pythonVersion: r['python-version'] as String?,
       );
+      break;
+    case 'celery':
+      await Builders.buildCelery(
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        pythonVersion: r['python-version'] as String?,
+      );
+      break;
+    case 'static':
+      await Builders.buildStatic(
+          workDir: workDir, user: user, buildCommand: buildCommand);
       break;
     case 'zig':
     case 'binary':
@@ -207,12 +248,61 @@ Future<void> _applyUnit(List<String> args) async {
     p.addOption('gunicorn-timeout');
     p.addOption('gunicorn-bind');
     p.addOption('gunicorn-extra-args');
+    // Celery-specific
+    p.addOption('celery-app');
+    p.addOption('celery-worker-count', defaultsTo: '2');
+    p.addOption('celery-concurrency', defaultsTo: '4');
+    p.addOption('celery-queues');
+    p.addOption('celery-extra-args');
+    p.addFlag('celery-beat', defaultsTo: false);
+    // Node.js / Bun runtime bin dir for PATH injection
+    p.addOption('runtime-bin-dir');
   });
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
   final port = AgentValidators.requirePort(r['port'] as String?);
   final runtime = r['runtime'] as String;
+
+  final envJson = r['env-json'] as String;
+  final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
+      .map((k, v) => MapEntry(k, (v as String?) ?? ''));
+
+  // ── Celery: creates a target + worker/beat/flower services ────────────────
+  if (runtime == 'celery') {
+    final celeryApp = r['celery-app'] as String?;
+    if (celeryApp == null || celeryApp.isEmpty) {
+      throw ArgumentError('--celery-app is required for runtime=celery');
+    }
+    final workerCount = int.tryParse(r['celery-worker-count'] as String) ?? 2;
+    final concurrency = int.tryParse(r['celery-concurrency'] as String) ?? 4;
+    await Applier().applyCeleryUnits(
+      appId: appId,
+      linuxUser: user,
+      workDir: workDir,
+      port: port,
+      params: CeleryUnitParams(
+        celeryApp: celeryApp,
+        workerCount: workerCount.clamp(1, 32),
+        concurrency: concurrency.clamp(1, 64),
+        queues: r['celery-queues'] as String?,
+        extraArgs: r['celery-extra-args'] as String?,
+        beatEnabled: r['celery-beat'] as bool,
+        memoryMb: int.parse(r['memory-mb'] as String),
+        cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
+      ),
+      envVars: envVars,
+    );
+    return;
+  }
+
+  // ── Static: no process unit needed ───────────────────────────────────────
+  if (runtime == 'static') {
+    stdout.writeln('[agent] static runtime — no process unit required.');
+    return;
+  }
+
+  // ── Standard runtimes ─────────────────────────────────────────────────────
   final isPython = runtime == 'python';
 
   String startCommand;
@@ -264,9 +354,7 @@ Future<void> _applyUnit(List<String> args) async {
     startCommand = '$workDir/current/app';
   }
 
-  final envJson = r['env-json'] as String;
-  final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
-      .map((k, v) => MapEntry(k, (v as String?) ?? ''));
+  final runtimeBinDir = r['runtime-bin-dir'] as String?;
 
   await Applier().applyUnit(
     appId: appId,
@@ -278,6 +366,9 @@ Future<void> _applyUnit(List<String> args) async {
     cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
     tasksMax: int.parse(r['tasks-max'] as String),
     isPython: isPython,
+    runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
+        ? runtimeBinDir
+        : null,
     envVars: envVars,
   );
 }
@@ -287,12 +378,32 @@ Future<void> _applyVhost(List<String> args) async {
     p.addOption('app-id', mandatory: true);
     p.addOption('port', mandatory: true);
     p.addMultiOption('hostname');
+    // Static-specific
+    p.addOption('runtime', defaultsTo: '');
+    p.addOption('static-dir');   // absolute path to static files directory
+    p.addFlag('static-spa', defaultsTo: false);
   });
   final appId = int.parse(r['app-id'] as String);
   final port = AgentValidators.requirePort(r['port'] as String?);
+  final runtime = r['runtime'] as String;
   final hostnames = (r['hostname'] as List<String>? ?? <String>[])
       .map(AgentValidators.requireHostname)
       .toList();
+
+  if (runtime == 'static') {
+    final staticDir = r['static-dir'] as String?;
+    if (staticDir == null || staticDir.isEmpty) {
+      throw ArgumentError('--static-dir is required for runtime=static');
+    }
+    await Applier().applyStaticVhost(
+      appId: appId,
+      staticDir: staticDir,
+      hostnames: hostnames,
+      isSpa: r['static-spa'] as bool,
+    );
+    return;
+  }
+
   await Applier().applyVhost(appId: appId, port: port, hostnames: hostnames);
 }
 
@@ -307,18 +418,20 @@ Future<void> _issueCert(List<String> args) async {
 Future<void> _lifecycle(String action, List<String> args) async {
   final r = _parse(args, (p) {
     p.addOption('user', mandatory: true);
+    p.addOption('runtime', defaultsTo: '');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
+  final runtime = r['runtime'] as String;
   final applier = Applier();
   switch (action) {
     case 'start':
-      await applier.start(user);
+      await applier.start(user, runtime: runtime);
       break;
     case 'stop':
-      await applier.stop(user);
+      await applier.stop(user, runtime: runtime);
       break;
     case 'restart':
-      await applier.restart(user);
+      await applier.restart(user, runtime: runtime);
       break;
   }
 }
@@ -327,10 +440,12 @@ Future<void> _uninstall(List<String> args) async {
   final r = _parse(args, (p) {
     p.addOption('user', mandatory: true);
     p.addOption('app-id');
+    p.addOption('runtime', defaultsTo: '');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final appId = int.tryParse((r['app-id'] as String?) ?? '');
-  await Applier().uninstall(user, appId);
+  final runtime = r['runtime'] as String;
+  await Applier().uninstall(user, appId, runtime: runtime);
 }
 
 /// Stream an app's runtime logs to stdout (consumed by the panel WebSocket).
@@ -777,6 +892,8 @@ service auth {
   const opendkimConf = '''
 # Generated by gisila-agent — do not edit by hand.
 Syslog                  yes
+SyslogSuccess           yes
+LogWhy                  yes
 UMask                   002
 Mode                    sv
 Canonicalization        relaxed/simple
@@ -789,6 +906,11 @@ KeyTable                /etc/opendkim/KeyTable
 SigningTable            refile:/etc/opendkim/SigningTable
 ''';
   await _sudo('mkdir', ['-p', '/etc/opendkim/keys'], failOk: true);
+  // The keys/ parent directory MUST be owned by root (not by the opendkim
+  // user). OpenDKIM running as root performs a security check and refuses to
+  // load keys from a directory writable/owned by any non-root uid.
+  await _sudo('chown', ['root:root', '/etc/opendkim/keys'], failOk: true);
+  await _sudo('chmod', ['755', '/etc/opendkim/keys'], failOk: true);
   // /run/opendkim lives on tmpfs.  The Ubuntu 22.04 opendkim.service uses
   // RuntimeDirectory=opendkim so systemd creates it before start.  Install a
   // tmpfiles.d snippet as belt-and-suspenders so it also survives on older
@@ -852,6 +974,15 @@ Future<void> _mailEnsureCert(List<String> hostnames) async {
   await _sudo('chmod', ['755', _mailCertDir], failOk: true);
 
   final names = hostnames.where((h) => h.trim().isNotEmpty).toSet().toList();
+
+  // Prefer a real, publicly-trusted Let's Encrypt certificate so mail clients
+  // (iOS/Android/Outlook) connect without any "untrusted certificate" prompt.
+  // Only attempted when we have real hostnames; falls back to the self-signed
+  // cert below when issuance isn't possible (no DNS, port 80 blocked, etc.).
+  if (names.isNotEmpty && await _mailEnsureLetsEncrypt(names)) {
+    return;
+  }
+
   final primary = names.isNotEmpty ? names.first : _systemMailname();
   final desired = names.isEmpty ? primary : names.join(',');
 
@@ -912,12 +1043,144 @@ extendedKeyUsage = serverAuth
   await _sudo('rm', ['-f', tmpConf], failOk: true);
 }
 
+/// Stable certbot lineage name + live directory for the mail certificate.
+/// Using a fixed `--cert-name` keeps the path constant regardless of how the
+/// set of mail hostnames changes over time.
+const _mailLeCertName = 'gisila-mail';
+const _mailLeLiveDir = '/etc/letsencrypt/live/gisila-mail';
+
+/// Obtain (or reuse) a Let's Encrypt certificate covering every mail
+/// [hostnames] entry and point the daemons' stable cert paths at it. Returns
+/// true when a real cert is in place; false when issuance isn't possible so the
+/// caller can fall back to a self-signed cert.
+///
+/// Requirements for issuance: each hostname must resolve to this host's public
+/// IP and the ACME HTTP-01 challenge must reach port 80 (served by the panel's
+/// nginx when present, otherwise certbot's standalone listener).
+Future<bool> _mailEnsureLetsEncrypt(List<String> hostnames) async {
+  if (hostnames.isEmpty) return false;
+
+  // certbot must be available; install it (plus the nginx plugin) if missing.
+  if (!await _hasCommand('certbot')) {
+    await _aptInstall(['certbot', 'python3-certbot-nginx']);
+  }
+  if (!await _hasCommand('certbot')) {
+    stderr.writeln('mail_le: certbot unavailable — using self-signed cert.');
+    return false;
+  }
+
+  final fullchain = '$_mailLeLiveDir/fullchain.pem';
+  final privkey = '$_mailLeLiveDir/privkey.pem';
+  final desired = (hostnames.toSet().toList()..sort()).join(',');
+  final stamp = '$_mailCertDir/.le-hosts';
+  final stamped = (await _readPrivFile(stamp))?.trim();
+
+  // (Re)issue when no cert exists yet or the covered hostname set changed.
+  if (!await _privFileExists(fullchain) || stamped != desired) {
+    final issued = await _mailRunCertbot(hostnames);
+    if (issued && await _privFileExists(fullchain)) {
+      await _writeFileSudo(stamp, desired);
+    }
+  }
+
+  // If issuance failed and no prior cert exists, signal fallback.
+  if (!await _privFileExists(fullchain)) {
+    stderr.writeln('mail_le: no Let\'s Encrypt cert — using self-signed.');
+    return false;
+  }
+
+  // Mirror the LE material into the stable paths the daemons are configured to
+  // read, and keep them fresh on future renewals via a deploy hook.
+  await _mailCopyCert(fullchain, privkey);
+  await _mailInstallRenewalHook();
+  return true;
+}
+
+/// Run certbot to obtain/expand the mail certificate. Uses the nginx plugin
+/// when nginx is running (the panel serves port 80/443), otherwise the
+/// standalone HTTP-01 listener. Returns true on success.
+Future<bool> _mailRunCertbot(List<String> hostnames) async {
+  final nginxActive =
+      (await Process.run('systemctl', ['is-active', 'nginx'])).exitCode == 0;
+
+  final args = <String>[
+    'certonly',
+    '--non-interactive',
+    '--agree-tos',
+    '-m', 'admin@${hostnames.first}',
+    '--cert-name', _mailLeCertName,
+    '--keep-until-expiring',
+    '--expand',
+    if (nginxActive)
+      '--nginx'
+    else ...['--standalone', '--preferred-challenges', 'http'],
+    for (final h in hostnames) ...['-d', h],
+  ];
+
+  final cmd = _priv('certbot', args);
+  final res = await Process.run(cmd.first, cmd.skip(1).toList());
+  if (res.exitCode != 0) {
+    stderr.writeln('mail_le: certbot failed (exit ${res.exitCode}):\n'
+        '${res.stdout}\n${res.stderr}');
+    return false;
+  }
+  return true;
+}
+
+/// Copy the LE fullchain/privkey into the stable mail cert paths. Kept
+/// world-readable (644) so postfix/dovecot read them without depending on
+/// group membership — consistent with the self-signed path.
+Future<void> _mailCopyCert(String fullchain, String privkey) async {
+  await _sudo('cp', [fullchain, _mailCertPath], failOk: true);
+  await _sudo('cp', [privkey, _mailKeyPath], failOk: true);
+  await _sudo('chmod', ['644', _mailCertPath], failOk: true);
+  await _sudo('chmod', ['644', _mailKeyPath], failOk: true);
+  await _sudo('chown', ['root:root', _mailCertPath], failOk: true);
+  await _sudo('chown', ['root:root', _mailKeyPath], failOk: true);
+}
+
+/// Install a certbot deploy hook so renewed mail certs are copied into the
+/// stable paths and the mail daemons reload automatically (~every 60 days).
+Future<void> _mailInstallRenewalHook() async {
+  const hookDir = '/etc/letsencrypt/renewal-hooks/deploy';
+  await _sudo('mkdir', ['-p', hookDir], failOk: true);
+  const hook = '$hookDir/gisila-mail.sh';
+  final script = '''#!/bin/sh
+# Installed by gisila-agent — refreshes the mail TLS cert and reloads the mail
+# daemons whenever certbot renews the "$_mailLeCertName" certificate.
+# Only act when this renewal touched our lineage (or was a bulk renewal).
+case "\$RENEWED_LINEAGE" in
+  */$_mailLeCertName) ;;
+  "") ;;
+  *) exit 0 ;;
+esac
+LIVE="$_mailLeLiveDir"
+[ -f "\$LIVE/fullchain.pem" ] || exit 0
+cp "\$LIVE/fullchain.pem" "$_mailCertPath"
+cp "\$LIVE/privkey.pem" "$_mailKeyPath"
+chmod 644 "$_mailCertPath" "$_mailKeyPath"
+chown root:root "$_mailCertPath" "$_mailKeyPath"
+systemctl reload postfix 2>/dev/null || systemctl restart postfix 2>/dev/null || true
+systemctl restart dovecot 2>/dev/null || true
+''';
+  await _writeFileSudo(hook, script);
+  await _sudo('chmod', ['755', hook], failOk: true);
+}
+
+/// Whether an executable is on PATH.
+Future<bool> _hasCommand(String name) async =>
+    (await Process.run('sh', ['-c', 'command -v $name'])).exitCode == 0;
+
 /// Open the standard SMTP/IMAP/POP3 ports when `ufw` is present. Harmless
 /// (failOk) when ufw is not installed or not active.
 Future<void> _mailOpenFirewall() async {
   final has = await Process.run('sh', ['-c', 'command -v ufw']);
   if (has.exitCode != 0) return; // ufw not installed — nothing to open
-  for (final port in <String>['25', '465', '587', '143', '993', '110', '995']) {
+  // Port 80 is included so the Let's Encrypt HTTP-01 challenge can reach the
+  // host for certificate issuance and renewal.
+  for (final port in <String>[
+    '80', '25', '465', '587', '143', '993', '110', '995'
+  ]) {
     await _sudo('ufw', ['allow', '$port/tcp'], failOk: true);
   }
 }
@@ -943,10 +1206,26 @@ Future<void> _mailSync(
   final domainNames =
       domains.map((d) => d['domain']?.toString() ?? '').where((d) => d.isNotEmpty).toList();
 
+  // Public mail hostname (e.g. mail.bita.et). Postfix announces this as its
+  // HELO/EHLO name and uses it as the envelope origin. It MUST match the
+  // server's reverse DNS (PTR) or receivers (Gmail etc.) will reject or spam
+  // outbound mail. A "localhost" myhostname is the classic cause of "my mail
+  // never arrives". Falls back to the first domain's mail.<domain> host.
+  final mailHostnames = domains
+      .map((d) => d['hostname']?.toString().trim() ?? '')
+      .where((h) => h.isNotEmpty)
+      .toList();
+  final myHostname = mailHostnames.isNotEmpty
+      ? mailHostnames.first
+      : (domainNames.isNotEmpty ? 'mail.${domainNames.first}' : _systemMailname());
+
   // Which domains we are authoritative for (handled by the virtual transport).
   await _sudo(
       'postconf', ['-e', 'virtual_mailbox_domains=${domainNames.join(' ')}']);
   await _sudo('postconf', ['-e', 'mydestination=localhost']);
+  // Identity used for outbound SMTP (HELO + envelope). Critical for delivery.
+  await _sudo('postconf', ['-e', 'myhostname=$myHostname']);
+  await _sudo('postconf', ['-e', 'myorigin=\$myhostname']);
 
   for (final d in domainNames) {
     await _sudo('mkdir', ['-p', '/var/mail/vhosts/$d'], failOk: true);
@@ -1029,6 +1308,13 @@ Future<Map<String, Map<String, String>>> _mailEnsureDkim(
     final txtPath = '$keyDir/$selector.txt';
 
     await _sudo('mkdir', ['-p', keyDir], failOk: true);
+    // OpenDKIM (running as root) checks that every directory in the key path
+    // is owned by root and not writable by any other uid. If any directory is
+    // owned by e.g. the opendkim user (uid 115) it refuses to load the key
+    // with "key data is not secure". Keep the domain key directory owned by
+    // root with standard 755 permissions.
+    await _sudo('chown', ['root:root', keyDir], failOk: true);
+    await _sudo('chmod', ['755', keyDir], failOk: true);
 
     // Generate the keypair only when it does not already exist.
     if (!await _privFileExists(privatePath)) {
@@ -1038,7 +1324,8 @@ Future<Map<String, Map<String, String>>> _mailEnsureDkim(
         '-s', selector,
         '-D', keyDir,
       ]);
-      await _sudo('chown', ['-R', 'opendkim:opendkim', keyDir], failOk: true);
+      await _sudo('chown', ['root:root', privatePath], failOk: true);
+      await _sudo('chown', ['root:root', '$keyDir/$selector.txt'], failOk: true);
       await _sudo('chmod', ['600', privatePath], failOk: true);
     }
 

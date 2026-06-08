@@ -63,6 +63,25 @@ extension AppsApiGisilaDoc on AppsApi {
         },
         'gunicornBind': <String, Object?>{'type': 'string'},
         'gunicornExtraArgs': <String, Object?>{'type': 'string'},
+        'nodeVersion': <String, Object?>{'type': 'string'},
+        'dartVersion': <String, Object?>{'type': 'string'},
+        'goVersion': <String, Object?>{'type': 'string'},
+        'rustVersion': <String, Object?>{'type': 'string'},
+        'bunVersion': <String, Object?>{'type': 'string'},
+        'celeryApp': <String, Object?>{'type': 'string'},
+        'celeryWorkerCount': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'celeryConcurrency': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'celeryQueues': <String, Object?>{'type': 'string'},
+        'celeryBeatEnabled': <String, Object?>{'type': 'boolean'},
+        'celeryExtraArgs': <String, Object?>{'type': 'string'},
+        'staticRoot': <String, Object?>{'type': 'string'},
+        'staticSpa': <String, Object?>{'type': 'boolean'},
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
@@ -101,6 +120,25 @@ extension AppsApiGisilaDoc on AppsApi {
         },
         'gunicornBind': <String, Object?>{'type': 'string'},
         'gunicornExtraArgs': <String, Object?>{'type': 'string'},
+        'nodeVersion': <String, Object?>{'type': 'string'},
+        'dartVersion': <String, Object?>{'type': 'string'},
+        'goVersion': <String, Object?>{'type': 'string'},
+        'rustVersion': <String, Object?>{'type': 'string'},
+        'bunVersion': <String, Object?>{'type': 'string'},
+        'celeryApp': <String, Object?>{'type': 'string'},
+        'celeryWorkerCount': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'celeryConcurrency': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'celeryQueues': <String, Object?>{'type': 'string'},
+        'celeryBeatEnabled': <String, Object?>{'type': 'boolean'},
+        'celeryExtraArgs': <String, Object?>{'type': 'string'},
+        'staticRoot': <String, Object?>{'type': 'string'},
+        'staticSpa': <String, Object?>{'type': 'boolean'},
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });

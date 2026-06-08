@@ -30,6 +30,25 @@ class CreateAppForm extends Form {
   final gunicornBind = StringField(name: 'gunicornBind');
   final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
 
+  // Runtime version pins.
+  final nodeVersion = StringField(name: 'nodeVersion');
+  final dartVersion = StringField(name: 'dartVersion');
+  final goVersion = StringField(name: 'goVersion');
+  final rustVersion = StringField(name: 'rustVersion');
+  final bunVersion = StringField(name: 'bunVersion');
+
+  // Celery-specific fields.
+  final celeryApp = StringField(name: 'celeryApp');
+  final celeryWorkerCount = IntField(name: 'celeryWorkerCount');
+  final celeryConcurrency = IntField(name: 'celeryConcurrency');
+  final celeryQueues = StringField(name: 'celeryQueues');
+  final celeryBeatEnabled = BoolField(name: 'celeryBeatEnabled');
+  final celeryExtraArgs = StringField(name: 'celeryExtraArgs');
+
+  // Static site fields.
+  final staticRoot = StringField(name: 'staticRoot');
+  final staticSpa = BoolField(name: 'staticSpa');
+
   // Optional SSH deploy key for authenticated git clone.
   final deployKeyId = IntField(name: 'deployKeyId');
 
@@ -55,6 +74,19 @@ class CreateAppForm extends Form {
         gunicornTimeout,
         gunicornBind,
         gunicornExtraArgs,
+        nodeVersion,
+        dartVersion,
+        goVersion,
+        rustVersion,
+        bunVersion,
+        celeryApp,
+        celeryWorkerCount,
+        celeryConcurrency,
+        celeryQueues,
+        celeryBeatEnabled,
+        celeryExtraArgs,
+        staticRoot,
+        staticSpa,
         deployKeyId,
       ];
 }
@@ -77,6 +109,19 @@ class UpdateAppForm extends Form {
   final gunicornTimeout = IntField(name: 'gunicornTimeout');
   final gunicornBind = StringField(name: 'gunicornBind');
   final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
+  final nodeVersion = StringField(name: 'nodeVersion');
+  final dartVersion = StringField(name: 'dartVersion');
+  final goVersion = StringField(name: 'goVersion');
+  final rustVersion = StringField(name: 'rustVersion');
+  final bunVersion = StringField(name: 'bunVersion');
+  final celeryApp = StringField(name: 'celeryApp');
+  final celeryWorkerCount = IntField(name: 'celeryWorkerCount');
+  final celeryConcurrency = IntField(name: 'celeryConcurrency');
+  final celeryQueues = StringField(name: 'celeryQueues');
+  final celeryBeatEnabled = BoolField(name: 'celeryBeatEnabled');
+  final celeryExtraArgs = StringField(name: 'celeryExtraArgs');
+  final staticRoot = StringField(name: 'staticRoot');
+  final staticSpa = BoolField(name: 'staticSpa');
   final deployKeyId = IntField(name: 'deployKeyId');
 
   @override
@@ -98,6 +143,19 @@ class UpdateAppForm extends Form {
         gunicornTimeout,
         gunicornBind,
         gunicornExtraArgs,
+        nodeVersion,
+        dartVersion,
+        goVersion,
+        rustVersion,
+        bunVersion,
+        celeryApp,
+        celeryWorkerCount,
+        celeryConcurrency,
+        celeryQueues,
+        celeryBeatEnabled,
+        celeryExtraArgs,
+        staticRoot,
+        staticSpa,
         deployKeyId,
       ];
 }

@@ -1035,6 +1035,19 @@ class App with Preloadable {
   final int? gunicornTimeout;
   final String? gunicornBind;
   final String? gunicornExtraArgs;
+  final String? nodeVersion;
+  final String? dartVersion;
+  final String? goVersion;
+  final String? rustVersion;
+  final String? bunVersion;
+  final String? celeryApp;
+  final int? celeryWorkerCount;
+  final int? celeryConcurrency;
+  final String? celeryQueues;
+  final bool? celeryBeatEnabled;
+  final String? celeryExtraArgs;
+  final String? staticRoot;
+  final bool? staticSpa;
   final int? memoryMbLimit;
   final int? cpuQuotaPercent;
   final int? tasksLimit;
@@ -1067,6 +1080,19 @@ class App with Preloadable {
     this.gunicornTimeout,
     this.gunicornBind,
     this.gunicornExtraArgs,
+    this.nodeVersion,
+    this.dartVersion,
+    this.goVersion,
+    this.rustVersion,
+    this.bunVersion,
+    this.celeryApp,
+    this.celeryWorkerCount,
+    this.celeryConcurrency,
+    this.celeryQueues,
+    this.celeryBeatEnabled,
+    this.celeryExtraArgs,
+    this.staticRoot,
+    this.staticSpa,
     this.memoryMbLimit,
     this.cpuQuotaPercent,
     this.tasksLimit,
@@ -1100,6 +1126,19 @@ class App with Preloadable {
     gunicornTimeout: row['gunicorn_timeout'] as int?,
     gunicornBind: row['gunicorn_bind'] as String?,
     gunicornExtraArgs: row['gunicorn_extra_args'] as String?,
+    nodeVersion: row['node_version'] as String?,
+    dartVersion: row['dart_version'] as String?,
+    goVersion: row['go_version'] as String?,
+    rustVersion: row['rust_version'] as String?,
+    bunVersion: row['bun_version'] as String?,
+    celeryApp: row['celery_app'] as String?,
+    celeryWorkerCount: row['celery_worker_count'] as int?,
+    celeryConcurrency: row['celery_concurrency'] as int?,
+    celeryQueues: row['celery_queues'] as String?,
+    celeryBeatEnabled: row['celery_beat_enabled'] as bool?,
+    celeryExtraArgs: row['celery_extra_args'] as String?,
+    staticRoot: row['static_root'] as String?,
+    staticSpa: row['static_spa'] as bool?,
     memoryMbLimit: row['memory_mb_limit'] as int?,
     cpuQuotaPercent: row['cpu_quota_percent'] as int?,
     tasksLimit: row['tasks_limit'] as int?,
@@ -1143,6 +1182,19 @@ class App with Preloadable {
     'gunicorn_timeout': gunicornTimeout,
     'gunicorn_bind': gunicornBind,
     'gunicorn_extra_args': gunicornExtraArgs,
+    'node_version': nodeVersion,
+    'dart_version': dartVersion,
+    'go_version': goVersion,
+    'rust_version': rustVersion,
+    'bun_version': bunVersion,
+    'celery_app': celeryApp,
+    'celery_worker_count': celeryWorkerCount,
+    'celery_concurrency': celeryConcurrency,
+    'celery_queues': celeryQueues,
+    'celery_beat_enabled': celeryBeatEnabled,
+    'celery_extra_args': celeryExtraArgs,
+    'static_root': staticRoot,
+    'static_spa': staticSpa,
     'memory_mb_limit': memoryMbLimit,
     'cpu_quota_percent': cpuQuotaPercent,
     'tasks_limit': tasksLimit,
@@ -1188,6 +1240,19 @@ class App with Preloadable {
     int? gunicornTimeout,
     String? gunicornBind,
     String? gunicornExtraArgs,
+    String? nodeVersion,
+    String? dartVersion,
+    String? goVersion,
+    String? rustVersion,
+    String? bunVersion,
+    String? celeryApp,
+    int? celeryWorkerCount,
+    int? celeryConcurrency,
+    String? celeryQueues,
+    bool? celeryBeatEnabled,
+    String? celeryExtraArgs,
+    String? staticRoot,
+    bool? staticSpa,
     int? memoryMbLimit,
     int? cpuQuotaPercent,
     int? tasksLimit,
@@ -1219,6 +1284,19 @@ class App with Preloadable {
     gunicornTimeout: gunicornTimeout ?? this.gunicornTimeout,
     gunicornBind: gunicornBind ?? this.gunicornBind,
     gunicornExtraArgs: gunicornExtraArgs ?? this.gunicornExtraArgs,
+    nodeVersion: nodeVersion ?? this.nodeVersion,
+    dartVersion: dartVersion ?? this.dartVersion,
+    goVersion: goVersion ?? this.goVersion,
+    rustVersion: rustVersion ?? this.rustVersion,
+    bunVersion: bunVersion ?? this.bunVersion,
+    celeryApp: celeryApp ?? this.celeryApp,
+    celeryWorkerCount: celeryWorkerCount ?? this.celeryWorkerCount,
+    celeryConcurrency: celeryConcurrency ?? this.celeryConcurrency,
+    celeryQueues: celeryQueues ?? this.celeryQueues,
+    celeryBeatEnabled: celeryBeatEnabled ?? this.celeryBeatEnabled,
+    celeryExtraArgs: celeryExtraArgs ?? this.celeryExtraArgs,
+    staticRoot: staticRoot ?? this.staticRoot,
+    staticSpa: staticSpa ?? this.staticSpa,
     memoryMbLimit: memoryMbLimit ?? this.memoryMbLimit,
     cpuQuotaPercent: cpuQuotaPercent ?? this.cpuQuotaPercent,
     tasksLimit: tasksLimit ?? this.tasksLimit,
@@ -1407,6 +1485,58 @@ class AppTable {
     table: 'apps',
     column: 'gunicorn_extra_args',
   );
+  static const ColumnRef<String?> nodeVersion = ColumnRef<String?>(
+    table: 'apps',
+    column: 'node_version',
+  );
+  static const ColumnRef<String?> dartVersion = ColumnRef<String?>(
+    table: 'apps',
+    column: 'dart_version',
+  );
+  static const ColumnRef<String?> goVersion = ColumnRef<String?>(
+    table: 'apps',
+    column: 'go_version',
+  );
+  static const ColumnRef<String?> rustVersion = ColumnRef<String?>(
+    table: 'apps',
+    column: 'rust_version',
+  );
+  static const ColumnRef<String?> bunVersion = ColumnRef<String?>(
+    table: 'apps',
+    column: 'bun_version',
+  );
+  static const ColumnRef<String?> celeryApp = ColumnRef<String?>(
+    table: 'apps',
+    column: 'celery_app',
+  );
+  static const ColumnRef<int?> celeryWorkerCount = ColumnRef<int?>(
+    table: 'apps',
+    column: 'celery_worker_count',
+  );
+  static const ColumnRef<int?> celeryConcurrency = ColumnRef<int?>(
+    table: 'apps',
+    column: 'celery_concurrency',
+  );
+  static const ColumnRef<String?> celeryQueues = ColumnRef<String?>(
+    table: 'apps',
+    column: 'celery_queues',
+  );
+  static const ColumnRef<bool?> celeryBeatEnabled = ColumnRef<bool?>(
+    table: 'apps',
+    column: 'celery_beat_enabled',
+  );
+  static const ColumnRef<String?> celeryExtraArgs = ColumnRef<String?>(
+    table: 'apps',
+    column: 'celery_extra_args',
+  );
+  static const ColumnRef<String?> staticRoot = ColumnRef<String?>(
+    table: 'apps',
+    column: 'static_root',
+  );
+  static const ColumnRef<bool?> staticSpa = ColumnRef<bool?>(
+    table: 'apps',
+    column: 'static_spa',
+  );
   static const ColumnRef<int?> memoryMbLimit = ColumnRef<int?>(
     table: 'apps',
     column: 'memory_mb_limit',
@@ -1463,6 +1593,14 @@ class AppTable {
       'gunicorn_timeout',
       'gunicorn_bind',
       'gunicorn_extra_args',
+      'celery_app',
+      'celery_worker_count',
+      'celery_concurrency',
+      'celery_queues',
+      'celery_beat_enabled',
+      'celery_extra_args',
+      'static_root',
+      'static_spa',
       'memory_mb_limit',
       'cpu_quota_percent',
       'tasks_limit',

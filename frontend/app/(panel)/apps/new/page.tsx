@@ -30,14 +30,16 @@ import type { App, ListResponse, Project, SshKey, Team } from "@/lib/types";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const RUNTIMES = [
-  { id: "dart",   label: "Dart" },
-  { id: "go",     label: "Go" },
-  { id: "rust",   label: "Rust" },
-  { id: "zig",    label: "Zig" },
-  { id: "bun",    label: "Bun" },
-  { id: "node",   label: "Node.js" },
-  { id: "python", label: "Python" },
-  { id: "binary", label: "Binary" },
+  { id: "dart",   label: "Dart",    group: "compiled" },
+  { id: "go",     label: "Go",      group: "compiled" },
+  { id: "rust",   label: "Rust",    group: "compiled" },
+  { id: "zig",    label: "Zig",     group: "compiled" },
+  { id: "bun",    label: "Bun",     group: "js" },
+  { id: "node",   label: "Node.js", group: "js" },
+  { id: "python", label: "Python",  group: "python" },
+  { id: "celery", label: "Celery",  group: "python" },
+  { id: "static", label: "Static",  group: "static" },
+  { id: "binary", label: "Binary",  group: "compiled" },
 ];
 
 // Common CPython releases — the panel installs any of these via pyenv.
@@ -46,6 +48,28 @@ const PYTHON_VERSIONS = [
   "3.12.9", "3.12.8", "3.12.7", "3.12.4",
   "3.11.11","3.11.10","3.11.9",
   "3.10.16","3.10.15",
+];
+
+const NODE_VERSIONS = [
+  "22.12.0", "22.11.0", "22.9.0",
+  "20.18.1", "20.18.0", "20.17.0", "20.15.1",
+  "18.20.5", "18.20.4",
+];
+
+const DART_VERSIONS = [
+  "3.5.4", "3.5.3", "3.4.4", "3.4.3", "3.3.4", "3.3.3", "3.2.6", "3.1.5",
+];
+
+const GO_VERSIONS = [
+  "1.23.4", "1.23.3", "1.23.2", "1.22.10", "1.22.9", "1.22.8", "1.21.13",
+];
+
+const RUST_VERSIONS = [
+  "stable", "1.83.0", "1.82.0", "1.81.0", "1.80.1", "1.79.0", "nightly",
+];
+
+const BUN_VERSIONS = [
+  "1.1.38", "1.1.34", "1.1.30", "1.1.21", "1.1.13", "1.0.36",
 ];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -81,13 +105,36 @@ export default function NewAppPage() {
     gunicornTimeout: "",
     gunicornBind: "",
     gunicornExtraArgs: "",
+    // Runtime version pins
+    nodeVersion: NODE_VERSIONS[0],
+    dartVersion: DART_VERSIONS[0],
+    goVersion: GO_VERSIONS[0],
+    rustVersion: RUST_VERSIONS[0],
+    bunVersion: BUN_VERSIONS[0],
+    // Celery-specific
+    celeryApp: "",
+    celeryWorkerCount: "2",
+    celeryConcurrency: "4",
+    celeryQueues: "",
+    celeryBeatEnabled: false,
+    celeryExtraArgs: "",
+    // Static site
+    staticRoot: "",
+    staticSpa: false,
     // Git deploy key
     deployKeyId: "" as string | number,
   });
   const [loading, setLoading] = useState(false);
 
   const isPython = form.runtime === "python";
+  const isCelery = form.runtime === "celery";
+  const isStatic = form.runtime === "static";
   const isBinary = form.sourceType === "binary";
+  const isNode = form.runtime === "node";
+  const isBun  = form.runtime === "bun";
+  const isDart = form.runtime === "dart";
+  const isGo   = form.runtime === "go";
+  const isRust = form.runtime === "rust";
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -136,6 +183,24 @@ export default function NewAppPage() {
         payload.gunicornBind    = form.gunicornBind || undefined;
         payload.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
       }
+      if (isCelery) {
+        payload.pythonVersion     = form.pythonVersion;
+        payload.celeryApp         = form.celeryApp || undefined;
+        payload.celeryWorkerCount = form.celeryWorkerCount ? Number(form.celeryWorkerCount) : 2;
+        payload.celeryConcurrency = form.celeryConcurrency ? Number(form.celeryConcurrency) : 4;
+        payload.celeryQueues      = form.celeryQueues || undefined;
+        payload.celeryBeatEnabled = form.celeryBeatEnabled;
+        payload.celeryExtraArgs   = form.celeryExtraArgs || undefined;
+      }
+      if (isNode)  payload.nodeVersion = form.nodeVersion || undefined;
+      if (isBun)   payload.bunVersion  = form.bunVersion  || undefined;
+      if (isDart)  payload.dartVersion = form.dartVersion || undefined;
+      if (isGo)    payload.goVersion   = form.goVersion   || undefined;
+      if (isRust)  payload.rustVersion = form.rustVersion || undefined;
+      if (isStatic) {
+        payload.staticRoot = form.staticRoot || undefined;
+        payload.staticSpa  = form.staticSpa;
+      }
       if (form.sourceType === "git" && form.deployKeyId) {
         payload.deployKeyId = Number(form.deployKeyId);
       }
@@ -157,7 +222,7 @@ export default function NewAppPage() {
       <header>
         <h1 className="text-xl font-semibold">New app</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Pick a runtime and source. We'll create the Linux user, systemd unit,
+          Pick a runtime and source. We&apos;ll create the Linux user, systemd unit,
           AppArmor profile and Nginx vhost automatically.
         </p>
       </header>
@@ -409,6 +474,333 @@ export default function NewAppPage() {
               </Card>
             )}
 
+            {/* ── Runtime version pickers ──────────────────────────────────── */}
+            {(isNode || isBun || isDart || isGo || isRust) && (
+              <Card className="border-sky-500/30 bg-sky-500/5">
+                <CardContent className="space-y-4 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">Runtime version</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Pin a specific runtime version. Leave as-is to use the latest shown below.
+                    </span>
+                  </div>
+
+                  {isNode && (
+                    <div className="space-y-1.5">
+                      <Label>Node.js version</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {NODE_VERSIONS.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set("nodeVersion", v)}
+                            className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
+                              ${form.nodeVersion === v
+                                ? "bg-sky-500 text-white border-sky-500"
+                                : "border-border bg-background hover:bg-muted"}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isBun && (
+                    <div className="space-y-1.5">
+                      <Label>Bun version</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {BUN_VERSIONS.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set("bunVersion", v)}
+                            className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
+                              ${form.bunVersion === v
+                                ? "bg-sky-500 text-white border-sky-500"
+                                : "border-border bg-background hover:bg-muted"}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isDart && (
+                    <div className="space-y-1.5">
+                      <Label>Dart SDK version</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DART_VERSIONS.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set("dartVersion", v)}
+                            className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
+                              ${form.dartVersion === v
+                                ? "bg-sky-500 text-white border-sky-500"
+                                : "border-border bg-background hover:bg-muted"}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isGo && (
+                    <div className="space-y-1.5">
+                      <Label>Go version</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {GO_VERSIONS.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set("goVersion", v)}
+                            className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
+                              ${form.goVersion === v
+                                ? "bg-sky-500 text-white border-sky-500"
+                                : "border-border bg-background hover:bg-muted"}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isRust && (
+                    <div className="space-y-1.5">
+                      <Label>Rust toolchain</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {RUST_VERSIONS.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set("rustVersion", v)}
+                            className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
+                              ${form.rustVersion === v
+                                ? "bg-sky-500 text-white border-sky-500"
+                                : "border-border bg-background hover:bg-muted"}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-mono">stable</span> is the recommended default. <span className="font-mono">nightly</span> enables unstable features.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Celery-specific section ──────────────────────────────────── */}
+            {isCelery && (
+              <Card className="border-amber-500/30 bg-amber-500/5">
+                <CardContent className="space-y-5 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">Celery / Task queue</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Workers + Flower UI, served via Nginx proxy
+                    </span>
+                  </div>
+
+                  {/* Python version (shared with Celery) */}
+                  <div className="space-y-1.5">
+                    <Label>Python version</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PYTHON_VERSIONS.map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => set("pythonVersion", v)}
+                          className={cn(
+                            "rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
+                            form.pythonVersion === v
+                              ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              : "border-border bg-card text-muted-foreground hover:border-amber-500/40",
+                          )}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Celery app path */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="celeryApp">
+                      Celery application
+                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(required)</span>
+                    </Label>
+                    <Input
+                      id="celeryApp"
+                      className="font-mono text-sm"
+                      placeholder="myproject.celery:app"
+                      required={isCelery}
+                      value={form.celeryApp}
+                      onChange={(e) => set("celeryApp", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The Celery application instance, e.g.{" "}
+                      <code className="font-mono">proj.celery:app</code> or{" "}
+                      <code className="font-mono">myproject</code> for auto-discovery.
+                    </p>
+                  </div>
+
+                  {/* Workers + concurrency + queues */}
+                  <div className="space-y-3 rounded-md border border-amber-500/20 bg-background/40 p-3">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Workers
+                    </Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="c-wcount" className="text-xs">
+                          Worker processes
+                        </Label>
+                        <Input
+                          id="c-wcount"
+                          type="number"
+                          min={1}
+                          max={32}
+                          placeholder="2"
+                          value={form.celeryWorkerCount}
+                          onChange={(e) => set("celeryWorkerCount", e.target.value)}
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Number of separate worker processes to launch.
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="c-conc" className="text-xs">
+                          Concurrency / worker
+                        </Label>
+                        <Input
+                          id="c-conc"
+                          type="number"
+                          min={1}
+                          max={64}
+                          placeholder="4"
+                          value={form.celeryConcurrency}
+                          onChange={(e) => set("celeryConcurrency", e.target.value)}
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Threads or processes per worker (-c).
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="c-queues" className="text-xs">
+                        Queues
+                        <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Input
+                        id="c-queues"
+                        className="font-mono text-sm"
+                        placeholder="celery,high-priority,low-priority"
+                        value={form.celeryQueues}
+                        onChange={(e) => set("celeryQueues", e.target.value)}
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Comma-separated queue names. Leave blank for the default queue.
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="c-extra" className="text-xs">
+                        Extra worker arguments
+                        <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Input
+                        id="c-extra"
+                        className="font-mono text-sm"
+                        placeholder="--max-tasks-per-child=1000"
+                        value={form.celeryExtraArgs}
+                        onChange={(e) => set("celeryExtraArgs", e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Beat scheduler */}
+                  <label className="flex cursor-pointer items-center gap-3 rounded-md border border-amber-500/20 bg-background/40 p-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border"
+                      checked={form.celeryBeatEnabled}
+                      onChange={(e) => set("celeryBeatEnabled", e.target.checked)}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">Enable Celery Beat scheduler</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Launches a <code className="font-mono">celery beat</code> process alongside the workers
+                        for periodic task scheduling.
+                      </p>
+                    </div>
+                  </label>
+
+                  <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                    Flower monitoring UI is automatically deployed and accessible via your app&apos;s domain.
+                    The internal port is proxied by Nginx.
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Static site section ──────────────────────────────────────── */}
+            {isStatic && (
+              <Card className="border-green-500/30 bg-green-500/5">
+                <CardContent className="space-y-5 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">Static / HTML · CSS · JS</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Served directly by Nginx — no process required
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="staticRoot">
+                      Static files directory
+                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(optional)</span>
+                    </Label>
+                    <Input
+                      id="staticRoot"
+                      className="font-mono text-sm"
+                      placeholder="dist"
+                      value={form.staticRoot}
+                      onChange={(e) => set("staticRoot", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Path relative to the repository root where Nginx should serve files,
+                      e.g. <code className="font-mono">dist</code> or <code className="font-mono">build/public</code>.
+                      Leave blank to serve the repository root.
+                    </p>
+                  </div>
+
+                  <label className="flex cursor-pointer items-center gap-3 rounded-md border border-green-500/20 bg-background/40 p-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border"
+                      checked={form.staticSpa}
+                      onChange={(e) => set("staticSpa", e.target.checked)}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">SPA mode</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Falls back to <code className="font-mono">index.html</code> for all routes
+                        (React, Vue, Angular, etc.).
+                      </p>
+                    </div>
+                  </label>
+
+                  <p className="text-xs text-muted-foreground">
+                    Attach a domain after creating the app to make it publicly accessible via HTTPS.
+                    Static assets (CSS/JS/images) receive a 1-year cache header automatically.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Source */}
             <div className="space-y-1.5">
               <Label>Source</Label>
@@ -503,8 +895,8 @@ export default function NewAppPage() {
               </div>
             )}
 
-            {/* Build + Start commands (hidden for binary — no build step needed) */}
-            {!isBinary && (
+            {/* Build + Start commands — hidden for runtimes that don't need them */}
+            {!isBinary && !isCelery && !isStatic && (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="buildCommand">
@@ -550,6 +942,48 @@ export default function NewAppPage() {
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Celery: optional build command (e.g. pip install extras) */}
+            {isCelery && (
+              <div className="space-y-1.5">
+                <Label htmlFor="buildCommand">
+                  Build command
+                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="buildCommand"
+                  className="font-mono text-sm"
+                  placeholder="pip install -r requirements.txt"
+                  value={form.buildCommand}
+                  onChange={(e) => set("buildCommand", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank — <code className="font-mono">requirements.txt</code> is installed automatically,
+                  then celery + flower are added on top.
+                </p>
+              </div>
+            )}
+
+            {/* Static: optional build command (e.g. npm run build) */}
+            {isStatic && (
+              <div className="space-y-1.5">
+                <Label htmlFor="buildCommand">
+                  Build command
+                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="buildCommand"
+                  className="font-mono text-sm"
+                  placeholder="npm ci && npm run build"
+                  value={form.buildCommand}
+                  onChange={(e) => set("buildCommand", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Run a build step before Nginx serves the files (e.g. Vite, Next.js export, Hugo).
+                  Leave blank for plain HTML/CSS/JS repos.
+                </p>
               </div>
             )}
 

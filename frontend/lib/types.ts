@@ -62,6 +62,22 @@ export interface App {
   gunicornTimeout?: number | null;
   gunicornBind?: string | null;
   gunicornExtraArgs?: string | null;
+  // Runtime version pins
+  nodeVersion?: string | null;
+  dartVersion?: string | null;
+  goVersion?: string | null;
+  rustVersion?: string | null;
+  bunVersion?: string | null;
+  // Celery-specific
+  celeryApp?: string | null;
+  celeryWorkerCount?: number | null;
+  celeryConcurrency?: number | null;
+  celeryQueues?: string | null;
+  celeryBeatEnabled?: boolean | null;
+  celeryExtraArgs?: string | null;
+  // Static site
+  staticRoot?: string | null;
+  staticSpa?: boolean | null;
   deployKeyId?: number | null;
   memoryMbLimit: number;
   cpuQuotaPercent: number;
