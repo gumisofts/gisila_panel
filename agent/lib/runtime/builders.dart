@@ -147,17 +147,18 @@ class Builders {
     }
 
     // 3. Always install dependencies first.
-    //    yarn and pnpm are managed by corepack (bundled with Node 16.9+) so we
-    //    enable it before running the install.  npm ci works without corepack.
-    final installCmd = _nodeInstallCommand(pkgMgr);
-    final fullInstall = (pkgMgr == 'yarn' || pkgMgr == 'pnpm')
-        ? 'corepack enable && $installCmd'
-        : installCmd;
+    //    For yarn / pnpm, enable corepack first — but corepack writes symlinks
+    //    to /usr/bin so it must run as root (which the agent already is).
+    //    Running it inside runuser would fail with EACCES.
+    if (pkgMgr == 'yarn' || pkgMgr == 'pnpm') {
+      await ShellExec.run('corepack', ['enable'], requireSuccess: false);
+    }
 
+    final installCmd = _nodeInstallCommand(pkgMgr);
     if (env != null) {
-      await _runAsUserWithEnv(user, src, fullInstall, env);
+      await _runAsUserWithEnv(user, src, installCmd, env);
     } else {
-      await _runAsUser(user, src, fullInstall);
+      await _runAsUser(user, src, installCmd);
     }
 
     // 4. Run the caller-supplied build command on top of the freshly installed
