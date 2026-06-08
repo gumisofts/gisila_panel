@@ -148,25 +148,30 @@ class Builders {
 
     // 3. Always install dependencies first.
     //
-    //    We intentionally do NOT call `corepack enable` here.  corepack shims
-    //    intercept package-manager calls and try to download the exact version
-    //    declared in package.json's `packageManager` field into the user's home
-    //    cache directory — which the unprivileged app user may not be able to
-    //    write to.  Instead we pass two env vars that neuter corepack without
-    //    removing any existing shims:
+    //    We assemble an environment that defuses two separate footguns:
     //
-    //      COREPACK_ENABLE_STRICT=0   — fall back to the system package manager
-    //                                   when the pinned version is unavailable.
-    //      COREPACK_HOME=$workDir/.corepack — if corepack does need to cache
-    //                                   anything, write it under the app's work
-    //                                   dir (owned by the app user).
-    final corepackEnv = <String, String>{
+    //    a) corepack — its shims intercept package-manager calls and try to
+    //       download the version pinned in package.json's `packageManager` field
+    //       into the user's home cache, which the unprivileged app user may not
+    //       be able to write to.  We neuter it without removing any shims:
+    //         COREPACK_ENABLE_STRICT=0          — fall back to the system PM.
+    //         COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
+    //
+    //    b) pnpm 10+ dependency-build gate — build scripts for packages like
+    //       @prisma/client, esbuild and sharp are ignored by default and the
+    //       install aborts with ERR_PNPM_IGNORED_BUILDS.  Setting the npm-config
+    //       env var below approves all builds non-interactively.  It is also
+    //       inherited by the nested `pnpm install` that `pnpm build` triggers
+    //       via its deps-status check, and is harmlessly ignored by npm / yarn /
+    //       bun and by pnpm versions that predate the setting.
+    final nodeEnv = <String, String>{
       'COREPACK_ENABLE_STRICT': '0',
       'COREPACK_HOME': '$workDir/.corepack',
+      if (pkgMgr == 'pnpm') 'npm_config_dangerously_allow_all_builds': 'true',
     };
     final installEnv = env != null
-        ? {...env, ...corepackEnv}
-        : {...Platform.environment, ...corepackEnv};
+        ? {...env, ...nodeEnv}
+        : {...Platform.environment, ...nodeEnv};
 
     final installCmd = _nodeInstallCommand(pkgMgr);
     await _runAsUserWithEnv(user, src, installCmd, installEnv);
@@ -207,11 +212,11 @@ class Builders {
         return 'bun install --frozen-lockfile';
       case 'pnpm':
         // --frozen-lockfile: refuse to update the lock file (CI-safe).
-        // --unsafe-perm: allow postinstall/lifecycle build scripts for packages
-        //   such as @prisma/client, esbuild, and sharp that pnpm 10+ blocks by
-        //   default (ERR_PNPM_IGNORED_BUILDS).  This is the recommended way to
-        //   permit build scripts in automated / server deployments.
-        return 'pnpm install --frozen-lockfile --unsafe-perm';
+        // Dependency build scripts (Prisma, esbuild, sharp, …) that pnpm 10+
+        // blocks with ERR_PNPM_IGNORED_BUILDS are approved via the
+        // npm_config_dangerously_allow_all_builds env var set in buildNode,
+        // which also covers the nested install run by `pnpm build`.
+        return 'pnpm install --frozen-lockfile';
       case 'yarn':
         // yarn v1 uses --frozen-lockfile; yarn v2+ (Berry) uses --immutable.
         // --frozen-lockfile is universally understood by both versions.
