@@ -147,29 +147,35 @@ class Builders {
     }
 
     // 3. Always install dependencies first.
-    //    For yarn / pnpm, enable corepack first — but corepack writes symlinks
-    //    to /usr/bin so it must run as root (which the agent already is).
-    //    Running it inside runuser would fail with EACCES.
-    if (pkgMgr == 'yarn' || pkgMgr == 'pnpm') {
-      await ShellExec.run('corepack', ['enable'], requireSuccess: false);
-    }
+    //
+    //    We intentionally do NOT call `corepack enable` here.  corepack shims
+    //    intercept package-manager calls and try to download the exact version
+    //    declared in package.json's `packageManager` field into the user's home
+    //    cache directory — which the unprivileged app user may not be able to
+    //    write to.  Instead we pass two env vars that neuter corepack without
+    //    removing any existing shims:
+    //
+    //      COREPACK_ENABLE_STRICT=0   — fall back to the system package manager
+    //                                   when the pinned version is unavailable.
+    //      COREPACK_HOME=$workDir/.corepack — if corepack does need to cache
+    //                                   anything, write it under the app's work
+    //                                   dir (owned by the app user).
+    final corepackEnv = <String, String>{
+      'COREPACK_ENABLE_STRICT': '0',
+      'COREPACK_HOME': '$workDir/.corepack',
+    };
+    final installEnv = env != null
+        ? {...env, ...corepackEnv}
+        : {...Platform.environment, ...corepackEnv};
 
     final installCmd = _nodeInstallCommand(pkgMgr);
-    if (env != null) {
-      await _runAsUserWithEnv(user, src, installCmd, env);
-    } else {
-      await _runAsUser(user, src, installCmd);
-    }
+    await _runAsUserWithEnv(user, src, installCmd, installEnv);
 
     // 4. Run the caller-supplied build command on top of the freshly installed
     //    node_modules (e.g. `pnpm build`, `npm run build`, `tsc`).
-    //    When no build command is given, the install step above is sufficient.
+    //    Reuse installEnv so corepack stays neutralised for this step too.
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
-      if (env != null) {
-        await _runAsUserWithEnv(user, src, buildCommand, env);
-      } else {
-        await _runAsUser(user, src, buildCommand);
-      }
+      await _runAsUserWithEnv(user, src, buildCommand, installEnv);
     }
   }
 
