@@ -1889,7 +1889,8 @@ Future<void> _postgres(List<String> args) async {
   if (args.isEmpty) {
     stderr.writeln('Usage: gisila-agent postgres <subcommand> [options]\n'
         'Subcommands: install-instance | uninstall-instance | '
-        'start-instance | stop-instance | create-db | drop-db');
+        'start-instance | stop-instance | create-db | drop-db | '
+        'backup | restore');
     exitCode = 64;
     return;
   }
@@ -1904,7 +1905,10 @@ Future<void> _postgres(List<String> args) async {
     ..addOption('extensions',
         help: 'Comma-separated extension names to CREATE EXTENSION')
     ..addOption('settings',
-        help: 'JSON object of postgresql.conf settings to ALTER SYSTEM SET');
+        help: 'JSON object of postgresql.conf settings to ALTER SYSTEM SET')
+    ..addOption('output', help: 'Backup destination path (.sql.gz)')
+    ..addOption('input', help: 'Backup source path to restore (.sql or .sql.gz)')
+    ..addOption('scope', help: 'Backup scope: full | schema | data');
 
   final opts = parser.parse(args.sublist(1));
   final version = int.tryParse(opts['version'] as String? ?? '');
@@ -1963,6 +1967,24 @@ Future<void> _postgres(List<String> args) async {
       if (version == null) throw ArgumentError('--version required');
       final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
       await _pgConfigure(version, port, opts['settings'] as String? ?? '{}');
+
+    case 'backup':
+      if (version == null) throw ArgumentError('--version required');
+      final db = opts['db'] as String? ?? '';
+      final output = opts['output'] as String? ?? '';
+      if (db.isEmpty || output.isEmpty) {
+        throw ArgumentError('--db and --output required');
+      }
+      await _pgBackup(version, db, output, opts['scope'] as String? ?? 'full');
+
+    case 'restore':
+      if (version == null) throw ArgumentError('--version required');
+      final db = opts['db'] as String? ?? '';
+      final input = opts['input'] as String? ?? '';
+      if (db.isEmpty || input.isEmpty) {
+        throw ArgumentError('--db and --input required');
+      }
+      await _pgRestore(version, db, input);
 
     default:
       throw ArgumentError('Unknown postgres subcommand: $sub');
@@ -2154,6 +2176,80 @@ Future<void> _pgDropDatabase(int version, String dbName, String role) async {
       "WHERE datname = '$dbName' AND pid <> pg_backend_pid();");
   await sql("DROP DATABASE IF EXISTS $dbName;");
   await sql("DROP ROLE IF EXISTS $role;");
+}
+
+/// Base directory for database backup artifacts. Owned by the unprivileged
+/// `gisila` user so the API process can stream files for download and write
+/// uploaded files for restore, while the root agent writes the dumps.
+const _pgBackupBaseDir = '/var/lib/gisila/backups';
+const _gisilaUser = 'gisila';
+
+/// Single-quote a string for safe embedding in a `bash -c` command line.
+String _shq(String s) => "'${s.replaceAll("'", r"'\''")}'";
+
+/// Run [db]'s `pg_dump` (scoped by [scope]) through gzip into [output].
+///
+/// The redirect runs in the root shell (so it can write into the gisila-owned
+/// backups tree) while only `pg_dump` drops to the `postgres` user for peer
+/// auth on the local socket. `set -o pipefail` ensures a pg_dump failure isn't
+/// masked by gzip's success. Prints `{"sizeBytes": N}` on success.
+Future<void> _pgBackup(
+  int version,
+  String dbName,
+  String output,
+  String scope,
+) async {
+  final dir = File(output).parent.path;
+  await _sudo('mkdir', ['-p', dir]);
+
+  final scopeFlag = switch (scope) {
+    'schema' => '--schema-only ',
+    'data' => '--data-only ',
+    _ => '',
+  };
+  final pgDump = '/usr/lib/postgresql/$version/bin/pg_dump';
+  final port = 5400 + version;
+  final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
+
+  final inner = 'set -o pipefail; '
+      '$dropTo$pgDump -p $port ${scopeFlag}-d ${_shq(dbName)} '
+      '| gzip -c > ${_shq(output)}';
+  final cmd = _priv('bash', ['-c', inner]);
+  final res = await Process.run(cmd.first, cmd.skip(1).toList());
+  if (res.exitCode != 0) {
+    throw Exception('pg_dump failed (${res.exitCode}): ${res.stderr}'.trim());
+  }
+
+  // Hand the whole tree to gisila so the API can read it for downloads.
+  await _sudo('chown', ['-R', '$_gisilaUser:$_gisilaUser', _pgBackupBaseDir],
+      failOk: true);
+  await _sudo('chmod', ['640', output], failOk: true);
+
+  final size = await File(output).length();
+  stdout.writeln(jsonEncode({'sizeBytes': size}));
+}
+
+/// Restore [db] from a plain-SQL dump at [input] (`.sql` or `.sql.gz`).
+///
+/// Best-effort (ON_ERROR_STOP=0) so a full dump applied over an existing schema
+/// still loads what it can; corruption is caught by pipefail on the decompressor.
+Future<void> _pgRestore(int version, String dbName, String input) async {
+  if (!await File(input).exists()) {
+    throw Exception('Restore source not found: $input');
+  }
+  final psql = '/usr/lib/postgresql/$version/bin/psql';
+  final port = 5400 + version;
+  final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
+  final decompress = input.endsWith('.gz') ? 'gunzip -c' : 'cat';
+
+  final inner = 'set -o pipefail; '
+      '$decompress ${_shq(input)} '
+      '| $dropTo$psql -p $port -v ON_ERROR_STOP=0 -d ${_shq(dbName)}';
+  final cmd = _priv('bash', ['-c', inner]);
+  final res = await Process.run(cmd.first, cmd.skip(1).toList());
+  if (res.exitCode != 0) {
+    throw Exception('restore failed (${res.exitCode}): ${res.stderr}'.trim());
+  }
 }
 
 /// Run a command as a different system user.

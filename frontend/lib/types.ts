@@ -276,6 +276,42 @@ export interface MailStatus {
   installed: boolean;
 }
 
+// ── Database backups ──────────────────────────────────────────────────────────
+
+export type PgBackupScope = "full" | "schema" | "data";
+export type PgBackupStatus = "pending" | "running" | "completed" | "failed";
+export type PgBackupTrigger = "manual" | "scheduled";
+export type PgBackupFrequency = "hourly" | "daily" | "weekly";
+
+export interface PgBackup {
+  id: ID;
+  databaseId: ID;
+  fileName?: string | null;
+  sizeBytes?: number | null;
+  scope: PgBackupScope;
+  status: PgBackupStatus;
+  trigger: PgBackupTrigger;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+export interface PgBackupSchedule {
+  id: ID;
+  databaseId: ID;
+  enabled: boolean;
+  frequency: PgBackupFrequency;
+  hour: number;
+  minute: number;
+  weekday?: number | null;
+  scope: PgBackupScope;
+  keepCount: number;
+  nextRunAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
 export interface MailDomain {
   id: ID;
   domain: string;

@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
-import 'package:gisila_panel/services/postgres_service.dart' show generatePassword;
+import 'package:gisila_panel/services/postgres_service.dart'
+    show generatePassword, pgBackupDir;
 
 /// Handles async PostgreSQL jobs from the [gisila:queue:postgres] queue.
 ///
@@ -44,6 +45,18 @@ class PostgresWorker {
         await _configureInstance(
           payload['instanceId'] as int,
           payload['settings'],
+        );
+      case 'backup_database':
+        await _backupDatabase(
+          payload['instanceId'] as int,
+          payload['databaseId'] as int,
+          payload['backupId'] as int,
+        );
+      case 'restore_database':
+        await _restoreDatabase(
+          payload['instanceId'] as int,
+          payload['databaseId'] as int,
+          payload['inputPath'] as String,
         );
       default:
         logger.w('postgres_worker: unknown action $action — skipping');
@@ -137,6 +150,9 @@ class PostgresWorker {
         .where(PostgresInstanceTable.id.eq(instanceId))
         .delete()
         .run(database.context());
+
+    // Remove all of this instance's backup files (rows cascade via the FK).
+    await _deleteDir('${pgBackupDir()}/$instanceId');
   }
 
   Future<void> _startInstance(int instanceId) async {
@@ -307,6 +323,136 @@ class PostgresWorker {
         .where(PostgresDatabaseTable.id.eq(databaseId))
         .delete()
         .run(database.context());
+
+    // Best-effort removal of this database's backup files (rows cascade away
+    // with the database record via the FK).
+    await _deleteDir('${pgBackupDir()}/$instanceId/${db.dbName}');
+  }
+
+  // ── Backups ───────────────────────────────────────────────────────────────
+
+  Future<void> _backupDatabase(
+      int instanceId, int databaseId, int backupId) async {
+    await _patchBackup(backupId, {
+      'status': 'running',
+      'startedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    try {
+      final instance = await _findInstance(instanceId);
+      final db = await _findDatabase(databaseId);
+      final backup = await _findBackup(backupId);
+      if (instance == null || db == null || backup == null) return;
+
+      final scope = backup.scope ?? 'full';
+      final fileName = '${db.dbName}-${_stamp(DateTime.now().toUtc())}'
+          '-$scope.sql.gz';
+      final path = '${pgBackupDir()}/$instanceId/${db.dbName}/$fileName';
+
+      await _runAgent([
+        'postgres',
+        'backup',
+        '--version',
+        '${instance.version}',
+        '--db',
+        db.dbName,
+        '--output',
+        path,
+        '--scope',
+        scope,
+      ]);
+
+      int? size;
+      if (hostConfig.agentMode == 'dev') {
+        // Dev mode stubs the agent — drop a placeholder so the row completes
+        // and the download endpoint has something to serve.
+        try {
+          final f = File(path);
+          await f.parent.create(recursive: true);
+          await f.writeAsString(
+              '-- gisila dev backup placeholder: ${db.dbName} ($scope)\n');
+          size = await f.length();
+        } catch (_) {}
+      } else {
+        try {
+          size = await File(path).length();
+        } catch (_) {}
+      }
+
+      await _patchBackup(backupId, {
+        'status': 'completed',
+        'filePath': path,
+        'fileName': fileName,
+        if (size != null) 'sizeBytes': size,
+        'completedAt': DateTime.now().toUtc().toIso8601String(),
+        'errorMessage': null,
+      });
+
+      await _pruneBackups(databaseId);
+    } catch (e) {
+      await _patchBackup(backupId, {
+        'status': 'failed',
+        'errorMessage': e.toString(),
+        'completedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> _restoreDatabase(
+      int instanceId, int databaseId, String inputPath) async {
+    final instance = await _findInstance(instanceId);
+    final db = await _findDatabase(databaseId);
+    if (instance == null || db == null) return;
+    try {
+      await _runAgent([
+        'postgres',
+        'restore',
+        '--version',
+        '${instance.version}',
+        '--db',
+        db.dbName,
+        '--input',
+        inputPath,
+      ]);
+    } finally {
+      // Staged uploads are single-use — remove them whatever the outcome.
+      if (inputPath.contains('/uploads/')) {
+        try {
+          final f = File(inputPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Enforce the schedule's keep-last-N retention for a database.
+  Future<void> _pruneBackups(int databaseId) async {
+    final sched =
+        await Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata)
+            .where(PostgresBackupScheduleTable.databaseId.eq(databaseId))
+            .first(database.context());
+    final keep = sched?.keepCount ?? 7;
+
+    final all = await Query<PostgresBackup>(PostgresBackupTable.metadata)
+        .where(PostgresBackupTable.databaseId.eq(databaseId))
+        .orderBy(PostgresBackupTable.createdAt, desc: true)
+        .all(database.context());
+    final completed = all.where((b) => b.status == 'completed').toList();
+    if (completed.length <= keep) return;
+
+    for (final old in completed.skip(keep)) {
+      final p = old.filePath;
+      if (p != null && p.isNotEmpty) {
+        try {
+          final f = File(p);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
+      await Query<PostgresBackup>(PostgresBackupTable.metadata)
+          .where(PostgresBackupTable.id.eq(old.id))
+          .delete()
+          .run(database.context());
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -332,6 +478,34 @@ class PostgresWorker {
           .where(PostgresDatabaseTable.id.eq(id))
           .update(data)
           .run(database.context());
+
+  Future<PostgresBackup?> _findBackup(int id) =>
+      Query<PostgresBackup>(PostgresBackupTable.metadata)
+          .where(PostgresBackupTable.id.eq(id))
+          .first(database.context());
+
+  Future<void> _patchBackup(int id, Map<String, Object?> data) =>
+      Query<PostgresBackup>(PostgresBackupTable.metadata)
+          .where(PostgresBackupTable.id.eq(id))
+          .update(data)
+          .run(database.context());
+
+  /// Compact UTC timestamp `yyyymmdd-HHMMSS` for backup file names.
+  String _stamp(DateTime t) {
+    String p(int n, [int w = 2]) => n.toString().padLeft(w, '0');
+    return '${p(t.year, 4)}${p(t.month)}${p(t.day)}-'
+        '${p(t.hour)}${p(t.minute)}${p(t.second)}';
+  }
+
+  /// Best-effort recursive directory removal (used to clean up backup files).
+  Future<void> _deleteDir(String path) async {
+    try {
+      final dir = Directory(path);
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (e) {
+      logger.w('postgres_worker: could not remove $path: $e');
+    }
+  }
 
   Future<void> _runAgent(List<String> args) async {
     if (hostConfig.agentMode == 'dev') {

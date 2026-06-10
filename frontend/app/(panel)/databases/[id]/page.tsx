@@ -18,6 +18,7 @@ import {
   EyeOff,
   ArrowLeft,
   Table2,
+  HardDriveDownload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { api, fetcher } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { MetricsPanel } from "./_panels/metrics-panel";
 import { ConfigPanel } from "./_panels/config-panel";
+import { BackupsDialog } from "./_panels/backups-panel";
 import type {
   PostgresInstance,
   PostgresDatabase,
@@ -135,6 +137,7 @@ export default function InstancePage() {
   const [creating, setCreating]       = useState(false);
   const [createError, setCreateError] = useState("");
   const [justCreated, setJustCreated] = useState<PostgresDatabase | null>(null);
+  const [backupsDb, setBackupsDb] = useState<PostgresDatabase | null>(null);
 
   async function action(path: string, method = "POST", key?: string) {
     setBusy(path);
@@ -356,6 +359,17 @@ export default function InstancePage() {
                         >
                           Connection info
                         </Button>
+                        {db.status === "active" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setBackupsDb(db)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <HardDriveDownload className="mr-1 h-3.5 w-3.5" />
+                            Backups
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -477,6 +491,13 @@ export default function InstancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Backups dialog */}
+      <BackupsDialog
+        instanceId={String(id)}
+        db={backupsDb}
+        onClose={() => setBackupsDb(null)}
+      />
     </div>
   );
 }

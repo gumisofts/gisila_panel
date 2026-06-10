@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/config.dart' show env;
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:postgres/postgres.dart' as pg;
@@ -30,6 +32,50 @@ const kTunableSettings = <String>[
 
 // Postgres major versions available from the pgdg repository.
 const kSupportedVersions = [14, 15, 16, 17, 18];
+
+// Valid backup scopes (maps to pg_dump --schema-only / --data-only).
+const kBackupScopes = {'full', 'schema', 'data'};
+const kBackupFrequencies = {'hourly', 'daily', 'weekly'};
+
+/// Root directory for on-disk backup artifacts. Overridable via env for dev.
+/// Owned by the `gisila` user so the API can stream downloads and stage uploads
+/// while the root agent writes the dumps.
+String pgBackupDir() =>
+    env.getOrElse('GISILA_BACKUP_DIR', () => '/var/lib/gisila/backups');
+
+/// Compute the next UTC run time for a preset schedule, strictly after [from].
+DateTime computeNextRun(
+  String frequency,
+  int hour,
+  int minute,
+  int? weekday,
+  DateTime from,
+) {
+  final f = from.toUtc();
+  switch (frequency) {
+    case 'hourly':
+      var next = DateTime.utc(f.year, f.month, f.day, f.hour, minute);
+      while (!next.isAfter(f)) {
+        next = next.add(const Duration(hours: 1));
+      }
+      return next;
+    case 'weekly':
+      // Our weekday is 0=Sunday … 6=Saturday; Dart's is Mon=1 … Sun=7.
+      final target = (weekday ?? 0).clamp(0, 6);
+      final currentDow = f.weekday % 7; // Sun(7)→0, Mon(1)→1 … Sat(6)→6
+      var delta = (target - currentDow) % 7;
+      if (delta < 0) delta += 7;
+      var next = DateTime.utc(f.year, f.month, f.day, hour, minute)
+          .add(Duration(days: delta));
+      if (!next.isAfter(f)) next = next.add(const Duration(days: 7));
+      return next;
+    case 'daily':
+    default:
+      var next = DateTime.utc(f.year, f.month, f.day, hour, minute);
+      if (!next.isAfter(f)) next = next.add(const Duration(days: 1));
+      return next;
+  }
+}
 
 // Default port for each version when installed side-by-side.
 const _defaultPorts = {
@@ -491,6 +537,201 @@ class PostgresService extends Service {
     if (v is BigInt) return v.toInt();
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
+  }
+
+  // ── Backups ───────────────────────────────────────────────────────────────
+
+  Future<List<PostgresBackup>> listBackups(int databaseId) =>
+      Query<PostgresBackup>(PostgresBackupTable.metadata)
+          .where(PostgresBackupTable.databaseId.eq(databaseId))
+          .orderBy(PostgresBackupTable.createdAt, desc: true)
+          .all(_db.context());
+
+  Future<PostgresBackup> findBackup(int id) async {
+    final row = await Query<PostgresBackup>(PostgresBackupTable.metadata)
+        .where(PostgresBackupTable.id.eq(id))
+        .first(_db.context());
+    if (row == null) throw NotFound('Backup #$id not found.');
+    return row;
+  }
+
+  /// Queue a backup of [databaseId] with the given [scope]. Returns the new
+  /// pending [PostgresBackup] row; the worker fills in the file + status.
+  Future<PostgresBackup> triggerBackup(
+    int databaseId, {
+    String scope = 'full',
+    String trigger = 'manual',
+  }) async {
+    if (!kBackupScopes.contains(scope)) {
+      throw HttpException(422, 'Invalid backup scope "$scope".');
+    }
+    final db = await findDatabase(databaseId);
+    if (db.status != 'active') {
+      throw HttpException(422, 'Database must be active to back it up.');
+    }
+    final instance = await findInstance(db.instanceId);
+    if (instance.status != 'running') {
+      throw HttpException(422, 'Instance must be running to back up a database.');
+    }
+    final row = await Query<PostgresBackup>(PostgresBackupTable.metadata)
+        .insert(<String, Object?>{
+      'databaseId': databaseId,
+      'scope': scope,
+      'status': 'pending',
+      'trigger': trigger,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    }).one(_db.context());
+
+    await _enqueue('backup_database', {
+      'instanceId': db.instanceId,
+      'databaseId': databaseId,
+      'backupId': row.id,
+    });
+    return row;
+  }
+
+  /// Delete a backup row and its file on disk.
+  Future<void> deleteBackup(int id) async {
+    final b = await findBackup(id);
+    final path = b.filePath;
+    if (path != null && path.isNotEmpty) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+      } catch (_) {
+        // best-effort — the row is removed regardless.
+      }
+    }
+    await Query<PostgresBackup>(PostgresBackupTable.metadata)
+        .where(PostgresBackupTable.id.eq(id))
+        .delete()
+        .run(_db.context());
+  }
+
+  /// Restore a database from one of its completed backups.
+  Future<void> restoreFromBackup(int backupId) async {
+    final b = await findBackup(backupId);
+    if (b.status != 'completed' || (b.filePath?.isEmpty ?? true)) {
+      throw HttpException(422, 'Backup is not available to restore.');
+    }
+    final db = await findDatabase(b.databaseId);
+    final instance = await findInstance(db.instanceId);
+    if (instance.status != 'running') {
+      throw HttpException(422, 'Instance must be running to restore.');
+    }
+    await _enqueue('restore_database', {
+      'instanceId': db.instanceId,
+      'databaseId': db.id,
+      'inputPath': b.filePath,
+    });
+  }
+
+  /// Stage an uploaded dump to disk and queue a restore from it.
+  Future<void> saveUploadAndRestore(
+    int databaseId,
+    List<int> bytes,
+    String filename,
+  ) async {
+    final db = await findDatabase(databaseId);
+    final instance = await findInstance(db.instanceId);
+    if (instance.status != 'running') {
+      throw HttpException(422, 'Instance must be running to restore.');
+    }
+    if (bytes.isEmpty) throw HttpException(422, 'Uploaded file is empty.');
+
+    final lower = filename.toLowerCase();
+    final String ext;
+    if (lower.endsWith('.sql.gz') || lower.endsWith('.gz')) {
+      ext = '.sql.gz';
+    } else if (lower.endsWith('.sql')) {
+      ext = '.sql';
+    } else {
+      throw HttpException(422, 'Upload must be a .sql or .sql.gz file.');
+    }
+
+    final dir = Directory('${pgBackupDir()}/uploads');
+    await dir.create(recursive: true);
+    final stamp = DateTime.now().toUtc().millisecondsSinceEpoch;
+    final suffix = Random.secure().nextInt(0x7fffffff).toRadixString(16);
+    final path = '${dir.path}/upload-$stamp-$suffix$ext';
+    await File(path).writeAsBytes(bytes, flush: true);
+
+    await _enqueue('restore_database', {
+      'instanceId': db.instanceId,
+      'databaseId': db.id,
+      'inputPath': path,
+    });
+  }
+
+  // ── Backup schedule ─────────────────────────────────────────────────────────
+
+  /// Get the schedule for a database, creating a disabled default if absent.
+  Future<PostgresBackupSchedule> getSchedule(int databaseId) async {
+    await findDatabase(databaseId); // validates existence
+    final existing =
+        await Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata)
+            .where(PostgresBackupScheduleTable.databaseId.eq(databaseId))
+            .first(_db.context());
+    if (existing != null) return existing;
+    return Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata)
+        .insert(<String, Object?>{
+      'databaseId': databaseId,
+      'enabled': false,
+      'frequency': 'daily',
+      'hour': 2,
+      'minute': 0,
+      'scope': 'full',
+      'keepCount': 7,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    }).one(_db.context());
+  }
+
+  Future<PostgresBackupSchedule> updateSchedule(
+    int databaseId, {
+    bool? enabled,
+    String? frequency,
+    int? hour,
+    int? minute,
+    int? weekday,
+    String? scope,
+    int? keepCount,
+  }) async {
+    final current = await getSchedule(databaseId);
+    if (frequency != null && !kBackupFrequencies.contains(frequency)) {
+      throw HttpException(422, 'Invalid frequency "$frequency".');
+    }
+    if (scope != null && !kBackupScopes.contains(scope)) {
+      throw HttpException(422, 'Invalid scope "$scope".');
+    }
+
+    final mergedEnabled = enabled ?? current.enabled ?? false;
+    final mergedFreq = frequency ?? current.frequency ?? 'daily';
+    final mergedHour = (hour ?? current.hour ?? 2).clamp(0, 23);
+    final mergedMinute = (minute ?? current.minute ?? 0).clamp(0, 59);
+    final mergedWeekday =
+        weekday != null ? weekday.clamp(0, 6) : current.weekday;
+
+    final patch = <String, Object?>{
+      'enabled': mergedEnabled,
+      'frequency': mergedFreq,
+      'hour': mergedHour,
+      'minute': mergedMinute,
+      'weekday': mergedWeekday,
+      if (scope != null) 'scope': scope,
+      if (keepCount != null) 'keepCount': keepCount.clamp(1, 365),
+      'nextRunAt': mergedEnabled
+          ? computeNextRun(mergedFreq, mergedHour, mergedMinute, mergedWeekday,
+                  DateTime.now().toUtc())
+              .toIso8601String()
+          : null,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    await Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata)
+        .where(PostgresBackupScheduleTable.databaseId.eq(databaseId))
+        .update(patch)
+        .run(_db.context());
+    return getSchedule(databaseId);
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

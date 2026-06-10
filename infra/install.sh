@@ -81,6 +81,10 @@ install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 "$GISILA_HOME"
 # so app users cannot read or list each other's directories.
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0751 "$APPS_ROOT"
 install -d -o root -g root -m 0755 /var/log/gisila
+# Database backup artifacts. Owned by gisila so the API can stream downloads and
+# stage uploaded dumps for restore; the root agent writes the dumps here too.
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups/uploads
 
 # ── 3. PostgreSQL ─────────────────────────────────────────────────────────────
 echo "==> Configuring PostgreSQL"

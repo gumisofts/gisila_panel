@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
 import 'package:gisila_panel/forms/postgres_forms.dart';
@@ -168,6 +169,126 @@ class DatabasesApi {
     await svc.dropDatabase(dbId);
     return {'detail': 'Drop queued.'};
   }
+
+  // ── Backups ───────────────────────────────────────────────────────────────
+
+  @Get('/{id}/dbs/{dbId}/backups', summary: 'List backups for a database')
+  Future<Map<String, Object?>> listBackups(
+    int id,
+    int dbId,
+    PostgresService svc,
+  ) async {
+    final backups = await svc.listBackups(dbId);
+    return {'results': backups.map(_serializeBackup).toList()};
+  }
+
+  @Post('/{id}/dbs/{dbId}/backups', summary: 'Trigger a database backup')
+  Future<Map<String, Object?>> createBackup(
+    int id,
+    int dbId,
+    BackupForm form,
+    PostgresService svc,
+  ) async {
+    final scope = form.scope.value?.isNotEmpty == true ? form.scope.value! : 'full';
+    final backup = await svc.triggerBackup(dbId, scope: scope);
+    return _serializeBackup(backup);
+  }
+
+  @Get('/{id}/dbs/{dbId}/backups/{backupId}/download',
+      summary: 'Download a backup file')
+  Future<Response> downloadBackup(
+    int id,
+    int dbId,
+    int backupId,
+    PostgresService svc,
+  ) async {
+    final b = await svc.findBackup(backupId);
+    final path = b.filePath;
+    if (b.status != 'completed' || path == null || path.isEmpty) {
+      return Response.notFound('Backup is not available.');
+    }
+    final file = File(path);
+    if (!await file.exists()) return Response.notFound('Backup file missing.');
+    final name = b.fileName ?? 'backup-$backupId.sql.gz';
+    return Response.ok(file.openRead(), headers: {
+      'content-type': 'application/gzip',
+      'content-disposition': 'attachment; filename="$name"',
+      'content-length': '${await file.length()}',
+    });
+  }
+
+  @Delete('/{id}/dbs/{dbId}/backups/{backupId}', summary: 'Delete a backup')
+  Future<Map<String, Object?>> deleteBackup(
+    int id,
+    int dbId,
+    int backupId,
+    PostgresService svc,
+  ) async {
+    await svc.deleteBackup(backupId);
+    return {'detail': 'Backup deleted.'};
+  }
+
+  @Post('/{id}/dbs/{dbId}/restore',
+      summary: 'Restore a database from a stored backup')
+  Future<Map<String, Object?>> restoreBackup(
+    int id,
+    int dbId,
+    RestoreBackupForm form,
+    PostgresService svc,
+  ) async {
+    await svc.restoreFromBackup(form.backupId.value!);
+    return {'detail': 'Restore queued.'};
+  }
+
+  @Post('/{id}/dbs/{dbId}/restore-upload',
+      summary: 'Restore a database from an uploaded dump')
+  Future<Map<String, Object?>> restoreUpload(
+    int id,
+    int dbId,
+    RequestContext ctx,
+    PostgresService svc,
+  ) async {
+    final filename = ctx.request.headers['x-filename'] ?? 'upload.sql';
+    final bytes = <int>[];
+    await for (final chunk in ctx.request.read()) {
+      bytes.addAll(chunk);
+    }
+    await svc.saveUploadAndRestore(dbId, bytes, filename);
+    return {'detail': 'Restore queued.'};
+  }
+
+  // ── Backup schedule ─────────────────────────────────────────────────────────
+
+  @Get('/{id}/dbs/{dbId}/backup-schedule',
+      summary: 'Get a database backup schedule')
+  Future<Map<String, Object?>> getSchedule(
+    int id,
+    int dbId,
+    PostgresService svc,
+  ) async {
+    return _serializeSchedule(await svc.getSchedule(dbId));
+  }
+
+  @Put('/{id}/dbs/{dbId}/backup-schedule',
+      summary: 'Update a database backup schedule')
+  Future<Map<String, Object?>> updateSchedule(
+    int id,
+    int dbId,
+    BackupScheduleForm form,
+    PostgresService svc,
+  ) async {
+    final s = await svc.updateSchedule(
+      dbId,
+      enabled: form.enabled.value,
+      frequency: form.frequency.value,
+      hour: form.hour.value,
+      minute: form.minute.value,
+      weekday: form.weekday.value,
+      scope: form.scope.value?.isNotEmpty == true ? form.scope.value : null,
+      keepCount: form.keepCount.value,
+    );
+    return _serializeSchedule(s);
+  }
 }
 
 // ── Serialisers ───────────────────────────────────────────────────────────────
@@ -211,6 +332,35 @@ Map<String, Object?> _serializeDatabase(
   }
   return base;
 }
+
+Map<String, Object?> _serializeBackup(PostgresBackup b) => {
+      'id': b.id,
+      'databaseId': b.databaseId,
+      'fileName': b.fileName,
+      'sizeBytes': b.sizeBytes,
+      'scope': b.scope ?? 'full',
+      'status': b.status,
+      'trigger': b.trigger,
+      'errorMessage': b.errorMessage,
+      'startedAt': b.startedAt?.toIso8601String(),
+      'completedAt': b.completedAt?.toIso8601String(),
+      'createdAt': b.createdAt.toIso8601String(),
+    };
+
+Map<String, Object?> _serializeSchedule(PostgresBackupSchedule s) => {
+      'id': s.id,
+      'databaseId': s.databaseId,
+      'enabled': s.enabled ?? false,
+      'frequency': s.frequency ?? 'daily',
+      'hour': s.hour ?? 2,
+      'minute': s.minute ?? 0,
+      'weekday': s.weekday,
+      'scope': s.scope ?? 'full',
+      'keepCount': s.keepCount ?? 7,
+      'nextRunAt': s.nextRunAt?.toIso8601String(),
+      'createdAt': s.createdAt.toIso8601String(),
+      'updatedAt': s.updatedAt?.toIso8601String(),
+    };
 
 List<String> _toStringList(Object? raw) {
   if (raw == null) return [];

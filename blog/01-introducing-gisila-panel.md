@@ -71,15 +71,15 @@ Three words sum up the approach: **open-source · self-hostable · zero-containe
 
 Every design decision follows from a small set of principles:
 
-| Principle | What it means |
-|-----------|---------------|
-| **High-density hosting** | Pack many apps onto a small VPS |
-| **Low RAM usage** | No per-app container daemon |
-| **Low-cost VPS friendly** | Comfortable on a 1 GB / 1 vCPU box |
-| **Minimal overhead** | Straight `exec` of native binaries via systemd |
-| **Secure multi-tenant** | Every app gets its own Linux user and sandbox |
+| Principle                   | What it means                                             |
+| --------------------------- | --------------------------------------------------------- |
+| **High-density hosting**    | Pack many apps onto a small VPS                           |
+| **Low RAM usage**           | No per-app container daemon                               |
+| **Low-cost VPS friendly**   | Comfortable on a 1 GB / 1 vCPU box                        |
+| **Minimal overhead**        | Straight `exec` of native binaries via systemd            |
+| **Secure multi-tenant**     | Every app gets its own Linux user and sandbox             |
 | **Compiled backends first** | Optimized for Go, Rust, Dart, and friends — not WordPress |
-| **Open-source first** | MIT licensed, self-hostable, modern UI |
+| **Open-source first**       | MIT licensed, self-hostable, modern UI                    |
 
 The target user isn't running a Kubernetes cluster. They're running a **$5–20/month VPS** and want to host 20–100 small services on it without babysitting systemd units by hand.
 
@@ -181,13 +181,13 @@ Each hosted app is a plain systemd service running as its own unprivileged Linux
 
 We designed Gisila Panel around a simple cost comparison:
 
-| Approach | Typical monthly cost | Apps on 1 GB VPS |
-|----------|---------------------|------------------|
-| Managed PaaS (Heroku/Railway) | $40–100+ for ~10 small apps | N/A (cloud-managed) |
-| Docker-based self-hosted panel | $5–20 VPS + your time | ~8–15 apps |
-| **Gisila Panel** | **$5–20 VPS + your time** | **30–100+ apps** |
+| Approach                       | Typical monthly cost        | Apps on 1 GB VPS    |
+| ------------------------------ | --------------------------- | ------------------- |
+| Managed PaaS (Heroku/Railway)  | $40–100+ for ~10 small apps | N/A (cloud-managed) |
+| Docker-based self-hosted panel | $5–20 VPS + your time       | ~8–15 apps          |
+| **Gisila Panel**               | **$5–20 VPS + your time**   | **30–100+ apps**    |
 
-> *We replaced a $40/mo Heroku bill with a $5 VPS running gisila. 28 apps, one box, zero containers, identical DX.*
+> _We replaced a $40/mo Heroku bill with a $5 VPS running gisila. 28 apps, one box, zero containers, identical DX._
 
 That's the pitch in one sentence.
 

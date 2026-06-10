@@ -234,6 +234,38 @@ CREATE TABLE "postgres_databases" (
 );
 
 
+CREATE TABLE "postgres_backup_schedules" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "database_id" INTEGER NOT NULL,
+  "enabled" BOOLEAN DEFAULT FALSE,
+  "frequency" VARCHAR(255) DEFAULT 'daily',
+  "hour" INTEGER DEFAULT 2,
+  "minute" INTEGER DEFAULT 0,
+  "weekday" INTEGER,
+  "scope" VARCHAR(255) DEFAULT 'full',
+  "keep_count" INTEGER DEFAULT 7,
+  "next_run_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "postgres_backups" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "database_id" INTEGER NOT NULL,
+  "file_path" VARCHAR(255),
+  "file_name" VARCHAR(255),
+  "size_bytes" BIGINT,
+  "scope" VARCHAR(255) DEFAULT 'full',
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "trigger" VARCHAR(255) DEFAULT 'manual',
+  "error_message" TEXT,
+  "started_at" TIMESTAMP WITH TIME ZONE,
+  "completed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+
 CREATE TABLE "mail_domains" (
   "id" BIGSERIAL PRIMARY KEY,
   "domain" VARCHAR(255) NOT NULL UNIQUE,
@@ -302,6 +334,10 @@ ALTER TABLE "app_events" ADD CONSTRAINT "app_events_app_fkey" FOREIGN KEY ("app_
 ALTER TABLE "app_events" ADD CONSTRAINT "app_events_actor_fkey" FOREIGN KEY ("actor_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "postgres_databases" ADD CONSTRAINT "postgres_databases_instance_fkey" FOREIGN KEY ("instance_id") REFERENCES "postgres_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "postgres_backup_schedules" ADD CONSTRAINT "postgres_backup_schedules_database_fkey" FOREIGN KEY ("database_id") REFERENCES "postgres_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "postgres_backups" ADD CONSTRAINT "postgres_backups_database_fkey" FOREIGN KEY ("database_id") REFERENCES "postgres_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "mail_accounts" ADD CONSTRAINT "mail_accounts_mail_domain_fkey" FOREIGN KEY ("mail_domain_id") REFERENCES "mail_domains" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

@@ -48,6 +48,30 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
         'extensions': <String, Object?>{'type': 'object'}
       }
     });
+    spec.putSchema('BackupForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'scope': <String, Object?>{'type': 'string'}
+      }
+    });
+    spec.putSchema('RestoreBackupForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'backupId': <String, Object?>{'type': 'integer', 'format': 'int64'}
+      }
+    });
+    spec.putSchema('BackupScheduleForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'enabled': <String, Object?>{'type': 'boolean'},
+        'frequency': <String, Object?>{'type': 'string'},
+        'hour': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'minute': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'weekday': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'scope': <String, Object?>{'type': 'string'},
+        'keepCount': <String, Object?>{'type': 'integer', 'format': 'int64'}
+      }
+    });
     spec.putTag('Databases');
     {
       final basePath = '$prefix/databases/';
@@ -770,6 +794,523 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
             ],
             responses: <String, ResponseSpec>{
               '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/backups';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/backups';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.listBackups(id, dbId, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'List backups for a database',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/backups';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/backups';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final form = await bindForm(request, BackupForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.createBackup(id, dbId, form, svc);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Trigger a database backup',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/BackupForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath =
+          '$prefix/databases/<id>/dbs/<dbId>/backups/<backupId>/download';
+      final openApiPath =
+          '$prefix/databases/{id}/dbs/{dbId}/backups/{backupId}/download';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final backupId = coerce<int>(
+                    request.params['backupId'], 'backupId',
+                    required: true);
+                final svc = ctx.service<PostgresService>();
+                final response =
+                    await this.downloadBackup(id, dbId, backupId, svc);
+                return response;
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Download a backup file',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'backupId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK')
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/backups/<backupId>';
+      final openApiPath =
+          '$prefix/databases/{id}/dbs/{dbId}/backups/{backupId}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final backupId = coerce<int>(
+                    request.params['backupId'], 'backupId',
+                    required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.deleteBackup(id, dbId, backupId, svc);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary: 'Delete a backup',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'backupId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/restore';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/restore';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final form = await bindForm(request, RestoreBackupForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.restoreBackup(id, dbId, form, svc);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Restore a database from a stored backup',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/RestoreBackupForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/restore-upload';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/restore-upload';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.restoreUpload(id, dbId, ctx, svc);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Restore a database from an uploaded dump',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/backup-schedule';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/backup-schedule';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.getSchedule(id, dbId, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Get a database backup schedule',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/backup-schedule';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/backup-schedule';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.put(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final form = await bindForm(request, BackupScheduleForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.updateSchedule(id, dbId, form, svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'put',
+          Operation(
+            summary: 'Update a database backup schedule',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/BackupScheduleForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

@@ -81,3 +81,62 @@ export async function api<T>(
 }
 
 export const fetcher = <T>(path: string) => api<T>(path);
+
+// ── Binary file helpers ───────────────────────────────────────────────────────
+// `api()` always sends/expects JSON, so file download/upload need their own
+// fetch wrappers that carry the bearer token (a plain <a download> can't).
+
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+): Promise<void> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ApiError(res.status, undefined, text || res.statusText);
+  }
+
+  // Prefer the server-provided filename from Content-Disposition.
+  let name = fallbackName;
+  const cd = res.headers.get("content-disposition");
+  const m = cd && /filename="?([^"]+)"?/.exec(cd);
+  if (m) name = m[1];
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function uploadFile(path: string, file: File): Promise<void> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/octet-stream");
+  headers.set("X-Filename", file.name);
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: file,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = res.statusText;
+    try {
+      msg = JSON.parse(text)?.error?.message ?? msg;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(res.status, undefined, msg);
+  }
+}

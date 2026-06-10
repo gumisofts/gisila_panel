@@ -2958,9 +2958,35 @@ class PostgresDatabase with Preloadable {
         childMeta: PostgresInstanceTable.metadata,
       );
 
+  static final Relation<PostgresDatabase, PostgresBackupSchedule>
+  backupSchedule = HasManyRelation<PostgresDatabase, PostgresBackupSchedule>(
+    parentTable: 'postgres_databases',
+    childTable: 'postgres_backup_schedules',
+    name: 'backupSchedule',
+    childForeignKey: 'database_id',
+    childMeta: PostgresBackupScheduleTable.metadata,
+  );
+
+  static final Relation<PostgresDatabase, PostgresBackup> backups =
+      HasManyRelation<PostgresDatabase, PostgresBackup>(
+        parentTable: 'postgres_databases',
+        childTable: 'postgres_backups',
+        name: 'backups',
+        childForeignKey: 'database_id',
+        childMeta: PostgresBackupTable.metadata,
+      );
+
   /// Preloaded instance; null when not preloaded or absent.
   PostgresInstance? get instanceLoaded =>
       preloaded<PostgresInstance>('instance');
+
+  /// Preloaded backupSchedule; empty list when not preloaded.
+  List<PostgresBackupSchedule> get backupScheduleList =>
+      preloaded<List<PostgresBackupSchedule>>('backupSchedule') ?? const [];
+
+  /// Preloaded backups; empty list when not preloaded.
+  List<PostgresBackup> get backupsList =>
+      preloaded<List<PostgresBackup>>('backups') ?? const [];
 }
 
 class PostgresDatabaseTable {
@@ -3028,6 +3054,406 @@ class PostgresDatabaseTable {
 
 Query<PostgresDatabase> postgresDatabases() =>
     Query<PostgresDatabase>(PostgresDatabaseTable.metadata);
+
+class PostgresBackupSchedule with Preloadable {
+  final int? id;
+  final int databaseId;
+  final bool? enabled;
+  final String? frequency;
+  final int? hour;
+  final int? minute;
+  final int? weekday;
+  final String? scope;
+  final int? keepCount;
+  final DateTime? nextRunAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  PostgresBackupSchedule({
+    this.id,
+    required this.databaseId,
+    this.enabled,
+    this.frequency,
+    this.hour,
+    this.minute,
+    this.weekday,
+    this.scope,
+    this.keepCount,
+    this.nextRunAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory PostgresBackupSchedule.fromRow(Map<String, dynamic> row) =>
+      PostgresBackupSchedule(
+        id: row['id'] as int?,
+        databaseId: row['database_id'] as int,
+        enabled: row['enabled'] as bool?,
+        frequency: row['frequency'] as String?,
+        hour: row['hour'] as int?,
+        minute: row['minute'] as int?,
+        weekday: row['weekday'] as int?,
+        scope: row['scope'] as String?,
+        keepCount: row['keep_count'] as int?,
+        nextRunAt: row['next_run_at'] == null
+            ? null
+            : (row['next_run_at'] is DateTime
+                  ? row['next_run_at'] as DateTime
+                  : DateTime.parse(row['next_run_at'].toString())),
+        createdAt: row['created_at'] is DateTime
+            ? row['created_at'] as DateTime
+            : DateTime.parse(row['created_at'].toString()),
+        updatedAt: row['updated_at'] == null
+            ? null
+            : (row['updated_at'] is DateTime
+                  ? row['updated_at'] as DateTime
+                  : DateTime.parse(row['updated_at'].toString())),
+      );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'database_id': databaseId,
+    'enabled': enabled,
+    'frequency': frequency,
+    'hour': hour,
+    'minute': minute,
+    'weekday': weekday,
+    'scope': scope,
+    'keep_count': keepCount,
+    'next_run_at': nextRunAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory PostgresBackupSchedule.fromJson(Map<String, dynamic> json) =>
+      PostgresBackupSchedule.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  PostgresBackupSchedule copyWith({
+    int? id,
+    int? databaseId,
+    bool? enabled,
+    String? frequency,
+    int? hour,
+    int? minute,
+    int? weekday,
+    String? scope,
+    int? keepCount,
+    DateTime? nextRunAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => PostgresBackupSchedule(
+    id: id ?? this.id,
+    databaseId: databaseId ?? this.databaseId,
+    enabled: enabled ?? this.enabled,
+    frequency: frequency ?? this.frequency,
+    hour: hour ?? this.hour,
+    minute: minute ?? this.minute,
+    weekday: weekday ?? this.weekday,
+    scope: scope ?? this.scope,
+    keepCount: keepCount ?? this.keepCount,
+    nextRunAt: nextRunAt ?? this.nextRunAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<PostgresBackupSchedule, PostgresDatabase> database =
+      BelongsToRelation<PostgresBackupSchedule, PostgresDatabase>(
+        parentTable: 'postgres_backup_schedules',
+        childTable: 'postgres_databases',
+        name: 'database',
+        parentForeignKey: 'database_id',
+        childMeta: PostgresDatabaseTable.metadata,
+      );
+
+  /// Preloaded database; null when not preloaded or absent.
+  PostgresDatabase? get databaseLoaded =>
+      preloaded<PostgresDatabase>('database');
+}
+
+class PostgresBackupScheduleTable {
+  PostgresBackupScheduleTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'postgres_backup_schedules',
+    column: 'id',
+  );
+  static const ColumnRef<int> databaseId = ColumnRef<int>(
+    table: 'postgres_backup_schedules',
+    column: 'database_id',
+  );
+  static const ColumnRef<bool?> enabled = ColumnRef<bool?>(
+    table: 'postgres_backup_schedules',
+    column: 'enabled',
+  );
+  static const ColumnRef<String?> frequency = ColumnRef<String?>(
+    table: 'postgres_backup_schedules',
+    column: 'frequency',
+  );
+  static const ColumnRef<int?> hour = ColumnRef<int?>(
+    table: 'postgres_backup_schedules',
+    column: 'hour',
+  );
+  static const ColumnRef<int?> minute = ColumnRef<int?>(
+    table: 'postgres_backup_schedules',
+    column: 'minute',
+  );
+  static const ColumnRef<int?> weekday = ColumnRef<int?>(
+    table: 'postgres_backup_schedules',
+    column: 'weekday',
+  );
+  static const ColumnRef<String?> scope = ColumnRef<String?>(
+    table: 'postgres_backup_schedules',
+    column: 'scope',
+  );
+  static const ColumnRef<int?> keepCount = ColumnRef<int?>(
+    table: 'postgres_backup_schedules',
+    column: 'keep_count',
+  );
+  static const ColumnRef<DateTime?> nextRunAt = ColumnRef<DateTime?>(
+    table: 'postgres_backup_schedules',
+    column: 'next_run_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'postgres_backup_schedules',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'postgres_backup_schedules',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<PostgresBackupSchedule> metadata =
+      TableMeta<PostgresBackupSchedule>(
+        tableName: 'postgres_backup_schedules',
+        primaryKey: 'id',
+        columnNames: [
+          'id',
+          'database_id',
+          'enabled',
+          'frequency',
+          'hour',
+          'minute',
+          'weekday',
+          'scope',
+          'keep_count',
+          'next_run_at',
+          'created_at',
+          'updated_at',
+        ],
+        fromRow: PostgresBackupSchedule.fromRow,
+      );
+}
+
+Query<PostgresBackupSchedule> postgresBackupSchedules() =>
+    Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata);
+
+class PostgresBackup with Preloadable {
+  final int? id;
+  final int databaseId;
+  final String? filePath;
+  final String? fileName;
+  final int? sizeBytes;
+  final String? scope;
+  final String? status;
+  final String? trigger;
+  final String? errorMessage;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final DateTime createdAt;
+
+  PostgresBackup({
+    this.id,
+    required this.databaseId,
+    this.filePath,
+    this.fileName,
+    this.sizeBytes,
+    this.scope,
+    this.status,
+    this.trigger,
+    this.errorMessage,
+    this.startedAt,
+    this.completedAt,
+    required this.createdAt,
+  });
+
+  factory PostgresBackup.fromRow(Map<String, dynamic> row) => PostgresBackup(
+    id: row['id'] as int?,
+    databaseId: row['database_id'] as int,
+    filePath: row['file_path'] as String?,
+    fileName: row['file_name'] as String?,
+    sizeBytes: row['size_bytes'] as int?,
+    scope: row['scope'] as String?,
+    status: row['status'] as String?,
+    trigger: row['trigger'] as String?,
+    errorMessage: row['error_message'] as String?,
+    startedAt: row['started_at'] == null
+        ? null
+        : (row['started_at'] is DateTime
+              ? row['started_at'] as DateTime
+              : DateTime.parse(row['started_at'].toString())),
+    completedAt: row['completed_at'] == null
+        ? null
+        : (row['completed_at'] is DateTime
+              ? row['completed_at'] as DateTime
+              : DateTime.parse(row['completed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'database_id': databaseId,
+    'file_path': filePath,
+    'file_name': fileName,
+    'size_bytes': sizeBytes,
+    'scope': scope,
+    'status': status,
+    'trigger': trigger,
+    'error_message': errorMessage,
+    'started_at': startedAt,
+    'completed_at': completedAt,
+    'created_at': createdAt,
+  };
+
+  factory PostgresBackup.fromJson(Map<String, dynamic> json) =>
+      PostgresBackup.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  PostgresBackup copyWith({
+    int? id,
+    int? databaseId,
+    String? filePath,
+    String? fileName,
+    int? sizeBytes,
+    String? scope,
+    String? status,
+    String? trigger,
+    String? errorMessage,
+    DateTime? startedAt,
+    DateTime? completedAt,
+    DateTime? createdAt,
+  }) => PostgresBackup(
+    id: id ?? this.id,
+    databaseId: databaseId ?? this.databaseId,
+    filePath: filePath ?? this.filePath,
+    fileName: fileName ?? this.fileName,
+    sizeBytes: sizeBytes ?? this.sizeBytes,
+    scope: scope ?? this.scope,
+    status: status ?? this.status,
+    trigger: trigger ?? this.trigger,
+    errorMessage: errorMessage ?? this.errorMessage,
+    startedAt: startedAt ?? this.startedAt,
+    completedAt: completedAt ?? this.completedAt,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  static final Relation<PostgresBackup, PostgresDatabase> database =
+      BelongsToRelation<PostgresBackup, PostgresDatabase>(
+        parentTable: 'postgres_backups',
+        childTable: 'postgres_databases',
+        name: 'database',
+        parentForeignKey: 'database_id',
+        childMeta: PostgresDatabaseTable.metadata,
+      );
+
+  /// Preloaded database; null when not preloaded or absent.
+  PostgresDatabase? get databaseLoaded =>
+      preloaded<PostgresDatabase>('database');
+}
+
+class PostgresBackupTable {
+  PostgresBackupTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'postgres_backups',
+    column: 'id',
+  );
+  static const ColumnRef<int> databaseId = ColumnRef<int>(
+    table: 'postgres_backups',
+    column: 'database_id',
+  );
+  static const ColumnRef<String?> filePath = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'file_path',
+  );
+  static const ColumnRef<String?> fileName = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'file_name',
+  );
+  static const ColumnRef<int?> sizeBytes = ColumnRef<int?>(
+    table: 'postgres_backups',
+    column: 'size_bytes',
+  );
+  static const ColumnRef<String?> scope = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'scope',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'status',
+  );
+  static const ColumnRef<String?> trigger = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'trigger',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'postgres_backups',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> startedAt = ColumnRef<DateTime?>(
+    table: 'postgres_backups',
+    column: 'started_at',
+  );
+  static const ColumnRef<DateTime?> completedAt = ColumnRef<DateTime?>(
+    table: 'postgres_backups',
+    column: 'completed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'postgres_backups',
+    column: 'created_at',
+  );
+
+  static const TableMeta<PostgresBackup> metadata = TableMeta<PostgresBackup>(
+    tableName: 'postgres_backups',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'database_id',
+      'file_path',
+      'file_name',
+      'size_bytes',
+      'scope',
+      'status',
+      'trigger',
+      'error_message',
+      'started_at',
+      'completed_at',
+      'created_at',
+    ],
+    fromRow: PostgresBackup.fromRow,
+  );
+}
+
+Query<PostgresBackup> postgresBackups() =>
+    Query<PostgresBackup>(PostgresBackupTable.metadata);
 
 class MailDomain with Preloadable {
   final int? id;

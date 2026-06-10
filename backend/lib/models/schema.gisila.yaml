@@ -613,6 +613,89 @@ PostgresDatabase:
       type: timestamp
       is_null: true
 
+# Recurring backup configuration for a single database (one row per database).
+# The backup scheduler (Timer.periodic in the worker) enqueues a dump whenever
+# next_run_at falls due, then advances next_run_at to the next slot.
+PostgresBackupSchedule:
+  columns:
+    database:
+      type: foreign_key
+      references: PostgresDatabase
+      is_null: false
+      is_unique: true
+      reverse_name: backup_schedule
+      on_delete: cascade
+    enabled:
+      type: boolean
+      default: false
+    frequency:
+      type: varchar
+      default: daily             # hourly | daily | weekly
+    hour:
+      type: integer
+      default: 2                 # hour of day (UTC) for daily/weekly
+    minute:
+      type: integer
+      default: 0
+    weekday:
+      type: integer
+      is_null: true              # 0=Sunday … 6=Saturday, used when frequency=weekly
+    scope:
+      type: varchar
+      default: full              # full | schema | data
+    keep_count:
+      type: integer
+      default: 7                 # retention: keep the N most recent backups
+    next_run_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+# A single backup artifact (a pg_dump .sql.gz file on disk) for a database.
+PostgresBackup:
+  columns:
+    database:
+      type: foreign_key
+      references: PostgresDatabase
+      is_null: false
+      reverse_name: backups
+      on_delete: cascade
+    file_path:
+      type: varchar
+      is_null: true              # absolute path on the host, set once completed
+    file_name:
+      type: varchar
+      is_null: true              # display name / download filename
+    size_bytes:
+      type: bigint
+      is_null: true
+    scope:
+      type: varchar
+      default: full              # full | schema | data
+    status:
+      type: varchar
+      default: pending           # pending | running | completed | failed
+    trigger:
+      type: varchar
+      default: manual            # manual | scheduled
+    error_message:
+      type: text
+      is_null: true
+    started_at:
+      type: timestamp
+      is_null: true
+    completed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+
 # ─────────────────────────── Mail server ─────────────────────────────────────
 #
 # Virtual-mailbox email hosting on top of Postfix (MTA) + Dovecot (IMAP/POP3).
