@@ -34,7 +34,9 @@ class MailWorker {
     if (hostConfig.agentMode == 'dev') return true;
     final r = await _execAgent(['mail', 'status']);
     if (r.exitCode != 0) return false;
-    return _parseTrailingJson(r.stdout)?['installed'] == true;
+    // Find the `{"installed":…}` line, ignoring the agent's trailing
+    // `{"ok":true,"command":"mail"}` completion line.
+    return _findJsonWith(r.stdout, 'installed')?['installed'] == true;
   }
 
   Future<void> _sync() async {
@@ -86,10 +88,10 @@ class MailWorker {
     }
   }
 
-  /// Parse the agent's trailing JSON line and persist the DKIM public keys and
+  /// Parse the agent's DKIM report from stdout and persist the public keys and
   /// detected public IP back onto each domain row.
   Future<void> _persistAgentResult(String stdoutText) async {
-    final result = _parseTrailingJson(stdoutText);
+    final result = _findJsonWith(stdoutText, 'domains');
     if (result == null) return;
 
     final publicIp = result['publicIp'] as String?;
@@ -113,17 +115,26 @@ class MailWorker {
     }
   }
 
-  /// Scan stdout bottom-up for the last line that parses as a JSON object.
-  Map<String, Object?>? _parseTrailingJson(String text) {
+  /// Scan stdout bottom-up for the last JSON object that contains [key].
+  ///
+  /// We can't just take the trailing JSON line: `main()` in the agent prints a
+  /// generic `{"ok":true,"command":"mail"}` completion line to stdout *after*
+  /// each command's real output, so a naive "last JSON line" parse always
+  /// returns that wrapper. For `mail sync` that meant the `{"domains":…}` report
+  /// was never read and the keys never persisted — exactly why DKIM stayed stuck
+  /// on "Waiting for DKIM key…".
+  Map<String, Object?>? _findJsonWith(String text, String key) {
     final lines = text.trim().split('\n');
     for (var i = lines.length - 1; i >= 0; i--) {
       final line = lines[i].trim();
-      if (!line.startsWith('{')) continue;
+      if (!line.startsWith('{') || !line.contains('"$key"')) continue;
       try {
         final decoded = jsonDecode(line);
-        if (decoded is Map<String, Object?>) return decoded;
+        if (decoded is Map<String, Object?> && decoded.containsKey(key)) {
+          return decoded;
+        }
       } catch (_) {
-        // Not the JSON line — keep scanning upward.
+        // Not the line we want — keep scanning upward.
       }
     }
     return null;
