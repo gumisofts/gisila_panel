@@ -39,15 +39,16 @@ class AppsService extends Service {
     return app;
   }
 
-  /// Create a new [App] record. The Linux user, port, work dir, etc.
+  /// Create a new [App] record. The Linux user, work dir, etc.
   /// are reserved here but provisioned by the agent during the first
-  /// deployment.
+  /// deployment. [port] must be unique across all apps.
   Future<App> create(
     User actor, {
     required int projectId,
     required String name,
     required String runtime,
     required String sourceType,
+    required int port,
     String? gitUrl,
     String? gitBranch,
     String? buildCommand,
@@ -88,11 +89,12 @@ class AppsService extends Service {
     final projectsSvc = ProjectsService()..attach(ctx);
     await projectsSvc.findForUser(actor, projectId);
 
+    await _validatePort(port);
+
     final slug = Slug.make(name);
     final shortId = _randomId(6);
     final linuxUser = 'app_$shortId';
     final workDir = '${hostConfig.appsRoot}/$linuxUser';
-    final port = await _allocatePort();
     final now = DateTime.now().toUtc();
 
     final created =
@@ -153,6 +155,9 @@ class AppsService extends Service {
     if (patch.isEmpty) {
       throw BadRequest('No updatable fields provided.');
     }
+    if (patch.containsKey('internalPort') && patch['internalPort'] != null) {
+      await _validatePort(patch['internalPort'] as int, excludeAppId: app.id);
+    }
     patch['updatedAt'] = DateTime.now().toUtc().toIso8601String();
     final rows = await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(app.id!))
@@ -170,16 +175,22 @@ class AppsService extends Service {
         .run(_db.context());
   }
 
-  Future<int> _allocatePort() async {
-    final taken = await Query<App>(AppTable.metadata).all(_db.context());
-    final used = taken.map((a) => a.internalPort).whereType<int>().toSet();
-    for (var p = hostConfig.portMin; p <= hostConfig.portMax; p++) {
-      if (!used.contains(p)) return p;
+  Future<void> _validatePort(int port, {int? excludeAppId}) async {
+    if (port < 1024 || port > 65535) {
+      throw BadRequest('Port must be between 1024 and 65535.');
     }
-    throw Conflict(
-      'No internal ports left in range ${hostConfig.portMin}-${hostConfig.portMax}.',
-      code: 'no_ports_available',
-    );
+    final taken = await Query<App>(AppTable.metadata).all(_db.context());
+    final used = taken
+        .where((a) => a.id != excludeAppId)
+        .map((a) => a.internalPort)
+        .whereType<int>()
+        .toSet();
+    if (used.contains(port)) {
+      throw Conflict(
+        'Port $port is already in use by another app.',
+        code: 'port_in_use',
+      );
+    }
   }
 
   String _randomId(int chars) {

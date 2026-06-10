@@ -52,6 +52,9 @@ class CreateAppForm extends Form {
   // Optional SSH deploy key for authenticated git clone.
   final deployKeyId = IntField(name: 'deployKeyId');
 
+  // Internal port the app listens on.
+  final internalPort = IntField(name: 'internalPort', required: true);
+
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[
         projectId,
@@ -88,6 +91,7 @@ class CreateAppForm extends Form {
         staticRoot,
         staticSpa,
         deployKeyId,
+        internalPort,
       ];
 }
 
@@ -123,6 +127,7 @@ class UpdateAppForm extends Form {
   final staticRoot = StringField(name: 'staticRoot');
   final staticSpa = BoolField(name: 'staticSpa');
   final deployKeyId = IntField(name: 'deployKeyId');
+  final internalPort = IntField(name: 'internalPort');
 
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[
@@ -157,6 +162,7 @@ class UpdateAppForm extends Form {
         staticRoot,
         staticSpa,
         deployKeyId,
+        internalPort,
       ];
 }
 

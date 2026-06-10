@@ -91,6 +91,7 @@ export function SettingsTab({
     staticRoot: app.staticRoot ?? "",
     staticSpa: app.staticSpa ?? false,
     deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
+    internalPort: app.internalPort != null ? String(app.internalPort) : "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -128,6 +129,7 @@ export function SettingsTab({
       staticRoot: app.staticRoot ?? "",
       staticSpa: app.staticSpa ?? false,
       deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
+      internalPort: app.internalPort != null ? String(app.internalPort) : "",
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.id]);
@@ -199,6 +201,9 @@ export function SettingsTab({
       if (isGit) {
         patch.deployKeyId = form.deployKeyId ? Number(form.deployKeyId) : undefined;
       }
+      if (form.internalPort) {
+        patch.internalPort = Number(form.internalPort);
+      }
       await api(`/apps/${app.id}`, { method: "PATCH", body: JSON.stringify(patch) });
       toast.success("App settings saved");
       onSaved();
@@ -226,6 +231,22 @@ export function SettingsTab({
               onChange={(e) => set("name", e.target.value)}
               required
             />
+          </div>
+          <div>
+            <Label htmlFor="s-port">Internal port</Label>
+            <Input
+              id="s-port"
+              className="mt-1"
+              type="number"
+              min={1024}
+              max={65535}
+              value={form.internalPort}
+              onChange={(e) => set("internalPort", e.target.value)}
+              placeholder="e.g. 8080"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              The port your app listens on. Changing this requires a redeploy.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -56,7 +56,6 @@ class CeleryWorkerUnit {
   String render() {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
-    final logs = '$workDir/logs';
     final queuesArg =
         (queues != null && queues!.isNotEmpty) ? ' -Q $queues' : '';
     final extraArgsStr =
@@ -81,7 +80,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp worker -n worker-$workerIndex@%h --loglevel=info -c $concurrency$queuesArg$extraArgsStr --logfile=$logs/worker-$workerIndex.log
+ExecStart=$venv/bin/celery -A $celeryApp worker -n worker-$workerIndex@%h --loglevel=info -c $concurrency$queuesArg$extraArgsStr
 Restart=always
 RestartSec=10
 
@@ -148,7 +147,6 @@ class CeleryBeatUnit {
   String render() {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
-    final logs = '$workDir/logs';
     final tmp = '$workDir/tmp';
 
     final envLines = StringBuffer();
@@ -170,7 +168,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp beat --loglevel=info --logfile=$logs/beat.log --pidfile=$tmp/celerybeat.pid
+ExecStart=$venv/bin/celery -A $celeryApp beat --loglevel=info --pidfile=$tmp/celerybeat.pid
 Restart=always
 RestartSec=10
 
@@ -234,7 +232,6 @@ class CeleryFlowerUnit {
   String render() {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
-    final logs = '$workDir/logs';
 
     final envLines = StringBuffer();
     for (final entry in envVars.entries) {
@@ -255,7 +252,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info --logfile=$logs/flower.log
+ExecStart=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info
 Restart=always
 RestartSec=5
 

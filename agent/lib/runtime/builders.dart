@@ -455,14 +455,37 @@ class Builders {
     if (!healthy) {
       // Force a clean rebuild when a broken install already exists; otherwise
       // a plain install is enough.
-      final result = await Process.run(
-        '$root/bin/pyenv',
-        ['install', if (installed) '--force' else '--skip-existing', version],
-        environment: env,
-      );
-      stdout.write(result.stdout);
-      if (result.exitCode != 0) {
-        throw Exception('pyenv install $version failed: ${result.stderr}');
+      //
+      // python-build downloads the CPython source tarball from python.org with
+      // a single-shot curl that has no retries, so a transient TCP reset
+      // ("curl: (56) Recv failure: Connection reset by peer") aborts the whole
+      // deployment. Retry the install a few times with backoff, and tell curl
+      // to retry on its own via CURLOPT-style env so partial downloads recover.
+      final installEnv = {
+        ...env,
+        // Honoured by python-build's curl invocation.
+        'PYTHON_BUILD_CURL_OPTS': '--retry 5 --retry-delay 2 --retry-all-errors',
+        'PYTHON_BUILD_WGET_OPTS': '--tries=5 --waitretry=2',
+      };
+      const maxAttempts = 3;
+      ProcessResult? result;
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        result = await Process.run(
+          '$root/bin/pyenv',
+          ['install', if (installed) '--force' else '--skip-existing', version],
+          environment: installEnv,
+        );
+        stdout.write(result.stdout);
+        if (result.exitCode == 0) break;
+
+        final isLast = attempt == maxAttempts;
+        if (isLast) {
+          throw Exception('pyenv install $version failed after $maxAttempts '
+              'attempts: ${result.stderr}');
+        }
+        stderr.writeln('[agent] pyenv install $version attempt $attempt/'
+            '$maxAttempts failed; retrying in ${attempt * 5}s');
+        await Future<void>.delayed(Duration(seconds: attempt * 5));
       }
       // Sanity-check the freshly built interpreter so a still-broken build
       // fails the deployment loudly instead of looping at runtime.

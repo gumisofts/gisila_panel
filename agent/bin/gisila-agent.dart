@@ -459,11 +459,13 @@ Future<void> _logs(List<String> args) async {
     p.addOption('user', mandatory: true);
     p.addOption('work-dir');
     p.addOption('lines', defaultsTo: '200');
+    p.addOption('runtime', defaultsTo: '');
     p.addFlag('follow', defaultsTo: false);
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final lines = r['lines'] as String;
   final follow = r['follow'] as bool;
+  final runtime = r['runtime'] as String;
   final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
 
   final String exe;
@@ -477,6 +479,20 @@ Future<void> _logs(List<String> args) async {
       if (follow) '-F',
       '$workDir/logs/stdout.log',
       '$workDir/logs/stderr.log',
+    ];
+  } else if (runtime == 'celery') {
+    // Celery runs as a .target with child worker/beat/flower services.
+    // Use a glob so all child units are captured in one stream.
+    exe = 'journalctl';
+    cmdArgs = [
+      '-u',
+      'gisila-$user-*.service',
+      '-n',
+      lines,
+      '--no-pager',
+      '--output',
+      'short-iso',
+      if (follow) '-f',
     ];
   } else {
     exe = 'journalctl';

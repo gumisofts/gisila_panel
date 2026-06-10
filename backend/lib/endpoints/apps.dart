@@ -40,6 +40,7 @@ class AppsApi {
       name: form.name.value!,
       runtime: form.runtime.value!,
       sourceType: form.sourceType.value!,
+      port: form.internalPort.value!,
       gitUrl: form.gitUrl.value,
       gitBranch: form.gitBranch.value,
       buildCommand: form.buildCommand.value,
@@ -128,6 +129,7 @@ class AppsApi {
       if (form.rustVersion.value != null) 'rustVersion': form.rustVersion.value,
       if (form.bunVersion.value != null) 'bunVersion': form.bunVersion.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
+      if (form.internalPort.value != null) 'internalPort': form.internalPort.value,
     };
     final app = await apps.update(user, id, patch);
     return app.toJson();

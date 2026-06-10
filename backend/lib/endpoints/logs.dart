@@ -274,6 +274,8 @@ Future<void> _streamRuntimeLogs(
     user,
     '--work-dir',
     app.workDir,
+    '--runtime',
+    app.runtime ?? '',
     '--lines',
     '300',
     '--follow',
