@@ -100,14 +100,16 @@ const List<ServiceDef> kServiceCatalog = [
     type: 'redis',
     name: 'Redis',
     description: 'In-memory data store for caching, pub/sub, and job queues. '
-        'Installed as a systemd-managed apt package.',
+        'Runs as a dedicated gisila-redis systemd instance, separate from the '
+        "panel's own Redis (so it defaults to port 6380, not 6379).",
     category: 'cache',
     docsUrl: 'https://redis.io/docs/',
     configSchema: [
       ConfigField('port',
           label: 'Port',
           type: FieldType.number,
-          defaultValue: '6379',
+          defaultValue: '6380',
+          hint: "Use a port other than 6379 — that's the panel's own Redis.",
           min: 1024,
           max: 65535),
       ConfigField('bind',

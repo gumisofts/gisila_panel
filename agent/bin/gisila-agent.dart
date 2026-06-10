@@ -1463,15 +1463,25 @@ Future<void> _service(List<String> args) async {
 Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
   // Map service type to apt package name (or download URL for binary services).
   final packages = {
-    'redis': 'redis-server',
-    'memcached': 'memcached',
     'pgbouncer': 'pgbouncer',
   };
   final pkg = packages[type];
-  const handledTypes = {'mailpit', 'postfix', 'dovecot'};
+  const handledTypes = {'mailpit', 'postfix', 'dovecot', 'redis', 'memcached'};
   if (pkg == null && !handledTypes.contains(type)) {
     // smtp and other config-only services — nothing to install on the host.
     stdout.writeln('Service $type is config-only — nothing to install.');
+    return;
+  }
+
+  // Redis and Memcached run as *dedicated* gisila-managed systemd instances so
+  // they never reconfigure or remove the panel's own system services (the panel
+  // runs its job queue on the distro redis-server.service at :6379).
+  if (type == 'redis') {
+    await _installRedisInstance(config);
+    return;
+  }
+  if (type == 'memcached') {
+    await _installMemcachedInstance(config);
     return;
   }
 
@@ -1500,36 +1510,135 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
     return;
   }
 
-  // apt install (redis, memcached, …).
+  // apt install (pgbouncer — its own dedicated service, safe to manage directly).
   await _aptInstall([pkg!]);
   await _serviceConfigure(type, config);
   await _serviceCtl('enable', type);
   await _serviceCtl('start', type);
 }
 
+// ── Dedicated managed instances (Redis / Memcached) ──────────────────────────
+//
+// The panel itself runs on the distro `redis-server.service` (port 6379, no
+// password) installed by infra/install.sh. A managed Redis/Memcached service
+// must therefore be a *separate* systemd unit + config + data dir so that
+// configuring — or uninstalling — it can never disturb the panel's own queue.
+
+const String _kRedisConf = '/etc/redis/gisila-redis.conf';
+const String _kRedisDataDir = '/var/lib/gisila-redis';
+const String _kRedisUnitFile = '/etc/systemd/system/gisila-redis.service';
+const String _kMemcachedUnitFile =
+    '/etc/systemd/system/gisila-memcached.service';
+
+/// Return [v] as a bare integer string, or [fallback] when it is not a clean
+/// integer. Used for values injected into a systemd ExecStart line.
+String _intField(Object? v, String fallback) {
+  final s = (v ?? '').toString().trim();
+  return RegExp(r'^\d+$').hasMatch(s) ? s : fallback;
+}
+
+/// Strip CR/LF from a value destined for a single redis.conf line so it cannot
+/// inject extra directives.
+String _redisVal(Object? v, String fallback) {
+  final s = (v ?? '').toString().replaceAll(RegExp(r'[\r\n]'), '').trim();
+  return s.isEmpty ? fallback : s;
+}
+
+Future<void> _installRedisInstance(Map<String, dynamic> config) async {
+  // We only need the redis-server *binary*; apt install is idempotent and does
+  // not disturb the panel's own running instance.
+  await _aptInstall(['redis-server']);
+  // Dedicated data dir owned by the redis user (AOF / RDB land here).
+  await _sudo('install',
+      ['-d', '-o', 'redis', '-g', 'redis', '-m', '0750', _kRedisDataDir]);
+  await _writeFileSudo(_kRedisUnitFile, _redisUnit());
+  await _serviceCtl('daemon-reload', 'redis');
+  await _serviceCtl('enable', 'redis'); // → gisila-redis
+  // Writes gisila-redis.conf and (re)starts the unit.
+  await _serviceConfigure('redis', config);
+}
+
+String _redisUnit() => '''
+[Unit]
+Description=Gisila managed Redis instance
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/redis-server $_kRedisConf
+User=redis
+Group=redis
+RuntimeDirectory=gisila-redis
+RuntimeDirectoryMode=0750
+Restart=on-failure
+UMask=007
+
+[Install]
+WantedBy=multi-user.target
+''';
+
+Future<void> _installMemcachedInstance(Map<String, dynamic> config) async {
+  await _aptInstall(['memcached']);
+  // The packaged memcached.service would otherwise hold the default port; the
+  // panel manages its own gisila-memcached unit instead.
+  await _sudo('systemctl', ['disable', '--now', 'memcached'], failOk: true);
+  await _writeMemcachedUnit(config);
+  await _serviceCtl('daemon-reload', 'memcached');
+  await _serviceCtl('enable', 'memcached'); // → gisila-memcached
+  await _serviceCtl('restart', 'memcached');
+}
+
+Future<void> _writeMemcachedUnit(Map<String, dynamic> config) async {
+  final port = _intField(config['port'], '11211');
+  final mem = _intField(config['memory_mb'], '64');
+  final conn = _intField(config['connections'], '1024');
+  final unit = '''
+[Unit]
+Description=Gisila managed Memcached instance
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/memcached -l 127.0.0.1 -p $port -m $mem -c $conn -u memcache
+User=memcache
+Group=memcache
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+''';
+  await _writeFileSudo(_kMemcachedUnitFile, unit);
+}
+
 Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
   switch (type) {
     case 'redis':
+      // Writes the *managed* instance config — NOT /etc/redis/redis.conf, which
+      // belongs to the panel's own queue. `supervised systemd` + an explicit
+      // data dir are required for the gisila-redis unit (Type=notify) to start.
       final lines = [
-        'bind ${config['bind'] ?? '127.0.0.1'}',
-        'port ${config['port'] ?? '6379'}',
+        'bind ${_redisVal(config['bind'], '127.0.0.1')}',
+        'port ${_intField(config['port'], '6380')}',
+        'dir $_kRedisDataDir',
+        'supervised systemd',
+        'daemonize no',
         if ((config['maxmemory'] as String?)?.isNotEmpty ?? false)
-          'maxmemory ${config['maxmemory']}',
-        'maxmemory-policy ${config['maxmemory_policy'] ?? 'allkeys-lru'}',
+          'maxmemory ${_redisVal(config['maxmemory'], '')}',
+        'maxmemory-policy ${_redisVal(config['maxmemory_policy'], 'allkeys-lru')}',
         if ((config['password'] as String?)?.isNotEmpty ?? false)
-          'requirepass ${config['password']}',
+          'requirepass ${_redisVal(config['password'], '')}',
         'appendonly ${config['appendonly'] == 'false' ? 'no' : 'yes'}',
       ];
-      await _writeFileSudo('/etc/redis/redis.conf', lines.join('\n') + '\n');
-      await _serviceCtl('restart', 'redis-server');
+      await _writeFileSudo(_kRedisConf, lines.join('\n') + '\n');
+      await _serviceCtl('restart', 'redis'); // → gisila-redis (see _unitName)
 
     case 'memcached':
-      final port = config['port'] ?? '11211';
-      final mem = config['memory_mb'] ?? '64';
-      final conn = config['connections'] ?? '1024';
-      final content = '-p $port\n-m $mem\n-c $conn\n-u memcache\n';
-      await _writeFileSudo('/etc/memcached.conf', content);
-      await _serviceCtl('restart', 'memcached');
+      // Regenerate the dedicated gisila-memcached unit (config lives on the
+      // ExecStart line) and restart it. The distro memcached.service is left
+      // disabled so it never contends for the port.
+      await _writeMemcachedUnit(config);
+      await _serviceCtl('daemon-reload', 'memcached');
+      await _serviceCtl('restart', 'memcached'); // → gisila-memcached
 
     case 'pgbouncer':
       await _configurePgbouncer(config);
@@ -1889,10 +1998,16 @@ Future<void> _serviceUninstall(String type) async {
 
   switch (type) {
     case 'redis':
-      await _sudo(
-          'apt-get', ['-qq', '-y', 'remove', '--purge', 'redis-server']);
+      // Remove ONLY the managed instance — never the redis-server package,
+      // which the panel's own queue depends on.
+      await _sudo('rm', ['-f', _kRedisUnitFile], failOk: true);
+      await _sudo('rm', ['-f', _kRedisConf], failOk: true);
+      await _sudo('rm', ['-rf', _kRedisDataDir], failOk: true);
+      await _serviceCtl('daemon-reload', 'redis');
     case 'memcached':
-      await _sudo('apt-get', ['-qq', '-y', 'remove', '--purge', 'memcached']);
+      // Drop the dedicated unit; leave the memcached package in place.
+      await _sudo('rm', ['-f', _kMemcachedUnitFile], failOk: true);
+      await _serviceCtl('daemon-reload', 'memcached');
     case 'pgbouncer':
       await _sudo('apt-get', ['-qq', '-y', 'remove', '--purge', 'pgbouncer']);
       await _sudo('rm', ['-rf', '/etc/pgbouncer'], failOk: true);
@@ -1926,7 +2041,10 @@ Future<void> _installMailpit(Map<String, dynamic> config) async {
 }
 
 String _unitName(String type) => switch (type) {
-      'redis' => 'redis-server',
+      // Managed Redis/Memcached run as dedicated gisila-* units, never the
+      // distro redis-server.service / memcached.service.
+      'redis' => 'gisila-redis',
+      'memcached' => 'gisila-memcached',
       _ => type,
     };
 

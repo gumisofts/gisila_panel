@@ -27,7 +27,11 @@ class RegisterForm extends Form {
 }
 
 class LoginForm extends Form {
-  final email = EmailField(name: 'email', required: true);
+  // Login is a credential check, not a sign-up: accept any string and let
+  // authentication fail if the account doesn't exist. Using EmailField here
+  // would reject otherwise-valid local accounts such as the default superuser
+  // `admin@localhost` (seeded on hosts without a domain), locking them out.
+  final email = StringField(name: 'email', required: true);
   final password = StringField(name: 'password', required: true);
 
   @override

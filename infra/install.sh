@@ -185,7 +185,7 @@ JWT_SECRET=$(head -c 32 /dev/urandom | base64)
 JWT_EXPIRE_DAYS=14
 STUDIO_USERNAME=admin
 STUDIO_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -d '/+=')
-SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null || echo localhost)
+SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)
 SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
@@ -204,7 +204,7 @@ EOF
 else
   # On upgrades the file already exists — ensure SUPERUSER vars are present.
   if ! grep -q 'SUPERUSER_EMAIL' /etc/gisila/.env; then
-    echo "SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null || echo localhost)" \
+    echo "SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)" \
       >> /etc/gisila/.env
     echo "SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')" \
       >> /etc/gisila/.env

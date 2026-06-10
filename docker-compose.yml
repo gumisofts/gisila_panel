@@ -41,7 +41,7 @@ x-dart-base: &dart-base
     STUDIO_USERNAME: admin
     STUDIO_PASSWORD: admin
     # Initial superuser (created automatically on first boot if no superuser exists).
-    SUPERUSER_EMAIL: admin@localhost
+    SUPERUSER_EMAIL: admin@example.com
     SUPERUSER_PASSWORD: changeme
     APPS_ROOT: /srv/apps
     APP_PORT_RANGE_MIN: "4000"
