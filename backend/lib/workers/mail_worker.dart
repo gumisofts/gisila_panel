@@ -55,7 +55,7 @@ class MailWorker {
             })
         .toList();
 
-    final stdoutText = await _runAgent([
+    final result = await _execAgent([
       'mail',
       'sync',
       '--domains',
@@ -64,7 +64,16 @@ class MailWorker {
       jsonEncode(accountsJson),
     ]);
 
-    await _persistAgentResult(stdoutText);
+    // Persist the DKIM keys + public IP from whatever the agent reported, even
+    // when it exited non-zero: the agent prints the keys before its fragile
+    // cert/postfix/restart steps, so a failure in those steps must not strand a
+    // successful keygen and leave the panel stuck on "Waiting for DKIM key…".
+    await _persistAgentResult(result.stdout);
+
+    if (result.exitCode != 0) {
+      throw Exception(
+          'Agent mail sync exited ${result.exitCode}: ${result.stderr}'.trim());
+    }
   }
 
   /// Parse the agent's trailing JSON line and persist the DKIM public keys and
@@ -111,18 +120,31 @@ class MailWorker {
   }
 
   Future<String> _runAgent(List<String> args) async {
+    final r = await _execAgent(args);
+    if (r.exitCode != 0) {
+      throw Exception('Agent exited ${r.exitCode}: ${r.stderr}'.trim());
+    }
+    return r.stdout;
+  }
+
+  /// Run the agent and return its stdout, exit code, and stderr *without*
+  /// throwing on failure, so callers can salvage partial stdout (e.g. DKIM keys
+  /// the agent printed before a later step failed) before deciding how to react.
+  Future<({String stdout, int exitCode, String stderr})> _execAgent(
+      List<String> args) async {
     if (hostConfig.agentMode == 'dev') {
       logger.i('mail_worker (dev): agent ${args.take(2).join(' ')} '
           '(${args.length} args)');
       await Future<void>.delayed(const Duration(milliseconds: 300));
-      return '';
+      return (stdout: '', exitCode: 0, stderr: '');
     }
     final cmd = buildAgentCmd(args);
     logger.i('mail_worker: ${cmd.take(2).join(' ')} …');
     final result = await Process.run(cmd.first, cmd.skip(1).toList());
-    if (result.exitCode != 0) {
-      throw Exception('Agent exited ${result.exitCode}: ${result.stderr}'.trim());
-    }
-    return result.stdout as String? ?? '';
+    return (
+      stdout: result.stdout as String? ?? '',
+      exitCode: result.exitCode,
+      stderr: (result.stderr as String? ?? '').trim(),
+    );
   }
 }

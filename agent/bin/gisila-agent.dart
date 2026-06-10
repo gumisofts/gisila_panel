@@ -1255,6 +1255,20 @@ Future<void> _mailSync(
   // Provision DKIM signing keys per domain and rebuild the OpenDKIM tables.
   final dkimResults = await _mailEnsureDkim(domains);
 
+  // Report DKIM public keys + the detected public IP back to the backend *now*,
+  // before the cert/postfix-check/restart steps below. Those steps can fail
+  // (invalid postfix config makes `postfix check` throw, systemd/apt hiccups,
+  // etc.) and used to abort the sync before this line ever ran — stranding the
+  // freshly generated keys on disk and leaving the panel stuck on "Waiting for
+  // DKIM key…" forever. Emitting here means a later failure can never hide a
+  // successful keygen. Nothing below writes to stdout (all routed via _sudo),
+  // so this stays the trailing JSON line the backend parses; keep it last.
+  final publicIp = await _detectPublicIp();
+  stdout.writeln(jsonEncode({
+    'domains': dkimResults,
+    if (publicIp != null) 'publicIp': publicIp,
+  }));
+
   // Issue a self-signed cert whose CN/SANs cover the real mail hostnames so
   // clients connecting to them don't hit a certificate name mismatch.
   final hostnames = domains
@@ -1278,13 +1292,6 @@ Future<void> _mailSync(
   await _serviceCtl('restart', 'opendkim');
   await _serviceCtl('reload-or-restart', 'postfix');
   await _serviceCtl('restart', 'dovecot');
-
-  // Report DKIM public keys + the detected public IP back to the backend.
-  final publicIp = await _detectPublicIp();
-  stdout.writeln(jsonEncode({
-    'domains': dkimResults,
-    if (publicIp != null) 'publicIp': publicIp,
-  }));
 }
 
 /// Generate (if missing) a DKIM keypair per domain, rebuild the OpenDKIM
