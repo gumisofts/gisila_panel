@@ -34,16 +34,21 @@ Future<void> main(List<String> args) async {
 
   logger.i('gisila-worker: starting');
 
-  // Provision the Postfix + Dovecot + OpenDKIM mail stack on boot so it is
-  // always available without a catalog install. Runs in the background so it
-  // never delays the job loop; failures are logged and retried on the next sync.
+  // Re-apply the mail config on boot ONLY when the tooling is already installed
+  // (e.g. after a reboot). Installation is optional and operator-initiated from
+  // the panel's Mail page, so a fresh host is left untouched until then. Runs in
+  // the background so it never delays the job loop.
   unawaited(() async {
     try {
-      await mailWorker.onMailJob({'action': 'sync'});
-      logger.i('gisila-worker: mail stack provisioned');
+      if (await mailWorker.isStackInstalled()) {
+        await mailWorker.onMailJob({'action': 'sync'});
+        logger.i('gisila-worker: mail stack present — config re-synced');
+      } else {
+        logger.i('gisila-worker: mail tooling not installed — skipping '
+            '(install it from the panel Mail page)');
+      }
     } catch (e, st) {
-      logger.w('gisila-worker: mail bootstrap failed (will retry on next sync)',
-          error: e, stackTrace: st);
+      logger.w('gisila-worker: mail bootstrap check failed', error: e, stackTrace: st);
     }
   }());
 

@@ -8,6 +8,19 @@ part 'mail.g.dart';
 @Controller('/mail', ['Mail'])
 @RequireAuth()
 class MailApi {
+  // ── Tooling installation ─────────────────────────────────────────────────────
+
+  @Get('/status', summary: 'Whether the mail tooling is installed')
+  Future<Map<String, Object?>> status(MailService svc) async {
+    return {'installed': await svc.isStackInstalled()};
+  }
+
+  @Post('/install', summary: 'Install the mail tooling on this host')
+  Future<Map<String, Object?>> install(MailService svc) async {
+    await svc.enqueueInstall();
+    return {'detail': 'Installation queued.'};
+  }
+
   // ── Domains ────────────────────────────────────────────────────────────────
 
   @Get('/domains', summary: 'List mail domains')

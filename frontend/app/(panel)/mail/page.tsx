@@ -18,6 +18,7 @@ import {
   Check,
   Settings2,
   RefreshCw,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import type {
   MailAccount,
   MailDnsResponse,
   MailConnectionSettings,
+  MailStatus,
 } from "@/lib/types";
 
 // ── Copy-to-clipboard button ─────────────────────────────────────────────────
@@ -79,8 +81,18 @@ function CopyButton({ value, className }: { value: string; className?: string })
 }
 
 export default function MailPage() {
+  // Gate the whole mail UI behind the tooling install check. While the tooling
+  // is absent we poll so the page flips to the normal UI as soon as the
+  // operator's install finishes (or someone installs it out of band).
+  const { data: status, isLoading: statusLoading } = useSWR<MailStatus>(
+    "/mail/status",
+    fetcher,
+    { refreshInterval: (d) => (d?.installed ? 0 : 4_000) }
+  );
+  const installed = status?.installed ?? false;
+
   const { data, isLoading } = useSWR<ListResponse<MailDomain>>(
-    "/mail/domains",
+    installed ? "/mail/domains" : null,
     fetcher,
     {
       // Poll faster while any domain is still waiting for its DKIM key.
@@ -95,6 +107,21 @@ export default function MailPage() {
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [installing, setInstalling] = useState(false);
+
+  async function handleInstall() {
+    setError("");
+    setInstalling(true);
+    try {
+      await api("/mail/install", { method: "POST" });
+      // Keep `installing` true and let the status poll flip the UI to the
+      // normal mail view once the worker finishes provisioning.
+      mutate("/mail/status");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to start installation.");
+      setInstalling(false);
+    }
+  }
 
   async function handleAddDomain() {
     setError("");
@@ -126,13 +153,45 @@ export default function MailPage() {
             (Postfix&nbsp;+&nbsp;Dovecot).
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add domain
-        </Button>
+        {installed && (
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add domain
+          </Button>
+        )}
       </div>
 
-      {isLoading ? (
+      {statusLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : !installed ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+            <Mail className="h-10 w-10 text-muted-foreground/40" />
+            <div>
+              <p className="font-medium">Email tools not installed</p>
+              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                Installs Postfix, Dovecot and OpenDKIM on this server so you can
+                host mailboxes for your domains. This runs once and may take a
+                minute.
+              </p>
+            </div>
+            <Button size="sm" onClick={handleInstall} disabled={installing}>
+              {installing ? (
+                <>
+                  <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Installing email tools…
+                </>
+              ) : (
+                <>
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Install email tools
+                </>
+              )}
+            </Button>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : domains.length === 0 ? (
         <Card>

@@ -272,6 +272,10 @@ export interface ManagedService {
   _def?: ServiceDef; // injected by the retrieve endpoint
 }
 
+export interface MailStatus {
+  installed: boolean;
+}
+
 export interface MailDomain {
   id: ID;
   domain: string;

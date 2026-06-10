@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 
@@ -207,6 +209,44 @@ class MailService extends Service {
       );
 
   Future<void> _enqueueSync() => enqueueSync();
+
+  // ── Tooling installation ───────────────────────────────────────────────────
+
+  /// Whether the mail tooling (Postfix / Dovecot / OpenDKIM) is installed on
+  /// this host. Queried live from the agent so it reflects the real host state
+  /// rather than a DB flag that could drift. Read-only, so it runs the agent
+  /// without sudo directly from the API process. Any failure is treated as
+  /// "not installed" so the panel shows the install prompt.
+  Future<bool> isStackInstalled() async {
+    // Dev mode stubs out the agent, so there is no real host stack to probe;
+    // report installed so the dev panel isn't stuck on the install prompt.
+    if (hostConfig.agentMode == 'dev') return true;
+    try {
+      final cmd = buildAgentCmdNoSudo(['mail', 'status']);
+      final res = await Process.run(cmd.first, cmd.skip(1).toList());
+      if (res.exitCode != 0) return false;
+      final lines = (res.stdout as String? ?? '').trim().split('\n');
+      for (var i = lines.length - 1; i >= 0; i--) {
+        final line = lines[i].trim();
+        if (!line.startsWith('{')) continue;
+        final decoded = jsonDecode(line);
+        if (decoded is Map && decoded['installed'] is bool) {
+          return decoded['installed'] as bool;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Enqueue installation of the mail tooling. The worker runs `mail setup`
+  /// (apt install + base config) under sudo; the panel polls [isStackInstalled]
+  /// to learn when it has finished.
+  Future<void> enqueueInstall() => RedisClient.instance.rpush(
+        'gisila:queue:mail',
+        jsonEncode({'action': 'setup'}),
+      );
 }
 
 /// Standard ports the agent configures for mail clients.

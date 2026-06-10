@@ -18,13 +18,23 @@ class MailWorker {
     final action = payload['action'] as String?;
     switch (action) {
       case 'setup':
-        // Provision the stack without touching maps (idempotent bootstrap).
+        // Install + provision the stack (the panel's "Install email tools").
         await _runAgent(['mail', 'setup']);
       case 'sync':
         await _sync();
       default:
         return;
     }
+  }
+
+  /// Whether the mail tooling is installed on this host. Used at boot to decide
+  /// whether to re-sync existing config — installation itself is never done
+  /// automatically; the operator triggers it from the panel's Mail page.
+  Future<bool> isStackInstalled() async {
+    if (hostConfig.agentMode == 'dev') return true;
+    final r = await _execAgent(['mail', 'status']);
+    if (r.exitCode != 0) return false;
+    return _parseTrailingJson(r.stdout)?['installed'] == true;
   }
 
   Future<void> _sync() async {

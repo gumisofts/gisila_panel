@@ -693,7 +693,7 @@ Future<(int, int, String)> _statFromProc(String program) async {
 
 Future<void> _mail(List<String> args) async {
   if (args.isEmpty) {
-    stderr.writeln('Usage: gisila-agent mail <setup|sync> [flags]');
+    stderr.writeln('Usage: gisila-agent mail <status|setup|sync> [flags]');
     exitCode = 64;
     return;
   }
@@ -706,6 +706,11 @@ Future<void> _mail(List<String> args) async {
   final r = parser.parse(args.sublist(1));
 
   switch (action) {
+    case 'status':
+      // Report whether the mail tooling is installed on this host. Used by the
+      // panel to decide whether to show the "Install email tools" prompt before
+      // the normal domain/mailbox setup. Read-only — needs no privileges.
+      stdout.writeln(jsonEncode({'installed': await _mailStackInstalled()}));
     case 'setup':
       await _mailEnsureStack();
     case 'sync':
@@ -720,6 +725,25 @@ Future<void> _mail(List<String> args) async {
     default:
       throw ArgumentError('Unknown mail action: $action');
   }
+}
+
+/// Whether the core mail daemons are present on this host. The panel calls this
+/// (via `mail status`) to gate the mail UI behind an explicit install step, so
+/// the tooling is no longer provisioned automatically on panel install.
+Future<bool> _mailStackInstalled() async {
+  Future<bool> present(String bin) async {
+    // The daemons live in /usr/sbin, which isn't always on a non-root PATH, so
+    // check PATH and the canonical sbin location. No sudo required.
+    final res = await Process.run(
+      'sh',
+      ['-c', 'command -v $bin >/dev/null 2>&1 || test -x /usr/sbin/$bin'],
+    );
+    return res.exitCode == 0;
+  }
+
+  return await present('postfix') &&
+      await present('dovecot') &&
+      await present('opendkim');
 }
 
 /// Install Postfix + Dovecot + OpenDKIM (if missing) and lay down the base

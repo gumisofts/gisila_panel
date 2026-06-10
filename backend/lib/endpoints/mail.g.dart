@@ -54,6 +54,86 @@ extension MailApiGisilaDoc on MailApi {
     });
     spec.putTag('Mail');
     {
+      final basePath = '$prefix/mail/status';
+      final openApiPath = '$prefix/mail/status';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final svc = ctx.service<MailService>();
+                final result = await this.status(svc);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Whether the mail tooling is installed',
+            tags: <String>['Mail'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/mail/install';
+      final openApiPath = '$prefix/mail/install';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final svc = ctx.service<MailService>();
+                final result = await this.install(svc);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Install the mail tooling on this host',
+            tags: <String>['Mail'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
       final basePath = '$prefix/mail/domains';
       final openApiPath = '$prefix/mail/domains';
       final RouteConfig __cfg =
