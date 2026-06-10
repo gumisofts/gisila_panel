@@ -242,6 +242,78 @@ const List<ServiceDef> kServiceCatalog = [
     ],
   ),
 
+  // ── Database ────────────────────────────────────────────────────────────────
+
+  ServiceDef(
+    type: 'pgbouncer',
+    name: 'PgBouncer',
+    description: 'Lightweight connection pooler for PostgreSQL. Pool many client '
+        'connections onto a few server connections across one or more upstream '
+        'databases. Configure pools, sizing and client users below after install.',
+    category: 'database',
+    docsUrl: 'https://www.pgbouncer.org/',
+    // Only scalar settings live here (rendered by the generic form). The
+    // repeating "databases" and "users" structures are edited by a dedicated
+    // PgBouncer panel and stored as JSON strings under those config keys.
+    configSchema: [
+      ConfigField('listen_addr',
+          label: 'Listen address',
+          type: FieldType.string,
+          defaultValue: '127.0.0.1',
+          hint: 'Use 0.0.0.0 to accept connections from other hosts.'),
+      ConfigField('listen_port',
+          label: 'Listen port',
+          type: FieldType.number,
+          defaultValue: '6432',
+          min: 1024,
+          max: 65535),
+      ConfigField('auth_type',
+          label: 'Auth type',
+          type: FieldType.select,
+          defaultValue: 'scram-sha-256',
+          options: ['scram-sha-256', 'md5', 'trust'],
+          hint: 'trust requires no password (bind to 127.0.0.1 only).'),
+      ConfigField('pool_mode',
+          label: 'Pool mode',
+          type: FieldType.select,
+          defaultValue: 'transaction',
+          options: ['transaction', 'session', 'statement']),
+      ConfigField('max_client_conn',
+          label: 'Max client connections',
+          type: FieldType.number,
+          defaultValue: '1000',
+          min: 1),
+      ConfigField('default_pool_size',
+          label: 'Default pool size',
+          type: FieldType.number,
+          defaultValue: '25',
+          min: 1,
+          hint: 'Server connections kept per database/user pair.'),
+      ConfigField('min_pool_size',
+          label: 'Min pool size',
+          type: FieldType.number,
+          defaultValue: '0',
+          min: 0),
+      ConfigField('reserve_pool_size',
+          label: 'Reserve pool size',
+          type: FieldType.number,
+          defaultValue: '5',
+          min: 0),
+      ConfigField('max_db_connections',
+          label: 'Max DB connections',
+          type: FieldType.number,
+          defaultValue: '50',
+          min: 0,
+          hint: '0 = unlimited.'),
+      ConfigField('max_user_connections',
+          label: 'Max user connections',
+          type: FieldType.number,
+          defaultValue: '0',
+          min: 0,
+          hint: '0 = unlimited.'),
+    ],
+  ),
+
   // Note: the self-hosted Postfix + Dovecot mail stack is no longer an
   // installable catalog entry. It is provisioned and managed automatically by
   // the Mail feature (see MailService / the `mail` agent command).

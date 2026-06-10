@@ -205,10 +205,27 @@ export interface ServiceDef {
   type: string;
   name: string;
   description: string;
-  category: "cache" | "email" | "queue";
+  category: "cache" | "email" | "queue" | "database";
   requiresInstall: boolean;
   docsUrl?: string;
   configSchema: ConfigField[];
+}
+
+// PgBouncer repeating config structures (stored as JSON strings in the service
+// config blob under the `databases` and `users` keys).
+export interface PgbDatabase {
+  name: string;
+  host: string;
+  port: string;
+  dbname: string;
+  user?: string;
+  password?: string;
+  pool_size?: string;
+}
+
+export interface PgbUser {
+  username: string;
+  password: string;
 }
 
 // ── PostgreSQL ────────────────────────────────────────────────────────────────

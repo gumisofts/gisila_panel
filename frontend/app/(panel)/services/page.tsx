@@ -7,6 +7,7 @@ import {
   Database,
   Mail,
   LayoutGrid,
+  Network,
   CheckCircle,
   AlertCircle,
   Loader,
@@ -48,17 +49,20 @@ const CATEGORY_ICON: Record<string, React.ReactNode> = {
   cache: <Database className="h-4 w-4" />,
   email: <Mail className="h-4 w-4" />,
   queue: <LayoutGrid className="h-4 w-4" />,
+  database: <Network className="h-4 w-4" />,
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
   cache: "bg-violet-500/10 text-violet-500",
   email: "bg-blue-500/10 text-blue-500",
   queue: "bg-amber-500/10 text-amber-500",
+  database: "bg-emerald-500/10 text-emerald-500",
 };
 
 const SERVICE_CATEGORY: Record<string, string> = {
   redis: "cache", memcached: "cache",
   smtp: "email", mailpit: "email",
+  pgbouncer: "database",
 };
 
 /** Pull the most useful config key-values to surface on the card. */
@@ -96,6 +100,20 @@ function summaryFields(
       add("UI port", "ui_port");
       add("Max messages", "max_messages");
       break;
+    case "pgbouncer": {
+      add("Listen port", "listen_port");
+      add("Pool mode", "pool_mode");
+      add("Pool size", "default_pool_size");
+      try {
+        const dbs = JSON.parse(config["databases"] ?? "[]");
+        if (Array.isArray(dbs)) {
+          pairs.push({ label: "Databases", value: String(dbs.length) });
+        }
+      } catch {
+        /* unset */
+      }
+      break;
+    }
     default:
       // Show the first 3 non-empty values generically.
       for (const [k, v] of Object.entries(config).slice(0, 3)) {

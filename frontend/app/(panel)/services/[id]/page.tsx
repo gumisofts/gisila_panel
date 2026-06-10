@@ -30,6 +30,7 @@ import type {
   ConfigField,
 } from "@/lib/types";
 import { toast } from "sonner";
+import { PgBouncerConfig } from "./_panels/pgbouncer-config";
 
 // ── Status display ────────────────────────────────────────────────────────────
 
@@ -152,9 +153,22 @@ export default function ServiceDetailPage() {
 
       <Separator />
 
-      {/* Config form */}
-      {def && (
-        <ConfigForm svc={svc} def={def} onSaved={() => mutate(`/services/${id}`)} />
+      {/* Config form — PgBouncer gets a dedicated editor for its repeating
+          databases/users structures; everything else uses the generic form. */}
+      {def && svc.serviceType === "pgbouncer" ? (
+        <PgBouncerConfig
+          svc={svc}
+          def={def}
+          onSaved={() => mutate(`/services/${id}`)}
+        />
+      ) : (
+        def && (
+          <ConfigForm
+            svc={svc}
+            def={def}
+            onSaved={() => mutate(`/services/${id}`)}
+          />
+        )
       )}
 
       {/* Live install / lifecycle logs (only for services installed on the host) */}

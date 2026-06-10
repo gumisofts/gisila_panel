@@ -17,7 +17,13 @@ export function getWsBase(): string {
 // object key so the two sides agree without touching any string values.
 
 function snakeToCamel(s: string): string {
-  return s.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+  // Preserve any leading underscores (e.g. the injected `_def` key) so they are
+  // not folded into the next letter — `_def` must stay `_def`, not become `Def`.
+  const lead = s.match(/^_+/)?.[0] ?? "";
+  return (
+    lead +
+    s.slice(lead.length).replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase())
+  );
 }
 
 function deepCamelCase(value: unknown): unknown {
