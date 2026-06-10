@@ -73,7 +73,6 @@ class CeleryWorkerUnit {
 Description=Gisila Celery worker $workerIndex for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
-WantedBy=gisila-$linuxUser.target
 
 [Service]
 Type=simple
@@ -118,6 +117,9 @@ MemoryMax=${memoryMb}M
 CPUQuota=$cpuQuotaPercent%
 TasksMax=$tasksMax
 LimitNOFILE=4096
+
+[Install]
+WantedBy=gisila-$linuxUser.target
 ''';
   }
 }
@@ -161,7 +163,6 @@ class CeleryBeatUnit {
 Description=Gisila Celery beat scheduler for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
-WantedBy=gisila-$linuxUser.target
 
 [Service]
 Type=simple
@@ -197,6 +198,9 @@ MemoryMax=${memoryMb}M
 CPUQuota=$cpuQuotaPercent%
 TasksMax=64
 LimitNOFILE=1024
+
+[Install]
+WantedBy=gisila-$linuxUser.target
 ''';
   }
 }
@@ -245,7 +249,6 @@ class CeleryFlowerUnit {
 Description=Gisila Celery Flower UI for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
-WantedBy=gisila-$linuxUser.target
 
 [Service]
 Type=simple

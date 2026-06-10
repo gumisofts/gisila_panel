@@ -204,6 +204,29 @@ class Applier {
 
     // ── systemd path ──────────────────────────────────────────────────────────
 
+    // 0. Remove stale worker units from previous deploys that used more workers.
+    final existingWorkerFiles = Directory(systemdDir)
+        .listSync()
+        .whereType<File>()
+        .where((f) {
+          final name = f.path.split('/').last;
+          return RegExp(r'^gisila-' + linuxUser + r'-worker-\d+\.service$')
+              .hasMatch(name);
+        })
+        .toList();
+    for (final f in existingWorkerFiles) {
+      final name = f.path.split('/').last;
+      final idx = int.tryParse(
+          RegExp(r'-worker-(\d+)\.service$').firstMatch(name)?.group(1) ?? '');
+      if (idx != null && idx > params.workerCount) {
+        await ShellExec.run('systemctl', ['disable', name],
+            requireSuccess: false);
+        await ShellExec.run('systemctl', ['stop', name],
+            requireSuccess: false);
+        f.deleteSync();
+      }
+    }
+
     // 1. Target unit
     final target = CeleryTarget(linuxUser: linuxUser, appId: appId);
     File('$systemdDir/${target.targetName}')
@@ -258,8 +281,17 @@ class Applier {
         .writeAsStringSync(flower.render());
 
     await ShellExec.run('systemctl', ['daemon-reload']);
+    await ShellExec.run('systemctl', ['enable', 'gisila-$linuxUser.target']);
+    for (var i = 1; i <= params.workerCount; i++) {
+      await ShellExec.run(
+          'systemctl', ['enable', 'gisila-$linuxUser-worker-$i.service']);
+    }
     await ShellExec.run(
-        'systemctl', ['enable', 'gisila-$linuxUser.target']);
+        'systemctl', ['enable', 'gisila-$linuxUser-flower.service']);
+    if (params.beatEnabled) {
+      await ShellExec.run(
+          'systemctl', ['enable', 'gisila-$linuxUser-beat.service']);
+    }
   }
 
   Future<void> applyVhost({
