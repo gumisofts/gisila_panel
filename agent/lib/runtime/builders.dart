@@ -150,10 +150,23 @@ class Builders {
     //    try to download the version pinned in package.json's `packageManager`
     //    field into the user's home cache, which the unprivileged app user may
     //    not be able to write to.  We defuse it without removing any shims:
-    //      COREPACK_ENABLE_STRICT=0          — fall back to the system PM.
+    //      COREPACK_ENABLE_STRICT=0          — fall back to the system PM rather
+    //                                          than erroring when `packageManager`
+    //                                          doesn't match.
+    //      COREPACK_ENABLE_AUTO_PIN=0         — do NOT write/modify the
+    //                                          `packageManager` field in
+    //                                          package.json during the build.
+    //                                          Without this, corepack silently
+    //                                          mutates the project's package.json
+    //                                          with the latest pnpm version tag,
+    //                                          which may require a newer Node than
+    //                                          what is installed (e.g. pnpm@11.5.2
+    //                                          requires Node ≥22.13 but the host
+    //                                          may be on 22.12).
     //      COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
     final nodeEnv = <String, String>{
       'COREPACK_ENABLE_STRICT': '0',
+      'COREPACK_ENABLE_AUTO_PIN': '0',
       'COREPACK_HOME': '$workDir/.corepack',
     };
     final installEnv = env != null
