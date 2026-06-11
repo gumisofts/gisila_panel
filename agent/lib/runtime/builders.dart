@@ -198,6 +198,23 @@ class Builders {
       );
     }
 
+    // 4b. Ensure the active pnpm is compatible with the current Node.js version.
+    //     pnpm ≥11 requires Node ≥22.13; install pnpm@10 (Node ≥18.12) when
+    //     the node in use is an older patch. Runs as root so the global
+    //     npm install can write to /usr/local/lib without a permission error.
+    if (pkgMgr == 'pnpm') {
+      final compatEnv = env ?? Platform.environment;
+      final compatScript =
+          'MAJOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f1); '
+          'MINOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f2); '
+          'if [ "\${MAJOR:-0}" -lt 22 ] || '
+          '{ [ "\${MAJOR:-0}" -eq 22 ] && [ "\${MINOR:-0}" -lt 13 ]; }; then '
+          '  npm install -g pnpm@10 2>&1; '
+          'fi';
+      await ShellExec.run('bash', ['-c', compatScript],
+          env: compatEnv, requireSuccess: false);
+    }
+
     // 5. Install dependencies.
     final installCmd = _nodeInstallCommand(pkgMgr);
     await _runAsUserWithEnv(user, src, installCmd, installEnv);
