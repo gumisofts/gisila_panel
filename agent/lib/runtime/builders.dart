@@ -265,6 +265,32 @@ class Builders {
     final installCmd = _nodeInstallCommand(pkgMgr);
     await _runAsUserWithEnv(user, src, installCmd, installEnv);
 
+    // 5b. Generate Prisma client when a schema is present.
+    //
+    //     pnpm 10+ skips postinstall scripts unless the package is listed in
+    //     onlyBuiltDependencies (or dangerouslyAllowAllBuilds is set).  Many
+    //     projects whitelist sharp or esbuild there but forget prisma, so the
+    //     generated .prisma/client/ directory is never created and the Next.js
+    //     build fails with "Can't resolve '.prisma/client/default'".
+    //
+    //     We detect the two conventional schema locations and run
+    //     `prisma generate` explicitly so it always runs regardless of how the
+    //     project configured its build-script policy.
+    final schemaPrisma = File('$src/prisma/schema.prisma').existsSync()
+        ? '$src/prisma/schema.prisma'
+        : File('$src/schema.prisma').existsSync()
+            ? '$src/schema.prisma'
+            : null;
+    if (schemaPrisma != null) {
+      stdout.writeln('[agent] Prisma schema found — running prisma generate');
+      await _runAsUserWithEnv(
+        user,
+        src,
+        'node_modules/.bin/prisma generate --schema=$schemaPrisma',
+        installEnv,
+      );
+    }
+
     // 6. Run the caller-supplied build command on top of the freshly installed
     //    node_modules (e.g. `pnpm build`, `npm run build`, `tsc`).
     //    Reuse installEnv so corepack stays neutralised for this step too.
