@@ -194,16 +194,43 @@ class Builders {
     //    sources including .npmrc).  When a project already ships its own
     //    policy we leave it alone; pnpm will honour it without our override.
     if (pkgMgr == 'pnpm') {
+      // pnpm merges build-approval config from THREE sources:
+      //   1. pnpm-workspace.yaml   (top-level YAML keys)
+      //   2. .npmrc                (key=value)
+      //   3. package.json          (under the "pnpm" key)
+      //
+      // dangerouslyAllowAllBuilds, onlyBuiltDependencies, and neverBuiltDependencies
+      // are ALL mutually exclusive.  We must check every source before adding
+      // dangerouslyAllowAllBuilds, otherwise we trigger
+      // ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES.
+      //
+      // We also clean up stale dangerouslyAllowAllBuilds lines we may have
+      // written on a prior deploy (the clone is fresh but the script is re-run
+      // during retries / same-session rebuilds), and resolve any
+      // onlyBuiltDependencies vs neverBuiltDependencies conflict that the
+      // project itself may have left in pnpm-workspace.yaml by keeping the
+      // more permissive key (onlyBuiltDependencies = explicit whitelist).
       await _runAsUserWithEnv(
         user,
         src,
-        // Skip appending when any build-approval key already exists anywhere
-        // in the two config files pnpm reads (workspace yaml + .npmrc).
-        "grep -qF 'dangerouslyAllowAllBuilds' pnpm-workspace.yaml 2>/dev/null || "
-        "grep -qF 'onlyBuiltDependencies'     pnpm-workspace.yaml 2>/dev/null || "
-        "grep -qF 'neverBuiltDependencies'    pnpm-workspace.yaml 2>/dev/null || "
-        "grep -qF 'onlyBuiltDependencies'     .npmrc 2>/dev/null || "
-        "grep -qF 'neverBuiltDependencies'    .npmrc 2>/dev/null || "
+        // 1. Remove any dangerouslyAllowAllBuilds line we injected previously
+        //    so we start from a clean state on each attempt.
+        "sed -i '/^[[:space:]]*dangerouslyAllowAllBuilds/d' pnpm-workspace.yaml 2>/dev/null; "
+        // 2. If the workspace yaml has both onlyBuiltDependencies AND
+        //    neverBuiltDependencies (project-level misconfiguration), remove
+        //    neverBuiltDependencies — the whitelist takes precedence.
+        "if grep -qF 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null && "
+        "   grep -qF 'neverBuiltDependencies' pnpm-workspace.yaml 2>/dev/null; then "
+        "  sed -i '/neverBuiltDependencies/d' pnpm-workspace.yaml; "
+        "fi; "
+        // 3. Now add dangerouslyAllowAllBuilds only when no build-approval
+        //    policy exists in any of the three config sources pnpm reads.
+        "grep -qF 'onlyBuiltDependencies'  pnpm-workspace.yaml 2>/dev/null || "
+        "grep -qF 'neverBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || "
+        "grep -qF 'onlyBuiltDependencies'  .npmrc 2>/dev/null || "
+        "grep -qF 'neverBuiltDependencies' .npmrc 2>/dev/null || "
+        "grep -qF 'onlyBuiltDependencies'  package.json 2>/dev/null || "
+        "grep -qF 'neverBuiltDependencies' package.json 2>/dev/null || "
         "printf '\\ndangerouslyAllowAllBuilds: true\\n' >> pnpm-workspace.yaml",
         installEnv,
       );
