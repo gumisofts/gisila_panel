@@ -376,6 +376,24 @@ class SystemdUnit {
         ? 'Environment=PATH=$runtimeBinDir:/usr/local/bin:/usr/bin:/bin\n'
         : '';
 
+    // Neutralise corepack in the running service, mirroring the same flags
+    // applied during the build phase in builders.dart.
+    //
+    // Without these, corepack (which intercepts the system `pnpm` / `yarn` /
+    // `npm` shims) tries to read/write its version cache from the service
+    // user's home directory (~/.cache/node/corepack/lastKnownGood.json).
+    // That fails with EACCES because the unit has ProtectHome=true, making
+    // /home inaccessible to the sandboxed service.
+    //
+    //   COREPACK_HOME            → redirect the cache to the writable workDir
+    //   COREPACK_ENABLE_STRICT   → fall back to system PM instead of erroring
+    //                              when packageManager field doesn't match
+    //   COREPACK_ENABLE_AUTO_PIN → do not mutate packageManager in package.json
+    final corepkLines =
+        'Environment=COREPACK_ENABLE_STRICT=0\n'
+        'Environment=COREPACK_ENABLE_AUTO_PIN=0\n'
+        'Environment=COREPACK_HOME=$workDir/.corepack\n';
+
     return '''
 [Unit]
 Description=Gisila app $linuxUser (id=$appId)
@@ -393,7 +411,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${pathLine}${envLines.toString().trimRight()}
+${pathLine}${corepkLines}${envLines.toString().trimRight()}
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true
@@ -417,7 +435,7 @@ $mdwe
 SystemCallArchitectures=native
 
 # Filesystem
-ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs$extraRW
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/.corepack$extraRW
 ReadOnlyPaths=$workDir/current $workDir/releases
 PrivateMounts=true
 
