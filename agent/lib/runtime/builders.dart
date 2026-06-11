@@ -186,23 +186,42 @@ class Builders {
     //
     //    We merge rather than overwrite: a repo may already ship a
     //    pnpm-workspace.yaml defining workspace packages.  Appending a
-    //    top-level key (at column 0, on its own line) is valid YAML and the
-    //    grep guard keeps it idempotent.  `>>` creates the file when absent.
+    //    top-level key (at column 0, on its own line) is valid YAML.
+    //
+    //    Guard: dangerouslyAllowAllBuilds is MUTUALLY EXCLUSIVE with
+    //    onlyBuiltDependencies and neverBuiltDependencies — pnpm errors if
+    //    more than one build-approval mechanism is present (across all config
+    //    sources including .npmrc).  When a project already ships its own
+    //    policy we leave it alone; pnpm will honour it without our override.
     if (pkgMgr == 'pnpm') {
       await _runAsUserWithEnv(
         user,
         src,
-        "grep -qF 'dangerouslyAllowAllBuilds' pnpm-workspace.yaml 2>/dev/null "
-        "|| printf '\\ndangerouslyAllowAllBuilds: true\\n' >> pnpm-workspace.yaml",
+        // Skip appending when any build-approval key already exists anywhere
+        // in the two config files pnpm reads (workspace yaml + .npmrc).
+        "grep -qF 'dangerouslyAllowAllBuilds' pnpm-workspace.yaml 2>/dev/null || "
+        "grep -qF 'onlyBuiltDependencies'     pnpm-workspace.yaml 2>/dev/null || "
+        "grep -qF 'neverBuiltDependencies'    pnpm-workspace.yaml 2>/dev/null || "
+        "grep -qF 'onlyBuiltDependencies'     .npmrc 2>/dev/null || "
+        "grep -qF 'neverBuiltDependencies'    .npmrc 2>/dev/null || "
+        "printf '\\ndangerouslyAllowAllBuilds: true\\n' >> pnpm-workspace.yaml",
         installEnv,
       );
     }
 
     // 4b. Ensure the active pnpm is compatible with the current Node.js version.
     //     pnpm ≥11 requires Node ≥22.13; install pnpm@10 (Node ≥18.12) when
-    //     the node in use is an older patch. Runs as root so the global
-    //     npm install can write to /usr/local/lib without a permission error.
+    //     the node in use is an older patch.
+    //
+    //     Isolation: npm install -g with the fnm PATH active installs into the
+    //     fnm node-version's own prefix (/opt/fnm/node-versions/vX.Y.Z/installation)
+    //     rather than the system /usr/local, so the downgrade is scoped to that
+    //     specific node version and does not affect other apps on the host.
     if (pkgMgr == 'pnpm') {
+      // When env contains the fnm PATH, `npm` resolves to the fnm node's own
+      // npm binary, so `npm install -g` installs pnpm into that node version's
+      // prefix (/opt/fnm/node-versions/vX.Y.Z/installation) — not the system
+      // /usr/local — giving per-node-version isolation between apps.
       final compatEnv = env ?? Platform.environment;
       final compatScript =
           'MAJOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f1); '
