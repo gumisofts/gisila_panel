@@ -45,6 +45,32 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     /opt/pyenv/versions/*/lib/** mr,
     /opt/pyenv/versions/*/bin/python* ix,
 
+    # Node.js system runtime. The start command (e.g. `pnpm start`) lives outside
+    # the work directory, so /usr/bin/node and the package manager shims must be
+    # explicitly allowed. Without these rules AppArmor returns EACCES and the
+    # service logs "/usr/bin/env: 'node': Permission denied".
+    /usr/bin/node* ix,
+    /usr/local/bin/node* ix,
+    /usr/bin/npm ix,
+    /usr/bin/npx ix,
+    /usr/bin/corepack ix,
+    /usr/local/bin/npm ix,
+    /usr/local/bin/npx ix,
+    /usr/local/bin/pnpm ix,
+    /usr/local/bin/yarn ix,
+    /usr/local/bin/corepack ix,
+    # fnm-managed Node versions (pinned deployments)
+    /opt/fnm/ r,
+    /opt/fnm/** mr,
+    /opt/fnm/node-versions/**/bin/** ix,
+
+    # Bun runtime
+    /opt/bun-versions/ r,
+    /opt/bun-versions/** mr,
+    /opt/bun-versions/**/bun ix,
+    /usr/local/bin/bun ix,
+    /usr/bin/bun ix,
+
     # Networking
     network inet stream,
     network inet6 stream,

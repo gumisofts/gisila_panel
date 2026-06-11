@@ -304,6 +304,7 @@ Future<void> _applyUnit(List<String> args) async {
 
   // ── Standard runtimes ─────────────────────────────────────────────────────
   final isPython = runtime == 'python';
+  final isJit = runtime == 'node' || runtime == 'bun';
 
   String startCommand;
   if (r['start-command'] != null && (r['start-command'] as String).isNotEmpty) {
@@ -366,6 +367,7 @@ Future<void> _applyUnit(List<String> args) async {
     cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
     tasksMax: int.parse(r['tasks-max'] as String),
     isPython: isPython,
+    isJit: isJit,
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
         ? runtimeBinDir
         : null,

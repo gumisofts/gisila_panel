@@ -70,6 +70,7 @@ class Applier {
     required int cpuQuotaPercent,
     required int tasksMax,
     bool isPython = false,
+    bool isJit = false,
     String? runtimeBinDir,
     Map<String, String> envVars = const {},
   }) async {
@@ -94,6 +95,7 @@ class Applier {
         cpuQuotaPercent: cpuQuotaPercent,
         tasksMax: tasksMax,
         isPython: isPython,
+        isJit: isJit,
         runtimeBinDir: runtimeBinDir,
         envVars: envVars,
       );
@@ -135,6 +137,7 @@ class Applier {
     required int cpuQuotaPercent,
     required int tasksMax,
     required bool isPython,
+    bool isJit = false,
     String? runtimeBinDir,
     Map<String, String> envVars = const {},
   }) async {
@@ -155,6 +158,7 @@ class Applier {
       tasksMax: tasksMax,
       apparmorProfile: profile.profileName,
       isPython: isPython,
+      isJit: isJit,
       runtimeBinDir: runtimeBinDir,
       envVars: envVars,
     );

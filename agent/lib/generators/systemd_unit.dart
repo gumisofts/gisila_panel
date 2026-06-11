@@ -310,6 +310,7 @@ class SystemdUnit {
     this.tasksMax = 100,
     this.apparmorProfile,
     this.isPython = false,
+    this.isJit = false,
     this.runtimeBinDir,
     this.envVars = const {},
   });
@@ -335,6 +336,10 @@ class SystemdUnit {
   ///   - The venv and source tree need write access for .pyc / __pycache__
   final bool isPython;
 
+  /// Disable MemoryDenyWriteExecute for JIT runtimes (Node.js V8, Bun JavaScriptCore,
+  /// CPython bytecode). Set by the caller when runtime == 'node' or 'bun'.
+  final bool isJit;
+
   String render() {
     // Python needs write access to:
     //  - the venv for pip-created .dist-info stamps and script wrappers
@@ -342,8 +347,8 @@ class SystemdUnit {
     final extraRW = isPython
         ? ' $workDir/current/.venv $workDir/releases/current_build'
         : '';
-    final mdwe = isPython
-        ? '# MemoryDenyWriteExecute disabled for CPython (bytecode compilation)'
+    final mdwe = (isPython || isJit)
+        ? '# MemoryDenyWriteExecute disabled (JIT runtime — Python/Node/Bun)'
         : 'MemoryDenyWriteExecute=true';
 
     // Python apps (gunicorn/uvicorn) need the source tree as their working
