@@ -236,26 +236,42 @@ class Builders {
       );
     }
 
-    // 4b. Ensure the active pnpm is compatible with the current Node.js version.
-    //     pnpm ≥11 requires Node ≥22.13; install pnpm@10 (Node ≥18.12) when
-    //     the node in use is an older patch.
+    // 4b. Ensure the active pnpm is compatible with the current Node.js version,
+    //     for BOTH the build below AND the runtime start command.
     //
-    //     Isolation: npm install -g with the fnm PATH active installs into the
-    //     fnm node-version's own prefix (/opt/fnm/node-versions/vX.Y.Z/installation)
-    //     rather than the system /usr/local, so the downgrade is scoped to that
-    //     specific node version and does not affect other apps on the host.
+    //     pnpm ≥11 requires Node ≥22.13. When the pinned Node is older (e.g. the
+    //     22.12.0 panel default), the system-global pnpm (v11) refuses to run
+    //     with "requires at least Node.js v22.13". We install pnpm@10 (which
+    //     supports Node ≥18.12) so the version war disappears.
+    //
+    //     CRITICAL — install location must be deterministic. A host-level
+    //     /etc/npmrc or a global `npm config set prefix` can redirect
+    //     `npm install -g` to /usr/local, so pnpm@10 would NOT land in the fnm
+    //     node's bin. The build (fnm PATH) might still find it, but the systemd
+    //     service's PATH is `<.runtime/bin>:/usr/local/bin:/usr/bin:/bin` where
+    //     .runtime → the fnm installation dir; if pnpm@10 isn't in that exact
+    //     bin, `pnpm start` falls through to the system pnpm v11 and the service
+    //     crash-loops. We therefore pin --prefix to the directory that holds the
+    //     active `node` binary (its bin's parent), which is the same dir the
+    //     runtime PATH lists first. That guarantees `pnpm` resolves to pnpm@10
+    //     at runtime too, independent of any npmrc prefix override.
     if (pkgMgr == 'pnpm') {
-      // When env contains the fnm PATH, `npm` resolves to the fnm node's own
-      // npm binary, so `npm install -g` installs pnpm into that node version's
-      // prefix (/opt/fnm/node-versions/vX.Y.Z/installation) — not the system
-      // /usr/local — giving per-node-version isolation between apps.
       final compatEnv = env ?? Platform.environment;
       final compatScript =
+          // Resolve the real node binary, then its prefix (…/installation).
+          'NODE_BIN=\$(readlink -f "\$(command -v node)" 2>/dev/null); '
+          'NODE_PREFIX=\$(dirname "\$(dirname "\$NODE_BIN")"); '
           'MAJOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f1); '
           'MINOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f2); '
           'if [ "\${MAJOR:-0}" -lt 22 ] || '
           '{ [ "\${MAJOR:-0}" -eq 22 ] && [ "\${MINOR:-0}" -lt 13 ]; }; then '
+          '  echo "[agent] node \$MAJOR.\$MINOR needs pnpm@10; installing into \$NODE_PREFIX"; '
+          // --prefix forces the install into the node version's own dir,
+          // ignoring any global prefix override. Fall back to a plain global
+          // install only if the prefixed one fails.
+          '  npm install -g --prefix "\$NODE_PREFIX" pnpm@10 2>&1 || '
           '  npm install -g pnpm@10 2>&1; '
+          '  echo "[agent] pnpm now: \$("\$NODE_PREFIX/bin/pnpm" --version 2>/dev/null || echo missing)"; '
           'fi';
       await ShellExec.run('bash', ['-c', compatScript],
           env: compatEnv, requireSuccess: false);
