@@ -164,10 +164,24 @@ class Builders {
     //                                          requires Node ≥22.13 but the host
     //                                          may be on 22.12).
     //      COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
+    //
+    //    HOME / npm_config_cache:
+    //      `runuser -u <app>` runs under PAM, which sets HOME to the user's
+    //      passwd entry (/home/<app>) — a directory that is NEVER created for
+    //      panel apps (they live under /srv/apps/<app>). The unprivileged user
+    //      cannot mkdir it, so npm/yarn/bun fail to write their cache and logs
+    //      with `EACCES: permission denied, mkdir '/home/<app>'` and the whole
+    //      `npm ci` aborts. (pnpm dodges this via COREPACK_HOME + shared store.)
+    //      We point HOME — and npm's cache explicitly — at the app's workdir,
+    //      which the app user owns and can write to. This fixes plain npm/yarn
+    //      static builds (e.g. Vite/CRA) the same way COREPACK_HOME fixes pnpm.
     final nodeEnv = <String, String>{
       'COREPACK_ENABLE_STRICT': '0',
       'COREPACK_ENABLE_AUTO_PIN': '0',
       'COREPACK_HOME': '$workDir/.corepack',
+      'HOME': workDir,
+      'npm_config_cache': '$workDir/.npm',
+      'XDG_CACHE_HOME': '$workDir/.cache',
     };
     final installEnv = env != null
         ? {...env, ...nodeEnv}
