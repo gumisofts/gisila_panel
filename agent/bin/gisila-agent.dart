@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/builders.dart';
+import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
 import 'package:gisila_agent/runtime/validators.dart';
 
@@ -313,10 +314,21 @@ Future<void> _applyUnit(List<String> args) async {
   final isPython = runtime == 'python';
   final isJit = runtime == 'node' || runtime == 'bun';
 
+  // Node/Bun apps run from the build source tree (where package.json /
+  // node_modules live). [unitWorkingDir] overrides that when a framework ships a
+  // self-contained output (Next standalone). [unitWritableSource] grants the
+  // tree write access so server frameworks can write their runtime caches.
+  String? unitWorkingDir;
+  var unitWritableSource = false;
+
   String startCommand;
   if (r['start-command'] != null && (r['start-command'] as String).isNotEmpty) {
     startCommand =
         AgentValidators.optionalCommand(r['start-command'] as String)!;
+    // An explicit command still needs the corrected cwd + writable source for
+    // Node/Bun — historically these ran from $workDir/current, which holds no
+    // package.json, so `npm start` crashed with ENOENT.
+    if (isJit) unitWritableSource = true;
   } else if (isPython) {
     // Auto-generate the gunicorn start command from the configurable options.
     final mode = r['python-mode'] as String; // wsgi | asgi
@@ -358,6 +370,34 @@ Future<void> _applyUnit(List<String> args) async {
       wsgiApp,
     ];
     startCommand = parts.join(' ');
+  } else if (isJit) {
+    // Node / Bun with no explicit start command: detect the framework from the
+    // built source tree and generate the right command + working directory.
+    final src = '$workDir/releases/current_build';
+    final plan = NodeFramework.plan(src: src, port: port, runtime: runtime);
+    if (plan.isStaticSpa) {
+      throw ArgumentError(
+        'This app looks like a static ${plan.label} build (output in '
+        '"${plan.staticDir}") — it has no server to run on a port. Set the '
+        'app runtime to "static" (with build command e.g. "npm run build" and '
+        'static root "${plan.staticDir}") instead of "$runtime".',
+      );
+    }
+    if (plan.startCommand == null) {
+      throw ArgumentError(
+        'Could not determine how to start this $runtime app: no "start" script '
+        'and no recognised entrypoint (server.js / index.js / app.js) in '
+        '$src. Set an explicit start command in the panel.',
+      );
+    }
+    startCommand = plan.startCommand!;
+    unitWorkingDir = plan.workingDir;
+    unitWritableSource = true;
+    // Apply framework env defaults (e.g. HOST/HOSTNAME=0.0.0.0) without
+    // clobbering anything the user configured.
+    plan.extraEnv.forEach((k, v) => envVars.putIfAbsent(k, () => v));
+    stdout.writeln('[agent] detected ${plan.label} → '
+        '$startCommand  (cwd: ${plan.workingDir})');
   } else {
     startCommand = '$workDir/current/app';
   }
@@ -394,6 +434,8 @@ Future<void> _applyUnit(List<String> args) async {
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
         ? runtimeBinDir
         : null,
+    workingDir: unitWorkingDir,
+    writableSource: unitWritableSource,
     envVars: envVars,
   );
 }

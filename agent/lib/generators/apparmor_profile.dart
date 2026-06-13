@@ -1,9 +1,18 @@
 /// Render a baseline AppArmor profile for an app.
 class ApparmorProfile {
-  ApparmorProfile({required this.linuxUser, required this.workDir});
+  ApparmorProfile({
+    required this.linuxUser,
+    required this.workDir,
+    this.writableSource = false,
+  });
 
   final String linuxUser;
   final String workDir;
+
+  /// Grant the build source tree write access (in addition to the read+mmap+exec
+  /// already granted to `releases/**`). Required for Node/Bun server frameworks
+  /// that write runtime caches into their build output (e.g. Next `.next/cache`).
+  final bool writableSource;
 
   String get profileName => 'gisila-$linuxUser';
 
@@ -26,6 +35,11 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     owner $workDir/tmp/** rwk,
     owner $workDir/logs/** rwk,
     owner /tmp/** rwk,
+${writableSource ? '''
+    # Server frameworks (Next/Nuxt/SvelteKit/…) write runtime caches into their
+    # own build tree. Grant the source tree write so e.g. .next/cache works.
+    owner $workDir/releases/current_build/** rwk,
+''' : ''}
 
     # corepack cache (COREPACK_HOME=$workDir/.corepack). corepack downloads the
     # pinned package manager here on first run and node mmaps+executes it, so the
@@ -57,6 +71,11 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     # the work directory, so /usr/bin/node and the package manager shims must be
     # explicitly allowed. Without these rules AppArmor returns EACCES and the
     # service logs "/usr/bin/env: 'node': Permission denied".
+    #
+    # /usr/bin/env: npm/pnpm/yarn (and any `#!/usr/bin/env node` bin) are launched
+    # by the kernel via the env interpreter named in their shebang, so env itself
+    # must be executable or the service dies with "env: 'node': Permission denied".
+    /usr/bin/env ix,
     /usr/bin/node* ix,
     /usr/local/bin/node* ix,
     /usr/bin/npm ix,

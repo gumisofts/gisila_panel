@@ -312,6 +312,8 @@ class SystemdUnit {
     this.isPython = false,
     this.isJit = false,
     this.runtimeBinDir,
+    this.workingDirectory,
+    this.writableSource = false,
     this.envVars = const {},
   });
 
@@ -340,24 +342,43 @@ class SystemdUnit {
   /// CPython bytecode). Set by the caller when runtime == 'node' or 'bun'.
   final bool isJit;
 
+  /// Explicit working directory for the service. When null it is derived from
+  /// the runtime (Python/Node/Bun → the build source tree; compiled runtimes →
+  /// `<workDir>/current`). Frameworks with a self-contained output (e.g. Next
+  /// standalone) set this to the subdirectory holding their server.
+  final String? workingDirectory;
+
+  /// Grant the build source tree (`releases/current_build`) read-write access so
+  /// server frameworks can write their runtime caches (e.g. Next's `.next/cache`,
+  /// Nuxt/Nitro temp). Set for Node/Bun server apps.
+  final bool writableSource;
+
   String render() {
-    // Python needs write access to:
-    //  - the venv for pip-created .dist-info stamps and script wrappers
-    //  - the source tree so Python can write __pycache__ / .pyc files
-    final extraRW = isPython
-        ? ' $workDir/current/.venv $workDir/releases/current_build'
-        : '';
+    final src = '$workDir/releases/current_build';
+
+    // Grant the source tree read-write when the runtime executes from it:
+    //  - Python: venv (.dist-info stamps, script wrappers) + source (__pycache__).
+    //  - Node/Bun servers: the build tree, so Next/Nuxt/etc. can write their
+    //    runtime caches (.next/cache, .output, etc.). ReadWritePaths wins over
+    //    the broader ReadOnlyPaths=$workDir/releases below (most-specific path).
+    final rwPaths = <String>[
+      if (isPython) '$workDir/current/.venv',
+      if (isPython || writableSource) src,
+    ];
+    final extraRW = rwPaths.map((p) => ' $p').join();
     final mdwe = (isPython || isJit)
         ? '# MemoryDenyWriteExecute disabled (JIT runtime — Python/Node/Bun)'
         : 'MemoryDenyWriteExecute=true';
 
-    // Python apps (gunicorn/uvicorn) need the source tree as their working
-    // directory so that the project's top-level packages (e.g. `core`, `blog`)
-    // are on sys.path without requiring a PYTHONPATH override. The source is
-    // always at releases/current_build after a successful build; $workDir/current
-    // only holds the .venv symlink and compiled binaries for non-Python runtimes.
-    final workingDir =
-        isPython ? '$workDir/releases/current_build' : '$workDir/current';
+    // Working directory:
+    //  - Explicit override (e.g. Next standalone's .next/standalone) wins.
+    //  - Python (gunicorn/uvicorn) and Node/Bun run from the build source tree
+    //    so package.json / node_modules / project packages resolve relative to
+    //    cwd. The source is always at releases/current_build after a successful
+    //    build; $workDir/current only holds the .venv symlink, the pinned
+    //    runtime symlink, and compiled binaries for non-JIT runtimes.
+    final workingDir = workingDirectory ??
+        ((isPython || isJit) ? src : '$workDir/current');
 
     // Embed each user-defined env var as its own Environment= line.
     // Values are double-quoted; embedded double-quotes and backslashes are

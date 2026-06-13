@@ -313,6 +313,39 @@ class Builders {
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
       await _runAsUserWithEnv(user, src, buildCommand, installEnv);
     }
+
+    // 7. Framework post-processing.
+    await _postBuildNode(user, src, installEnv);
+  }
+
+  /// Per-framework fix-ups that must run after the build but before the service
+  /// starts. Currently: Next.js `output: 'standalone'`.
+  ///
+  /// A standalone build emits a self-contained server at `.next/standalone/`
+  /// (with a pruned node_modules) but, by Next's design, does NOT copy the
+  /// static assets or the `public/` directory into it — the application author
+  /// is expected to. Without this the server boots but serves 404s for every
+  /// `/_next/static/*` chunk and every public asset. We copy them so the
+  /// standalone server is actually serveable.
+  static Future<void> _postBuildNode(
+      String user, String src, Map<String, String> env) async {
+    final standalone = Directory('$src/.next/standalone');
+    if (!standalone.existsSync()) return;
+
+    stdout.writeln('[agent] Next.js standalone output — copying static assets');
+    // `.next/static` → `.next/standalone/.next/static`
+    // `public`       → `.next/standalone/public`
+    // Best-effort: public/ is optional and a missing source must not fail the
+    // deploy. cp -RT/-rL keeps it simple and idempotent across redeploys.
+    await _runAsUserWithEnv(
+      user,
+      src,
+      'mkdir -p .next/standalone/.next && '
+      'rm -rf .next/standalone/.next/static .next/standalone/public && '
+      'cp -r .next/static .next/standalone/.next/static; '
+      'if [ -d public ]; then cp -r public .next/standalone/public; fi',
+      env,
+    );
   }
 
   /// Sniff the source directory for well-known lock files and return the name

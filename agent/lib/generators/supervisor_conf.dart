@@ -150,6 +150,7 @@ class SupervisorConf {
     required this.startCommand,
     required this.port,
     this.runtimeBinDir,
+    this.workingDir,
     this.envVars = const {},
   });
 
@@ -158,6 +159,10 @@ class SupervisorConf {
   final String workDir;
   final String startCommand;
   final int port;
+
+  /// Explicit working directory. When null, defaults to `<workDir>/current`.
+  /// Node/Bun apps run from the build source tree (`releases/current_build`).
+  final String? workingDir;
 
   /// When set, prepended to PATH inside the supervisord process so `node` /
   /// `bun` in [startCommand] resolves to the pinned version binary.
@@ -181,7 +186,7 @@ class SupervisorConf {
     return '''
 [program:$programName]
 command=$startCommand
-directory=$workDir/current
+directory=${workingDir ?? '$workDir/current'}
 user=$linuxUser
 autostart=true
 autorestart=true

@@ -72,6 +72,8 @@ class Applier {
     bool isPython = false,
     bool isJit = false,
     String? runtimeBinDir,
+    String? workingDir,
+    bool writableSource = false,
     Map<String, String> envVars = const {},
   }) async {
     if (isDocker) {
@@ -82,6 +84,7 @@ class Applier {
         startCommand: startCommand,
         port: port,
         runtimeBinDir: runtimeBinDir,
+        workingDir: workingDir,
         envVars: envVars,
       );
     } else {
@@ -97,6 +100,8 @@ class Applier {
         isPython: isPython,
         isJit: isJit,
         runtimeBinDir: runtimeBinDir,
+        workingDir: workingDir,
+        writableSource: writableSource,
         envVars: envVars,
       );
     }
@@ -109,6 +114,7 @@ class Applier {
     required String startCommand,
     required int port,
     String? runtimeBinDir,
+    String? workingDir,
     Map<String, String> envVars = const {},
   }) async {
     final conf = SupervisorConf(
@@ -118,6 +124,7 @@ class Applier {
       startCommand: startCommand,
       port: port,
       runtimeBinDir: runtimeBinDir,
+      workingDir: workingDir,
       envVars: envVars,
     );
     Directory(supervisorConfDir).createSync(recursive: true);
@@ -139,9 +146,15 @@ class Applier {
     required bool isPython,
     bool isJit = false,
     String? runtimeBinDir,
+    String? workingDir,
+    bool writableSource = false,
     Map<String, String> envVars = const {},
   }) async {
-    final profile = ApparmorProfile(linuxUser: linuxUser, workDir: workDir);
+    final profile = ApparmorProfile(
+      linuxUser: linuxUser,
+      workDir: workDir,
+      writableSource: writableSource,
+    );
     final apparmorPath = '$apparmorDir/gisila-$linuxUser';
     File(apparmorPath).writeAsStringSync(profile.render());
     await ShellExec.run('apparmor_parser', ['-r', apparmorPath],
@@ -160,6 +173,8 @@ class Applier {
       isPython: isPython,
       isJit: isJit,
       runtimeBinDir: runtimeBinDir,
+      workingDirectory: workingDir,
+      writableSource: writableSource,
       envVars: envVars,
     );
     final unitPath = '$systemdDir/gisila-$linuxUser.service';
@@ -323,9 +338,10 @@ class Applier {
     required List<String> hostnames,
     bool isSpa = false,
   }) async {
+    final resolved = _resolveStaticDir(staticDir);
     final vhost = StaticNginxVhost(
       appId: appId,
-      staticDir: staticDir,
+      staticDir: resolved,
       hostnames: hostnames,
       isSpa: isSpa,
     ).render();
@@ -338,6 +354,34 @@ class Applier {
       await ShellExec.run('systemctl', ['reload', 'nginx'],
           requireSuccess: false);
     }
+  }
+
+  /// Resolve the directory nginx should actually serve for a static app.
+  ///
+  /// When the configured [staticDir] already has an `index.html`, use it as-is.
+  /// Otherwise the user likely left the static root blank for a framework that
+  /// builds into a subdirectory (Vite → `dist`, CRA → `build`, Astro → `dist`,
+  /// Nuxt generate → `.output/public`). Probe the conventional output folders
+  /// and serve the first one that contains an `index.html`. Falls back to the
+  /// original path when nothing matches, so behaviour is never worse than before.
+  static String _resolveStaticDir(String staticDir) {
+    if (File('$staticDir/index.html').existsSync()) return staticDir;
+    for (final sub in const [
+      'dist',
+      'build',
+      'out',
+      '.output/public',
+      'dist/public',
+      'public',
+    ]) {
+      if (File('$staticDir/$sub/index.html').existsSync()) {
+        stdout.writeln(
+            '[agent] static root has no index.html — serving detected build '
+            'output "$sub" instead.');
+        return '$staticDir/$sub';
+      }
+    }
+    return staticDir;
   }
 
   Future<void> issueCert(String hostname) async {
