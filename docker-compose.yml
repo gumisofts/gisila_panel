@@ -127,6 +127,7 @@ services:
         dart run build_runner build --delete-conflicting-outputs
         echo "==> applying migrations"
         dart run gisila_orm:migrate up \
+          --dir lib/migrations \
           --config /workspace/gisila-panel/backend/docker/database.yaml
         echo "==> migrate done"
 

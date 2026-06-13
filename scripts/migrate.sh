@@ -15,5 +15,6 @@ docker compose run --rm migrate \
     set -e
     dart pub get
     dart run gisila_orm:migrate $ACTION \
+      --dir /workspace/gisila-panel/backend/lib/migrations \
       --config /workspace/gisila-panel/backend/docker/database.yaml $*
   "

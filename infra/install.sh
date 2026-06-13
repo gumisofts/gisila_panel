@@ -237,7 +237,7 @@ chmod 0640 /etc/gisila/database.yaml
 echo "==> Running migrations"
 cd "$REPO_DIR/backend"
 GISILA_DATABASE_FILE=/etc/gisila/database.yaml \
-  dart run gisila_orm:migrate up --config /etc/gisila/database.yaml
+  dart run gisila_orm:migrate up --dir lib/migrations --config /etc/gisila/database.yaml
 
 # ── 10b. Seed initial superuser ───────────────────────────────────────────────
 # Load the env file so SUPERUSER_EMAIL / SUPERUSER_PASSWORD are available, then
