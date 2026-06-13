@@ -26,9 +26,16 @@ const PYTHON_VERSIONS = [
 ];
 
 const NODE_VERSIONS = [
-  "22.12.0", "22.11.0", "22.9.0",
-  "20.18.1", "20.18.0", "20.17.0", "20.15.1",
-  "18.20.5", "18.20.4",
+  // Active LTS "Krypton" — recommended default
+  "24.16.0", "24.15.0", "24.14.1",
+  // LTS "Jod" (22.13+ is required by pnpm 11)
+  "22.22.3", "22.20.0", "22.13.0", "22.12.0",
+  // LTS "Iron"
+  "20.20.2", "20.19.6", "20.18.1",
+  // Current line — newest features, shorter support window
+  "26.3.0",
+  // Legacy (EOL upstream) — kept for older apps
+  "18.20.8",
 ];
 
 const DART_VERSIONS = [
