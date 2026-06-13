@@ -18,11 +18,18 @@ class Provisioner {
     ]);
   }
 
-  /// Create /srv/apps/<user>/{current,releases,shared,tmp} with 0750.
+  /// Create /srv/apps/<user>/{current,releases,shared,tmp,logs,.corepack} with
+  /// 0750.
+  ///
+  /// `.corepack` is the COREPACK_HOME for Node/pnpm apps and is listed in the
+  /// systemd unit's `ReadWritePaths=`. systemd requires every `ReadWritePaths=`
+  /// target to exist before it sets up the mount namespace, so a missing
+  /// `.corepack` makes the service fail with `status=226/NAMESPACE`. Creating
+  /// it for every app is harmless for non-Node runtimes (it stays empty).
   static Future<void> ensureWorkDir(String workDir, String user) async {
     final root = Directory(workDir);
     if (!root.existsSync()) root.createSync(recursive: true);
-    for (final sub in ['current', 'releases', 'shared', 'tmp', 'logs']) {
+    for (final sub in ['current', 'releases', 'shared', 'tmp', 'logs', '.corepack']) {
       final d = Directory('${root.path}/$sub');
       if (!d.existsSync()) d.createSync(recursive: true);
     }
