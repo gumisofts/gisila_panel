@@ -236,45 +236,31 @@ class Builders {
       );
     }
 
-    // 4b. Ensure the active pnpm is compatible with the current Node.js version,
-    //     for BOTH the build below AND the runtime start command.
+    // 4b. Provide a real, version-pinned pnpm so corepack never runs — neither
+    //     during this build nor at service start.
     //
-    //     pnpm ≥11 requires Node ≥22.13. When the pinned Node is older (e.g. the
-    //     22.12.0 panel default), the system-global pnpm (v11) refuses to run
-    //     with "requires at least Node.js v22.13". We install pnpm@10 (which
-    //     supports Node ≥18.12) so the version war disappears.
+    //     corepack (the `pnpm` shim Node ships) downloads the version pinned in
+    //     package.json's `packageManager` field on first use, into a writable
+    //     cache. At runtime that fails: the hardened unit has ProtectHome=true,
+    //     ProtectSystem=strict and an AppArmor profile, so the download has
+    //     nowhere to go and the service crash-loops (EACCES / 226 NAMESPACE).
     //
-    //     CRITICAL — install location must be deterministic. A host-level
-    //     /etc/npmrc or a global `npm config set prefix` can redirect
-    //     `npm install -g` to /usr/local, so pnpm@10 would NOT land in the fnm
-    //     node's bin. The build (fnm PATH) might still find it, but the systemd
-    //     service's PATH is `<.runtime/bin>:/usr/local/bin:/usr/bin:/bin` where
-    //     .runtime → the fnm installation dir; if pnpm@10 isn't in that exact
-    //     bin, `pnpm start` falls through to the system pnpm v11 and the service
-    //     crash-loops. We therefore pin --prefix to the directory that holds the
-    //     active `node` binary (its bin's parent), which is the same dir the
-    //     runtime PATH lists first. That guarantees `pnpm` resolves to pnpm@10
-    //     at runtime too, independent of any npmrc prefix override.
+    //     Instead we resolve the desired pnpm version HERE (build time has
+    //     network + no sandbox), install it as a standalone binary into a
+    //     shared, version-keyed store, and record its bin dir. `apply-unit`
+    //     then prepends that dir to the service PATH, so `pnpm start` invokes
+    //     this exact pnpm directly. Multiple apps pinning different versions
+    //     coexist in the store and are installed once each.
     if (pkgMgr == 'pnpm') {
-      final compatEnv = env ?? Platform.environment;
-      final compatScript =
-          // Resolve the real node binary, then its prefix (…/installation).
-          'NODE_BIN=\$(readlink -f "\$(command -v node)" 2>/dev/null); '
-          'NODE_PREFIX=\$(dirname "\$(dirname "\$NODE_BIN")"); '
-          'MAJOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f1); '
-          'MINOR=\$(node --version 2>/dev/null | sed "s/v//" | cut -d. -f2); '
-          'if [ "\${MAJOR:-0}" -lt 22 ] || '
-          '{ [ "\${MAJOR:-0}" -eq 22 ] && [ "\${MINOR:-0}" -lt 13 ]; }; then '
-          '  echo "[agent] node \$MAJOR.\$MINOR needs pnpm@10; installing into \$NODE_PREFIX"; '
-          // --prefix forces the install into the node version's own dir,
-          // ignoring any global prefix override. Fall back to a plain global
-          // install only if the prefixed one fails.
-          '  npm install -g --prefix "\$NODE_PREFIX" pnpm@10 2>&1 || '
-          '  npm install -g pnpm@10 2>&1; '
-          '  echo "[agent] pnpm now: \$("\$NODE_PREFIX/bin/pnpm" --version 2>/dev/null || echo missing)"; '
-          'fi';
-      await ShellExec.run('bash', ['-c', compatScript],
-          env: compatEnv, requireSuccess: false);
+      final pnpmVersion = _resolvePnpmVersion(src);
+      stdout.writeln('[agent] pnpm $pnpmVersion (corepack-free, shared store)');
+      final pnpmBinDir = await _ensurePnpm(pnpmVersion, installEnv);
+      // Put the real pnpm first on PATH for the install + build steps below.
+      final basePath = installEnv['PATH'] ?? '/usr/local/bin:/usr/bin:/bin';
+      installEnv['PATH'] = '$pnpmBinDir:$basePath';
+      // Hand the resolved bin dir to apply-unit (separate agent invocation) so
+      // the runtime PATH points at the same pnpm. Read back in _applyUnit.
+      File('$workDir/.pnpm-bin').writeAsStringSync('$pnpmBinDir\n');
     }
 
     // 5. Install dependencies.
@@ -355,6 +341,54 @@ class Builders {
       default:
         return 'npm ci';
     }
+  }
+
+  /// pnpm spec used when a project does not pin one via the package.json
+  /// `packageManager` field. pnpm 10 supports Node ≥18.12, so it runs on both
+  /// the panel-default Node 22.12 and newer pins. `npm` resolves the bare major
+  /// to the latest 10.x at install time.
+  static const String _defaultPnpmSpec = '10';
+
+  /// Resolve which pnpm version to install for the project in [src].
+  ///
+  /// Honors a `"packageManager": "pnpm@X.Y.Z"` pin in package.json so each app
+  /// gets exactly the version it expects (this is what corepack would have
+  /// fetched); falls back to [_defaultPnpmSpec] when unpinned or unparseable.
+  /// A regex avoids a full JSON parse so a malformed package.json never breaks
+  /// the deploy — we simply use the default.
+  static String _resolvePnpmVersion(String src) {
+    final pkg = File('$src/package.json');
+    if (pkg.existsSync()) {
+      try {
+        final m = RegExp(r'"packageManager"\s*:\s*"pnpm@([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?)')
+            .firstMatch(pkg.readAsStringSync());
+        if (m != null) return m.group(1)!;
+      } catch (_) {/* fall through to the default */}
+    }
+    return _defaultPnpmSpec;
+  }
+
+  /// Ensure a standalone (non-corepack) pnpm [version] exists in the shared
+  /// store and return its bin directory (`/opt/pnpm-versions/<version>/bin`).
+  ///
+  /// Idempotent: an already-installed version is reused, so this is cheap on
+  /// repeat deploys and shared across every app pinning the same version. The
+  /// install happens at build time (network available, no sandbox); `--prefix`
+  /// pins the location regardless of any global npm prefix override.
+  static Future<String> _ensurePnpm(
+      String version, Map<String, String> env) async {
+    final prefix = '/opt/pnpm-versions/$version';
+    final binDir = '$prefix/bin';
+    if (!File('$binDir/pnpm').existsSync()) {
+      await ShellExec.run('mkdir', ['-p', prefix]);
+      await ShellExec.run(
+        'npm',
+        ['install', '-g', '--prefix', prefix, 'pnpm@$version'],
+        env: env,
+        requireSuccess: false,
+      );
+    }
+    return binDir;
   }
 
   /// Build a Bun application with optional version pinning.

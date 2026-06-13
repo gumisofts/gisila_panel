@@ -27,6 +27,14 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     owner $workDir/logs/** rwk,
     owner /tmp/** rwk,
 
+    # corepack cache (COREPACK_HOME=$workDir/.corepack). corepack downloads the
+    # pinned package manager here on first run and node mmaps+executes it, so the
+    # tree needs read+write+mmap+inherit-exec — not just the rw granted to the
+    # plain scratch dirs above. Must stay in sync with the systemd unit's
+    # ReadWritePaths and the Provisioner's created dirs.
+    owner $workDir/.corepack/ rwk,
+    owner $workDir/.corepack/** rwkmix,
+
     # Standard runtime needs
     /etc/ssl/certs/** r,
     /usr/share/ca-certificates/** r,
@@ -63,6 +71,12 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     /opt/fnm/ r,
     /opt/fnm/** mr,
     /opt/fnm/node-versions/**/bin/** ix,
+
+    # Shared, version-pinned pnpm store (corepack-free). The build installs a
+    # standalone pnpm here and the service invokes it by absolute path; node
+    # reads+mmaps the .cjs and execs the bin shim, so the tree needs r+m+ix.
+    /opt/pnpm-versions/ r,
+    /opt/pnpm-versions/** mrix,
 
     # Bun runtime
     /opt/bun-versions/ r,

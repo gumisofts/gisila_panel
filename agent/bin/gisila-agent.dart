@@ -355,7 +355,23 @@ Future<void> _applyUnit(List<String> args) async {
     startCommand = '$workDir/current/app';
   }
 
-  final runtimeBinDir = r['runtime-bin-dir'] as String?;
+  var runtimeBinDir = r['runtime-bin-dir'] as String?;
+
+  // Node apps: prepend the build-resolved pnpm store bin dir (recorded by the
+  // `build` step in $workDir/.pnpm-bin) so `pnpm start` invokes the exact
+  // pinned pnpm by path — corepack never runs at runtime. Kept first so it wins
+  // over any node-version bin dir and the system corepack shims in /usr/bin.
+  if (runtime == 'node') {
+    final marker = File('$workDir/.pnpm-bin');
+    if (marker.existsSync()) {
+      final pnpmBinDir = marker.readAsStringSync().trim();
+      if (pnpmBinDir.isNotEmpty) {
+        runtimeBinDir = (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
+            ? '$pnpmBinDir:$runtimeBinDir'
+            : pnpmBinDir;
+      }
+    }
+  }
 
   await Applier().applyUnit(
     appId: appId,
