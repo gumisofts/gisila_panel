@@ -793,6 +793,24 @@ export function SettingsTab({
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
+              <Label htmlFor="s-build">
+                Build command
+                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="s-build"
+                className="mt-1 font-mono text-sm"
+                placeholder="npm ci && npm run build"
+                value={form.buildCommand}
+                onChange={(e) => set("buildCommand", e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Run a build step before Nginx serves the files (e.g. Vite, CRA, Hugo).
+                Leave blank for plain HTML/CSS/JS repos.
+              </p>
+            </div>
+
+            <div>
               <Label htmlFor="s-static-root">
                 Static files directory
                 <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(optional)</span>

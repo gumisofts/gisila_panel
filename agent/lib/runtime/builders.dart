@@ -266,7 +266,7 @@ class Builders {
     //     this exact pnpm directly. Multiple apps pinning different versions
     //     coexist in the store and are installed once each.
     if (pkgMgr == 'pnpm') {
-      final pnpmVersion = _resolvePnpmVersion(src);
+      final pnpmVersion = _resolvePnpmVersion(src, nodeVersion);
       stdout.writeln('[agent] pnpm $pnpmVersion (corepack-free, shared store)');
       final pnpmBinDir = await _ensurePnpm(pnpmVersion, installEnv);
       // Put the real pnpm first on PATH for the install + build steps below.
@@ -390,20 +390,27 @@ class Builders {
     }
   }
 
-  /// pnpm spec used when a project does not pin one via the package.json
-  /// `packageManager` field. pnpm 10 supports Node ≥18.12, so it runs on both
-  /// the panel-default Node 22.12 and newer pins. `npm` resolves the bare major
-  /// to the latest 10.x at install time.
+  /// pnpm spec used when a project does not pin one and the Node version is new
+  /// enough (≥22.13). `npm` resolves the bare major to the latest 10.x.
   static const String _defaultPnpmSpec = '10';
+
+  /// pnpm spec for older pinned Node versions. The latest pnpm 10.x raised its
+  /// floor to Node ≥22.13, so on an older pin (e.g. 22.12) it refuses to run —
+  /// at build AND at `pnpm start`, crash-looping the service. pnpm 9 supports
+  /// Node ^18.12 || ≥20 and reads the same lockfile format (9.0), so it is the
+  /// safe fallback for older Node.
+  static const String _legacyPnpmSpec = '9';
 
   /// Resolve which pnpm version to install for the project in [src].
   ///
   /// Honors a `"packageManager": "pnpm@X.Y.Z"` pin in package.json so each app
   /// gets exactly the version it expects (this is what corepack would have
-  /// fetched); falls back to [_defaultPnpmSpec] when unpinned or unparseable.
+  /// fetched). When unpinned, picks a pnpm major compatible with [nodeVersion]:
+  /// the floating latest pnpm 10.x requires Node ≥22.13, so an older pinned Node
+  /// falls back to pnpm 9 rather than installing a pnpm that can't run on it.
   /// A regex avoids a full JSON parse so a malformed package.json never breaks
   /// the deploy — we simply use the default.
-  static String _resolvePnpmVersion(String src) {
+  static String _resolvePnpmVersion(String src, String? nodeVersion) {
     final pkg = File('$src/package.json');
     if (pkg.existsSync()) {
       try {
@@ -412,7 +419,21 @@ class Builders {
         if (m != null) return m.group(1)!;
       } catch (_) {/* fall through to the default */}
     }
+    // Unpinned: guard against the latest pnpm 10.x outrunning an older Node pin.
+    if (nodeVersion != null && !_nodeAtLeast(nodeVersion, 22, 13)) {
+      return _legacyPnpmSpec;
+    }
     return _defaultPnpmSpec;
+  }
+
+  /// Whether a dotted [version] (e.g. "22.12.0") is ≥ [major].[minor]. Unparid
+  /// components default to 0, so a malformed pin is treated as "older".
+  static bool _nodeAtLeast(String version, int major, int minor) {
+    final parts = version.split('.');
+    final maj = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
+    final min = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    if (maj != major) return maj > major;
+    return min >= minor;
   }
 
   /// Ensure a standalone (non-corepack) pnpm [version] exists in the shared

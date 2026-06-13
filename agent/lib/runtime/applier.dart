@@ -339,6 +339,10 @@ class Applier {
     bool isSpa = false,
   }) async {
     final resolved = _resolveStaticDir(staticDir);
+    // nginx (www-data) must be able to reach + read the build output. The per-app
+    // work dir and its releases/ are 0750 app-owned, so without this nginx gets
+    // "stat() … failed (13: Permission denied)" and serves nothing.
+    await _grantNginxAccess(resolved);
     final vhost = StaticNginxVhost(
       appId: appId,
       staticDir: resolved,
@@ -382,6 +386,69 @@ class Applier {
       }
     }
     return staticDir;
+  }
+
+  /// Grant the nginx worker user (`www-data`) the access it needs to serve a
+  /// static app's build output.
+  ///
+  /// Per-app work dirs are `0750` and owned by the app's own Linux user, and
+  /// `<work>/releases` is `0750` too — so nginx, which runs as `www-data`,
+  /// cannot even traverse into them to reach the (world-readable) build output
+  /// and fails every request with `stat() … (13: Permission denied)`.
+  ///
+  /// We grant www-data a *scoped* ACL — execute (traverse only) on each per-app
+  /// ancestor directory, and read+traverse on the served tree — so that other
+  /// tenants gain nothing (their files stay unreadable to each other) while
+  /// nginx can serve. ACLs apply immediately with no nginx restart. A recursive
+  /// + default ACL keeps freshly-rebuilt files accessible on every redeploy.
+  /// Falls back to widening the "other" permission bits when ACLs are
+  /// unavailable, so the site still serves.
+  Future<void> _grantNginxAccess(String staticDir) async {
+    const nginx = 'www-data';
+    final hasAcl = await _ensureAcl();
+
+    // Per-app ancestor directories that need a traverse bit: everything from
+    // `/srv/apps/<app>` down to (but excluding) the served dir. Path segments
+    // with depth < 3 (`/`, `/srv`, `/srv/apps`) are skipped — those are shared
+    // and already world-traversable.
+    final segs = staticDir.split('/').where((s) => s.isNotEmpty).toList();
+    final ancestors = <String>[];
+    var path = '';
+    for (var i = 0; i < segs.length - 1; i++) {
+      path = '$path/${segs[i]}';
+      if (i + 1 >= 3) ancestors.add(path);
+    }
+
+    if (hasAcl) {
+      for (final dir in ancestors) {
+        await ShellExec.run('setfacl', ['-m', 'u:$nginx:--x', dir],
+            requireSuccess: false);
+      }
+      await ShellExec.run('setfacl', ['-R', '-m', 'u:$nginx:rX', staticDir],
+          requireSuccess: false);
+      await ShellExec.run('setfacl', ['-R', '-d', '-m', 'u:$nginx:rX', staticDir],
+          requireSuccess: false);
+    } else {
+      // No ACL support: widen the "other" bits. Looser (any local user can
+      // traverse the ancestors), but static web content is public and the app
+      // must serve. Traverse-only on ancestors; read on the served tree.
+      for (final dir in ancestors) {
+        await ShellExec.run('chmod', ['o+x', dir], requireSuccess: false);
+      }
+      await ShellExec.run('chmod', ['-R', 'o+rX', staticDir],
+          requireSuccess: false);
+    }
+  }
+
+  /// Ensure `setfacl` is available, installing the `acl` package if missing.
+  /// Returns whether ACLs can be used after the attempt.
+  Future<bool> _ensureAcl() async {
+    if ((await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0) {
+      return true;
+    }
+    await ShellExec.run('apt-get', ['install', '-y', '-qq', 'acl'],
+        requireSuccess: false);
+    return (await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0;
   }
 
   Future<void> issueCert(String hostname) async {
