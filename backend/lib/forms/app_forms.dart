@@ -52,8 +52,9 @@ class CreateAppForm extends Form {
   // Optional SSH deploy key for authenticated git clone.
   final deployKeyId = IntField(name: 'deployKeyId');
 
-  // Internal port the app listens on.
-  final internalPort = IntField(name: 'internalPort', required: true);
+  // Internal port the app listens on. Optional: static sites have none.
+  // The service requires it for every non-static runtime.
+  final internalPort = IntField(name: 'internalPort');
 
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[

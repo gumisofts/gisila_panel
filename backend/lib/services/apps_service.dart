@@ -48,7 +48,9 @@ class AppsService extends Service {
     required String name,
     required String runtime,
     required String sourceType,
-    required int port,
+    // Static sites are served directly by Nginx and have no listening port.
+    // Required for every other (service) runtime.
+    int? port,
     String? gitUrl,
     String? gitBranch,
     String? buildCommand,
@@ -89,7 +91,16 @@ class AppsService extends Service {
     final projectsSvc = ProjectsService()..attach(ctx);
     await projectsSvc.findForUser(actor, projectId);
 
-    await _validatePort(port);
+    // Static apps carry no port; every service runtime needs a unique one.
+    final isStatic = runtime == 'static';
+    if (isStatic) {
+      port = null;
+    } else {
+      if (port == null) {
+        throw BadRequest('An internal port is required for runtime "$runtime".');
+      }
+      await _validatePort(port);
+    }
 
     final slug = Slug.make(name);
     final shortId = _randomId(6);
@@ -142,7 +153,8 @@ class AppsService extends Service {
     }).one(_db.context());
 
     await _logEvent(created.id!, actor, 'create',
-        message: 'App created (port $port, user $linuxUser).');
+        message: 'App created '
+            '(${port != null ? 'port $port, ' : ''}user $linuxUser).');
     return created;
   }
 

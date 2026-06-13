@@ -40,7 +40,7 @@ class AppsApi {
       name: form.name.value!,
       runtime: form.runtime.value!,
       sourceType: form.sourceType.value!,
-      port: form.internalPort.value!,
+      port: form.internalPort.value,
       gitUrl: form.gitUrl.value,
       gitBranch: form.gitBranch.value,
       buildCommand: form.buildCommand.value,

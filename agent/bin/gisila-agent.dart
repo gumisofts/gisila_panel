@@ -90,11 +90,15 @@ Future<void> _provision(List<String> args) async {
     p.addOption('app-id', mandatory: true);
     p.addOption('user', mandatory: true);
     p.addOption('work-dir', mandatory: true);
-    p.addOption('port', mandatory: true);
+    // Optional: static apps have no port. Validate only when supplied.
+    p.addOption('port');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
-  AgentValidators.requirePort(r['port'] as String?);
+  final portRaw = r['port'] as String?;
+  if (portRaw != null && portRaw.isNotEmpty) {
+    AgentValidators.requirePort(portRaw);
+  }
   await Provisioner.ensureLinuxUser(user);
   await Provisioner.ensureWorkDir(workDir, user);
   await Provisioner.ensureEnvFile(workDir, user);
@@ -233,7 +237,8 @@ Future<void> _applyUnit(List<String> args) async {
     p.addOption('app-id', mandatory: true);
     p.addOption('user', mandatory: true);
     p.addOption('work-dir', mandatory: true);
-    p.addOption('port', mandatory: true);
+    // Optional: static apps need no port (resolved below for service runtimes).
+    p.addOption('port');
     p.addOption('runtime', defaultsTo: 'binary');
     p.addOption('start-command');
     p.addOption('memory-mb', defaultsTo: '256');
@@ -261,8 +266,16 @@ Future<void> _applyUnit(List<String> args) async {
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
-  final port = AgentValidators.requirePort(r['port'] as String?);
   final runtime = r['runtime'] as String;
+
+  // ── Static: no process unit, no port needed ──────────────────────────────
+  if (runtime == 'static') {
+    stdout.writeln('[agent] static runtime — no process unit required.');
+    return;
+  }
+
+  // Every remaining (service) runtime listens on a port.
+  final port = AgentValidators.requirePort(r['port'] as String?);
 
   final envJson = r['env-json'] as String;
   final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
@@ -293,12 +306,6 @@ Future<void> _applyUnit(List<String> args) async {
       ),
       envVars: envVars,
     );
-    return;
-  }
-
-  // ── Static: no process unit needed ───────────────────────────────────────
-  if (runtime == 'static') {
-    stdout.writeln('[agent] static runtime — no process unit required.');
     return;
   }
 
@@ -394,7 +401,8 @@ Future<void> _applyUnit(List<String> args) async {
 Future<void> _applyVhost(List<String> args) async {
   final r = _parse(args, (p) {
     p.addOption('app-id', mandatory: true);
-    p.addOption('port', mandatory: true);
+    // Optional: a static vhost serves files directly and proxies no port.
+    p.addOption('port');
     p.addMultiOption('hostname');
     // Static-specific
     p.addOption('runtime', defaultsTo: '');
@@ -402,7 +410,6 @@ Future<void> _applyVhost(List<String> args) async {
     p.addFlag('static-spa', defaultsTo: false);
   });
   final appId = int.parse(r['app-id'] as String);
-  final port = AgentValidators.requirePort(r['port'] as String?);
   final runtime = r['runtime'] as String;
   final hostnames = (r['hostname'] as List<String>? ?? <String>[])
       .map(AgentValidators.requireHostname)
@@ -422,6 +429,8 @@ Future<void> _applyVhost(List<String> args) async {
     return;
   }
 
+  // Non-static vhosts reverse-proxy to the app's listening port.
+  final port = AgentValidators.requirePort(r['port'] as String?);
   await Applier().applyVhost(appId: appId, port: port, hostnames: hostnames);
 }
 

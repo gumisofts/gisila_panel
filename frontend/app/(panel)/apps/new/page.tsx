@@ -177,7 +177,8 @@ export default function NewAppPage() {
         name: form.name,
         runtime: form.runtime,
         sourceType: form.sourceType,
-        internalPort: Number(form.internalPort),
+        // Static sites are served directly by Nginx and have no listening port.
+        ...(isStatic ? {} : { internalPort: Number(form.internalPort) }),
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
         buildCommand: form.buildCommand || undefined,
@@ -310,23 +311,25 @@ export default function NewAppPage() {
               </div>
             </div>
 
-            {/* Port */}
-            <div className="space-y-1.5">
-              <Label htmlFor="internalPort">Internal port</Label>
-              <Input
-                id="internalPort"
-                type="number"
-                min={1024}
-                max={65535}
-                required
-                placeholder="e.g. 8080"
-                value={form.internalPort}
-                onChange={(e) => set("internalPort", e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                The port your app listens on (1024–65535). Must be unique across all apps.
-              </p>
-            </div>
+            {/* Port — static sites are served directly by Nginx, no port. */}
+            {!isStatic && (
+              <div className="space-y-1.5">
+                <Label htmlFor="internalPort">Internal port</Label>
+                <Input
+                  id="internalPort"
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  required
+                  placeholder="e.g. 8080"
+                  value={form.internalPort}
+                  onChange={(e) => set("internalPort", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The port your app listens on (1024–65535). Must be unique across all apps.
+                </p>
+              </div>
+            )}
 
             {/* ── Python-specific section ──────────────────────────────────── */}
             {isPython && (

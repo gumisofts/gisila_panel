@@ -61,8 +61,8 @@ class DeploymentWorker {
         app.linuxUser!,
         '--work-dir',
         app.workDir,
-        '--port',
-        '${app.internalPort}',
+        // Static apps have no port; only service runtimes get one.
+        if (app.internalPort != null) ...['--port', '${app.internalPort}'],
       ], deploymentId: deploymentId);
 
       // 2. Build / fetch artifact.
@@ -118,7 +118,7 @@ class DeploymentWorker {
         '--app-id', '${app.id}',
         '--user', app.linuxUser!,
         '--work-dir', app.workDir,
-        '--port', '${app.internalPort}',
+        if (app.internalPort != null) ...['--port', '${app.internalPort}'],
         '--runtime', app.runtime,
         '--env-json', jsonEncode(envMap),
         if (app.startCommand != null) ...['--start-command', app.startCommand!],
@@ -199,7 +199,6 @@ class DeploymentWorker {
         await _runAgent([
           'apply-vhost',
           '--app-id', '${app.id}',
-          '--port', '${app.internalPort}',
           '--runtime', 'static',
           '--static-dir', staticDir,
           if (app.staticSpa == true) '--static-spa',
@@ -209,7 +208,7 @@ class DeploymentWorker {
         await _runAgent([
           'apply-vhost',
           '--app-id', '${app.id}',
-          '--port', '${app.internalPort}',
+          if (app.internalPort != null) ...['--port', '${app.internalPort}'],
           for (final h in hostnames) ...['--hostname', h],
         ], deploymentId: deploymentId);
       }
@@ -286,7 +285,6 @@ class DeploymentWorker {
       await _runAgent([
         'apply-vhost',
         '--app-id', '${app.id}',
-        '--port', '${app.internalPort}',
         '--runtime', 'static',
         '--static-dir', staticDir,
         if (app.staticSpa == true) '--static-spa',
@@ -299,8 +297,7 @@ class DeploymentWorker {
       'apply-vhost',
       '--app-id',
       '${app.id}',
-      '--port',
-      '${app.internalPort}',
+      if (app.internalPort != null) ...['--port', '${app.internalPort}'],
       for (final h in hostnames) ...['--hostname', h],
     ]);
   }
