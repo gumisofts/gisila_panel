@@ -178,6 +178,17 @@ class SupervisorConf {
     if (runtimeBinDir != null) {
       pairs.write(',PATH="$runtimeBinDir:/usr/local/bin:/usr/bin:/bin"');
     }
+    // Stop pnpm from reinstalling deps when the program starts: its pre-script
+    // deps-status check can decide node_modules is stale and trigger an
+    // automatic `pnpm install`, which aborts on the no-TTY modules-purge prompt
+    // (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) and crash-loops the process.
+    // Mirrors the systemd unit. pnpm 11 reads `pnpm_config_*`, pnpm 9/10 read
+    // `npm_config_*`; both are set. The keys are pnpm-specific and ignored by
+    // other runtimes, so this is safe to set unconditionally.
+    pairs.write(',npm_config_verify_deps_before_run="false"'
+        ',pnpm_config_verify_deps_before_run="false"'
+        ',npm_config_confirm_modules_purge="false"'
+        ',pnpm_config_confirm_modules_purge="false"');
     for (final entry in envVars.entries) {
       final escaped =
           entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');

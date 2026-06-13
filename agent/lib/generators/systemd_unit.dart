@@ -430,6 +430,32 @@ class SystemdUnit {
         'Environment=XDG_DATA_HOME=$workDir/tmp/.local/share\n'
         'Environment=XDG_STATE_HOME=$workDir/tmp/.local/state\n';
 
+    // Stop pnpm from reinstalling dependencies when the service starts.
+    //
+    // Before running a script (e.g. `pnpm start`), pnpm 9+ runs a deps-status
+    // check that compares node_modules against the lockfile. The build and the
+    // running service execute in different environments (HOME, store path,
+    // sandbox), so the check can wrongly decide node_modules is stale and kick
+    // off an automatic `pnpm install`. That install wants to purge the existing
+    // modules dir and asks for confirmation — but the unit has no TTY, so it
+    // aborts with
+    //   ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+    // and the service crash-loops. Dependencies were already installed at build
+    // time, so the runtime must never touch them:
+    //   verify-deps-before-run=false → skip the pre-script deps check entirely
+    //   confirm-modules-purge=false  → if a purge is still attempted, do it
+    //                                  without a TTY prompt (pnpm's own remedy)
+    // pnpm 11 reads its settings from the `pnpm_config_*` env prefix; pnpm 9/10
+    // honour `npm_config_*`. We set both so the fix is version-agnostic. These
+    // keys are pnpm-specific and harmlessly ignored by npm/yarn/bun, so gating
+    // on the JIT runtimes (node/bun) is enough.
+    final pnpmLines = isJit
+        ? 'Environment=npm_config_verify_deps_before_run=false\n'
+            'Environment=pnpm_config_verify_deps_before_run=false\n'
+            'Environment=npm_config_confirm_modules_purge=false\n'
+            'Environment=pnpm_config_confirm_modules_purge=false\n'
+        : '';
+
     return '''
 [Unit]
 Description=Gisila app $linuxUser (id=$appId)
@@ -447,7 +473,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${pathLine}${corepkLines}${homeLines}${envLines.toString().trimRight()}
+${pathLine}${corepkLines}${homeLines}${pnpmLines}${envLines.toString().trimRight()}
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true

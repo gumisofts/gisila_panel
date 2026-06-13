@@ -182,6 +182,19 @@ class Builders {
       'HOME': workDir,
       'npm_config_cache': '$workDir/.npm',
       'XDG_CACHE_HOME': '$workDir/.cache',
+      // Keep `pnpm build` (which runs `pnpm run build`) from doing an
+      // interactive deps-status reinstall under `runuser` (no TTY): skip the
+      // pre-script check and never prompt to purge node_modules. Deps were just
+      // installed with --frozen-lockfile above, so this only suppresses a
+      // spurious check, never a needed install. CI=true is pnpm's documented
+      // remedy for the no-TTY modules-purge abort and the correct signal for an
+      // automated build. Both env prefixes are set because pnpm 11 reads
+      // `pnpm_config_*` while pnpm 9/10 read `npm_config_*`.
+      'CI': 'true',
+      'npm_config_verify_deps_before_run': 'false',
+      'pnpm_config_verify_deps_before_run': 'false',
+      'npm_config_confirm_modules_purge': 'false',
+      'pnpm_config_confirm_modules_purge': 'false',
     };
     final installEnv = env != null
         ? {...env, ...nodeEnv}

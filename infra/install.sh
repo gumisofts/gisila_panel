@@ -148,6 +148,23 @@ install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 # The Dart API serves the panel UI directly from backend/web/.
 # No separate Node.js server or systemd unit is needed.
 echo "==> Building panel UI (Vite → backend/web/)"
+# pnpm / corepack hardening for the UI build.
+#
+# Mirrors the per-app build env in agent/lib/runtime/builders.dart and the
+# runtime env in the generated systemd units. On a fresh, TTY-less host this
+# keeps the build deterministic and non-interactive — without it pnpm can abort
+# the modules-dir purge prompt (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) when
+# its pre-script deps check decides to reinstall, or corepack can try to fetch a
+# pinned pnpm into an unwritable cache. CI=true is pnpm's documented remedy; the
+# verify-deps / confirm-purge keys are set under both the npm_config_ (pnpm
+# 9/10) and pnpm_config_ (pnpm 11) prefixes so the fix is version-agnostic.
+export CI=true
+export COREPACK_ENABLE_STRICT=0
+export COREPACK_ENABLE_AUTO_PIN=0
+export npm_config_verify_deps_before_run=false
+export pnpm_config_verify_deps_before_run=false
+export npm_config_confirm_modules_purge=false
+export pnpm_config_confirm_modules_purge=false
 cd "$REPO_DIR/frontend"
 pnpm install --prefer-frozen-lockfile
 pnpm build
