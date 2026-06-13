@@ -90,6 +90,11 @@ ${writableSource ? '''
     network inet stream,
     network inet6 stream,
     network unix stream,
+    # Netlink: libuv/libc use an AF_NETLINK socket to enumerate interfaces and
+    # routes (os.networkInterfaces(), getifaddrs, getaddrinfo). Without it Next's
+    # startup banner and many DNS paths fail. Must match the systemd unit's
+    # RestrictAddressFamilies, which also lists AF_NETLINK.
+    network netlink raw,
 
     # Deny dangerous syscalls implicitly via systemd's seccomp filters.
     deny ptrace,

@@ -102,7 +102,7 @@ ProtectProc=invisible
 RestrictRealtime=true
 RestrictNamespaces=true
 RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 # MemoryDenyWriteExecute disabled for CPython (bytecode compilation)
 SystemCallArchitectures=native
@@ -187,7 +187,7 @@ ProtectControlGroups=true
 RestrictRealtime=true
 RestrictNamespaces=true
 RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
 
@@ -274,7 +274,7 @@ ProtectControlGroups=true
 RestrictRealtime=true
 RestrictNamespaces=true
 RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
 
@@ -465,7 +465,7 @@ ProtectProc=invisible
 RestrictRealtime=true
 RestrictNamespaces=true
 RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 $mdwe
 SystemCallArchitectures=native
