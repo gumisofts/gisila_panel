@@ -394,6 +394,21 @@ class SystemdUnit {
         'Environment=COREPACK_ENABLE_AUTO_PIN=0\n'
         'Environment=COREPACK_HOME=$workDir/.corepack\n';
 
+    // Give pnpm/npm/yarn a writable HOME. The service runs as a system user
+    // whose home (/home/<user>) was never created (useradd --no-create-home)
+    // and is in any case blocked by ProtectHome=true, so pnpm's attempt to read
+    // its global config ($HOME/.config/pnpm/config.yaml) fails with EACCES.
+    // Redirect HOME — and the XDG base dirs derived from it (config / cache /
+    // data / state) — into the app's writable tmp, which is already in
+    // ReadWritePaths and the AppArmor profile. The tools then create and read
+    // their config/cache there instead of in the inaccessible /home.
+    final homeLines =
+        'Environment=HOME=$workDir/tmp\n'
+        'Environment=XDG_CONFIG_HOME=$workDir/tmp/.config\n'
+        'Environment=XDG_CACHE_HOME=$workDir/tmp/.cache\n'
+        'Environment=XDG_DATA_HOME=$workDir/tmp/.local/share\n'
+        'Environment=XDG_STATE_HOME=$workDir/tmp/.local/state\n';
+
     return '''
 [Unit]
 Description=Gisila app $linuxUser (id=$appId)
@@ -411,7 +426,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${pathLine}${corepkLines}${envLines.toString().trimRight()}
+${pathLine}${corepkLines}${homeLines}${envLines.toString().trimRight()}
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true
