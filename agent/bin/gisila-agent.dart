@@ -2453,9 +2453,20 @@ Future<void> _pgCreateDatabase(
       "IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN "
       "CREATE ROLE $role WITH LOGIN PASSWORD '$password'; "
       "END IF; END \$\$;");
-  // Idempotent database creation.
-  await sql("SELECT 'CREATE DATABASE $dbName OWNER $role' "
-      "WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$dbName')\\gexec");
+  // Idempotent database creation. CREATE DATABASE can't run inside a DO block,
+  // and `\gexec` is a psql meta-command that psql only honors from a script or
+  // stdin — not via `-c` (which parses its argument as pure SQL) — so check for
+  // the database first, then create it only if absent.
+  final exists = await _runAsCapture('postgres', [
+    pgBin,
+    '-p',
+    '${5400 + version}',
+    '-tAc',
+    "SELECT 1 FROM pg_database WHERE datname = '$dbName'",
+  ]);
+  if (exists != '1') {
+    await sql('CREATE DATABASE $dbName OWNER $role;');
+  }
 
   // Grant all privileges.
   await sql("GRANT ALL PRIVILEGES ON DATABASE $dbName TO $role;");
@@ -2624,6 +2635,20 @@ Future<void> _runAs(String user, List<String> command) async {
     throw Exception(
         '${command.first} exited ${result.exitCode}: ${result.stderr}');
   }
+}
+
+/// Like [_runAs] but returns stdout (trimmed). Throws on non-zero exit.
+Future<String> _runAsCapture(String user, List<String> command) async {
+  final invocation = _isRoot
+      ? ['runuser', '-u', user, '--', ...command]
+      : ['sudo', '-u', user, ...command];
+  final result =
+      await Process.run(invocation.first, invocation.skip(1).toList());
+  if (result.exitCode != 0) {
+    throw Exception(
+        '${command.first} exited ${result.exitCode}: ${result.stderr}');
+  }
+  return (result.stdout as String).trim();
 }
 
 // =============================================================================
