@@ -231,6 +231,12 @@ fi
 
 # ── 9. /etc/gisila/database.yaml ──────────────────────────────────────────────
 echo "==> Writing /etc/gisila/database.yaml"
+# Detect the major version of the running system cluster so the panel can show
+# its own backing database as a read-only "system" instance (server_version).
+SYSTEM_PG_VERSION="$(sudo -u postgres psql -tAc 'SHOW server_version_num' 2>/dev/null \
+  | awk '{ printf "%d", $1 / 10000 }')"
+SYSTEM_PG_VERSION="${SYSTEM_PG_VERSION:-0}"
+echo "    detected system PostgreSQL major version: $SYSTEM_PG_VERSION"
 cat > /etc/gisila/database.yaml <<EOF
 default: default
 connections:
@@ -246,6 +252,10 @@ connections:
     query_timeout: 30
     max_connections: 20
     min_connections: 2
+    # Major version of this cluster. Surfaced read-only as the "system" instance
+    # in the Databases panel; its port and version are never editable there.
+    additional_params:
+      server_version: $SYSTEM_PG_VERSION
 EOF
 chown "$GISILA_USER:$GISILA_USER" /etc/gisila/database.yaml
 chmod 0640 /etc/gisila/database.yaml

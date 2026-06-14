@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   Table2,
   HardDriveDownload,
+  ServerCog,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -235,10 +236,22 @@ export default function InstancePage() {
                   Default
                 </Badge>
               )}
+              {instance.isSystem && (
+                <Badge variant="secondary" className="gap-1 py-0 text-xs font-normal">
+                  <ServerCog className="h-2.5 w-2.5" />
+                  System
+                </Badge>
+              )}
             </div>
             <p className={cn("text-sm flex items-center gap-1.5 mt-0.5", sc.color)}>
               {sc.icon} {sc.label} · PostgreSQL {instance.version} · port {instance.port}
             </p>
+            {instance.isSystem && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                This is the database the panel runs on. Its port and version are
+                fixed and it cannot be stopped or removed.
+              </p>
+            )}
           </div>
         </div>
 
@@ -265,7 +278,7 @@ export default function InstancePage() {
               Start
             </Button>
           )}
-          {isSuperuser && isRunning && (
+          {isSuperuser && isRunning && !instance.isSystem && (
             <Button
               variant="outline"
               size="sm"
@@ -276,7 +289,7 @@ export default function InstancePage() {
               Stop
             </Button>
           )}
-          {isSuperuser && !instance.isDefault && (
+          {isSuperuser && !instance.isDefault && !instance.isSystem && (
             <Button
               variant="outline"
               size="sm"

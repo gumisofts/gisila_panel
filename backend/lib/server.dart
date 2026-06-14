@@ -51,6 +51,7 @@ Future<Handler> application() async {
 
   final database = await Database.connect(databaseConfig);
   await _seedSuperuser(database);
+  await _seedSystemInstance(database);
 
   final app = GisilaApp(
     config: AppConfig(
@@ -222,6 +223,54 @@ Future<void> _seedSuperuser(Database database) async {
   }).run(database.context());
 
   logger.i('Superuser seeded successfully (id=${user.id})');
+}
+
+/// Surfaces the always-available "system" Postgres instance — the cluster that
+/// backs the panel itself ([systemPgPort] / [systemPgVersion]).
+///
+/// gisila_panel depends on this cluster, so rather than asking the operator to
+/// install it or enter its details, we register it once as a read-only instance
+/// the Databases panel can display automatically. It is matched by port (which
+/// is unique), making this idempotent and safe to call on every startup. Its
+/// port is never editable and its version is read from config, never requested.
+///
+/// Skipped when `server_version` is not configured in database.yaml.
+Future<void> _seedSystemInstance(Database database) async {
+  final version = systemPgVersion;
+  if (version == null) return; // not configured — nothing to surface
+
+  final port = systemPgPort;
+  final existing = await Query<PostgresInstance>(PostgresInstanceTable.metadata)
+      .where(PostgresInstanceTable.port.eq(port))
+      .first(database.context());
+  if (existing != null) return; // already seeded
+
+  // Become the default instance only when no instance exists yet, mirroring
+  // PostgresService.installInstance.
+  final isFirst =
+      await Query<PostgresInstance>(PostgresInstanceTable.metadata)
+              .first(database.context()) ==
+          null;
+
+  logger.i('Seeding system Postgres instance: v$version on port $port');
+  final now = DateTime.now().toUtc().toIso8601String();
+  try {
+    await Query<PostgresInstance>(PostgresInstanceTable.metadata)
+        .insert(<String, Object?>{
+      'version': version,
+      'displayName': 'System database',
+      'port': port,
+      'status': 'running',
+      'isDefault': isFirst,
+      'dataDirectory': '/var/lib/postgresql/$version/main',
+      'installedAt': now,
+      'createdAt': now,
+    }).run(database.context());
+  } catch (e) {
+    // The port column is unique — a concurrent isolate may have won the race.
+    // That is the expected outcome here, not an error.
+    logger.d('System instance seed skipped (already present?): $e');
+  }
 }
 
 /// Serves the compiled panel UI from the `web/` directory.

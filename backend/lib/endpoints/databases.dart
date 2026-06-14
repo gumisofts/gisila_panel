@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
 import 'package:gisila_panel/authz/authz.dart';
+import 'package:gisila_panel/config.dart' show systemPgPort;
 import 'package:gisila_panel/forms/postgres_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart';
@@ -326,6 +327,9 @@ Map<String, Object?> _serializeInstance(PostgresInstance i) => {
       'port': i.port,
       'status': i.status,
       'isDefault': i.isDefault,
+      // The system cluster backs the panel itself: its port is fixed and it
+      // can be neither stopped nor uninstalled.
+      'isSystem': i.port == systemPgPort,
       'dataDirectory': i.dataDirectory,
       'errorMessage': i.errorMessage,
       'installedAt': i.installedAt?.toIso8601String(),

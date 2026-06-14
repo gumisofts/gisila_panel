@@ -265,6 +265,9 @@ export interface PostgresInstance {
   port: number;
   status: PgInstanceStatus;
   isDefault: boolean;
+  /** The always-available cluster that backs the panel itself. Its port is
+   *  fixed and it cannot be stopped or uninstalled. */
+  isSystem?: boolean;
   dataDirectory?: string | null;
   errorMessage?: string | null;
   installedAt?: string | null;

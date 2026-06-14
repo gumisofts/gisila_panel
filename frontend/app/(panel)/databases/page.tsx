@@ -157,6 +157,12 @@ export default function DatabasesPage() {
                             Default
                           </Badge>
                         )}
+                        {inst.isSystem && (
+                          <Badge variant="secondary" className="gap-1 text-xs font-normal py-0">
+                            <ServerCog className="h-2.5 w-2.5" />
+                            System
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         PostgreSQL {inst.version} · port {inst.port}

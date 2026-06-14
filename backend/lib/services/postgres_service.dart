@@ -4,7 +4,7 @@ import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
-import 'package:gisila_panel/config.dart' show env;
+import 'package:gisila_panel/config.dart' show env, systemPgPort;
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:postgres/postgres.dart' as pg;
@@ -186,6 +186,10 @@ class PostgresService extends Service {
 
   Future<PostgresInstance> stopInstance(int id) async {
     final instance = await findInstance(id);
+    if (isSystemInstance(instance)) {
+      // Stopping this cluster would take the panel itself offline.
+      throw HttpException(422, 'Cannot stop the system database.');
+    }
     if (instance.status == 'stopped') return instance;
     await _enqueue('stop_instance', {'instanceId': id});
     return findInstance(id);
@@ -193,6 +197,9 @@ class PostgresService extends Service {
 
   Future<void> uninstallInstance(int id) async {
     final instance = await findInstance(id);
+    if (isSystemInstance(instance)) {
+      throw HttpException(422, 'Cannot uninstall the system database.');
+    }
     if (instance.isDefault == true) {
       throw HttpException(422,
           'Cannot uninstall the default instance. Set another as default first.');
@@ -200,6 +207,12 @@ class PostgresService extends Service {
     await _patchInstance(id, {'status': 'uninstalling'});
     await _enqueue('uninstall_instance', {'instanceId': id});
   }
+
+  /// Whether [instance] is the always-available cluster that backs the panel
+  /// itself. Identified by its port, which is fixed in database.yaml. Its port
+  /// is never editable and it can be neither stopped nor uninstalled.
+  bool isSystemInstance(PostgresInstance instance) =>
+      instance.port == systemPgPort;
 
   // ── Database CRUD ───────────────────────────────────────────────────────────
 

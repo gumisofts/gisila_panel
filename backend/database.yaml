@@ -15,3 +15,7 @@ connections:
     query_timeout: 30
     max_connections: 20
     min_connections: 2
+    # Major version of this cluster. Surfaced read-only as the "system" instance
+    # in the Databases panel (docker-compose runs postgres:16-alpine).
+    additional_params:
+      server_version: 16

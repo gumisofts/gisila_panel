@@ -41,6 +41,31 @@ Future<void> init() async {
   databaseConfig = await DatabaseConfig.fromFile('database.yaml');
 }
 
+// ── System PostgreSQL ─────────────────────────────────────────────────────────
+//
+// The panel runs on its own PostgreSQL cluster — the one configured in
+// database.yaml. That cluster is always available (gisila_panel depends on it),
+// so the Databases panel surfaces it automatically as a read-only "system"
+// instance instead of asking the operator to install or point at it.
+//
+// Connection details come straight from [databaseConfig]; the major version is
+// read from config (the `server_version` key under the default connection's
+// `additional_params`) rather than requested in the UI.
+
+/// Port of the system PostgreSQL cluster that backs the panel. Read-only.
+int get systemPgPort => databaseConfig.defaultConnection.port;
+
+/// Major version of the system PostgreSQL cluster, read from config
+/// (`additional_params.server_version` in database.yaml). Returns null when it
+/// is not configured — in which case the system instance is not surfaced.
+int? get systemPgVersion {
+  final v = databaseConfig.defaultConnection.additionalParams['server_version'];
+  final parsed = v is int ? v : (v is String ? int.tryParse(v) : null);
+  // Treat a missing or non-positive value (e.g. failed install-time detection)
+  // as "not configured" so we never seed a bogus instance.
+  return (parsed != null && parsed > 0) ? parsed : null;
+}
+
 /// Host paths and runtime knobs that the worker / agent need.
 class HostConfig {
   HostConfig({
