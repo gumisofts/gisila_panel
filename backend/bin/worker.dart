@@ -23,6 +23,7 @@ Future<void> main(List<String> args) async {
   final queue = JobQueue();
   queue.on('gisila:queue:deployments', deploymentWorker.onDeployment);
   queue.on('gisila:queue:lifecycle', deploymentWorker.onLifecycle);
+  queue.on('gisila:queue:teardown', deploymentWorker.onTeardown);
   queue.on('gisila:queue:vhosts', deploymentWorker.onVhost);
   queue.on('gisila:queue:ssl', deploymentWorker.onSsl);
   queue.on('gisila:queue:services', serviceWorker.onServiceJob);

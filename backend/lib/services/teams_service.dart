@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 
@@ -51,6 +54,39 @@ class TeamsService extends Service {
       throw Forbidden('You are not a member of this team.');
     }
     return team;
+  }
+
+  /// Remove a team and everything beneath it (projects → apps).
+  ///
+  /// Only the team owner may delete a team. The worker tears down each app's
+  /// host resources before the cascaded rows (projects, apps, members) are
+  /// dropped, so nothing is left running on the host.
+  Future<void> delete(User actor, int teamId) async {
+    final team = await findForUser(actor, teamId);
+    if (team.ownerId != actor.id && actor.isSuperuser != true) {
+      throw Forbidden('Only the team owner can delete a team.');
+    }
+    // Flag every app across the team's projects as deleting for UI feedback.
+    final projects = await Query<Project>(ProjectTable.metadata)
+        .where(ProjectTable.teamId.eq(team.id!))
+        .all(_db.context());
+    final projectIds = projects.map((p) => p.id).whereType<int>().toList();
+    if (projectIds.isNotEmpty) {
+      await Query<App>(AppTable.metadata)
+          .where(AppTable.projectId.inList(projectIds))
+          .update(<String, Object?>{
+        'status': 'deleting',
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      }).run(_db.context());
+    }
+    await RedisClient.instance.rpush(
+      'gisila:queue:teardown',
+      jsonEncode(<String, Object?>{
+        'scope': 'team',
+        'id': team.id,
+        'requestedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
   }
 
   Future<List<TeamMember>> members(int teamId) =>

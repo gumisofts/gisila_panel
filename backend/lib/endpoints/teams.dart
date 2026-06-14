@@ -46,6 +46,17 @@ class TeamsApi {
     return team.toJson();
   }
 
+  @Delete('/{id}', summary: 'Delete a team and all of its projects and apps')
+  Future<Map<String, Object?>> delete(
+    int id,
+    TeamsService teams,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    await teams.delete(user, id);
+    return <String, Object?>{'detail': 'Team removal requested.'};
+  }
+
   @Get('/{id}/members', summary: 'List team members')
   Future<Map<String, Object?>> members(
     int id,

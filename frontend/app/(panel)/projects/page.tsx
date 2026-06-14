@@ -25,7 +25,7 @@ import {
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, Project, Team } from "@/lib/types";
-import { Boxes, FolderOpen, Plus } from "lucide-react";
+import { Boxes, FolderOpen, Plus, Trash2 } from "lucide-react";
 
 export default function ProjectsPage() {
   const { data: projectsData, mutate } = useSWR<ListResponse<Project>>(
@@ -39,9 +39,26 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<Project | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const teams = teamsData?.results ?? [];
   const projects = projectsData?.results ?? [];
+
+  const removeProject = async () => {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      await api(`/projects/${removeTarget.id}`, { method: "DELETE" });
+      toast.success(`Removing "${removeTarget.name}"…`);
+      setRemoveTarget(null);
+      mutate();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove project");
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   // Group projects by team for display
   const byTeam = teams.map((t) => ({
@@ -144,6 +161,15 @@ export default function ProjectsPage() {
                           </p>
                         </div>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        title="Remove project"
+                        onClick={() => setRemoveTarget(p)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                     {p.description && (
                       <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
@@ -169,6 +195,39 @@ export default function ProjectsPage() {
           </section>
         )
       )}
+
+      <Dialog
+        open={removeTarget !== null}
+        onOpenChange={(o) => !o && setRemoveTarget(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove {removeTarget?.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This permanently deletes the project and{" "}
+            <span className="font-medium text-foreground">every app inside it</span>{" "}
+            — each app&apos;s service, files, Linux user, domains and TLS
+            certificates are torn down. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemoveTarget(null)}
+              disabled={removing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={removeProject}
+              disabled={removing}
+            >
+              {removing ? "Removing…" : "Remove project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">

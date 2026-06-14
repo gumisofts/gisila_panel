@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 
@@ -64,12 +67,29 @@ class ProjectsService extends Service {
     return rows.first;
   }
 
+  /// Remove a project and every app it contains.
+  ///
+  /// Deleting the project row would cascade to its apps, orphaning their
+  /// host-side resources (systemd units, Linux users, work dirs, …). Instead we
+  /// mark the child apps `deleting` for immediate UI feedback and hand off to
+  /// the worker, which tears down each app's host resources before dropping the
+  /// project (and its cascaded rows).
   Future<void> delete(User actor, int projectId) async {
     final project = await findForUser(actor, projectId);
-    await Query<Project>(ProjectTable.metadata)
-        .where(ProjectTable.id.eq(project.id!))
-        .delete()
-        .run(_db.context());
+    await Query<App>(AppTable.metadata)
+        .where(AppTable.projectId.eq(project.id!))
+        .update(<String, Object?>{
+      'status': 'deleting',
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    }).run(_db.context());
+    await RedisClient.instance.rpush(
+      'gisila:queue:teardown',
+      jsonEncode(<String, Object?>{
+        'scope': 'project',
+        'id': project.id,
+        'requestedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
   }
 
   Future<void> _ensureTeamAccess(User user, int teamId) async {

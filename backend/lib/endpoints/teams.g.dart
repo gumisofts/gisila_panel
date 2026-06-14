@@ -179,6 +179,57 @@ extension TeamsApiGisilaDoc on TeamsApi {
           ));
     }
     {
+      final basePath = '$prefix/teams/<id>';
+      final openApiPath = '$prefix/teams/{id}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final teams = ctx.service<TeamsService>();
+                final result = await this.delete(id, teams, ctx);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary: 'Delete a team and all of its projects and apps',
+            tags: <String>['Teams'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
       final basePath = '$prefix/teams/<id>/members';
       final openApiPath = '$prefix/teams/{id}/members';
       final RouteConfig __cfg =

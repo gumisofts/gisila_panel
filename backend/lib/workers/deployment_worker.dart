@@ -297,6 +297,49 @@ class DeploymentWorker {
         .run(database.context());
   }
 
+  /// Cascade-remove a project or team and everything beneath it.
+  ///
+  /// The DB schema cascades `team → projects → apps`, so naively deleting the
+  /// top row would drop the app records and orphan their host resources. We
+  /// instead tear down every child app's host side first (via [_destroyApp],
+  /// which also deletes the app row), then delete the project/team row.
+  Future<void> onTeardown(Map<String, Object?> payload) async {
+    final scope = payload['scope'] as String?;
+    final id = payload['id'] as int?;
+    if (scope == null || id == null) return;
+
+    switch (scope) {
+      case 'project':
+        await _destroyProject(id);
+        break;
+      case 'team':
+        final projects = await Query<Project>(ProjectTable.metadata)
+            .where(ProjectTable.teamId.eq(id))
+            .all(database.context());
+        for (final project in projects) {
+          await _destroyProject(project.id!);
+        }
+        await Query<Team>(TeamTable.metadata)
+            .where(TeamTable.id.eq(id))
+            .delete()
+            .run(database.context());
+        break;
+    }
+  }
+
+  Future<void> _destroyProject(int projectId) async {
+    final apps = await Query<App>(AppTable.metadata)
+        .where(AppTable.projectId.eq(projectId))
+        .all(database.context());
+    for (final app in apps) {
+      await _destroyApp(app);
+    }
+    await Query<Project>(ProjectTable.metadata)
+        .where(ProjectTable.id.eq(projectId))
+        .delete()
+        .run(database.context());
+  }
+
   Future<void> onVhost(Map<String, Object?> payload) async {
     final appId = payload['appId'] as int?;
     if (appId == null) return;
