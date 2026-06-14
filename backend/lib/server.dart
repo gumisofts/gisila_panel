@@ -8,6 +8,7 @@ import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
+import 'package:gisila_panel/endpoints/audit.dart';
 import 'package:gisila_panel/endpoints/auth.dart';
 import 'package:gisila_panel/endpoints/deployments.dart';
 import 'package:gisila_panel/endpoints/domains.dart';
@@ -19,10 +20,12 @@ import 'package:gisila_panel/endpoints/security.dart';
 import 'package:gisila_panel/endpoints/databases.dart';
 import 'package:gisila_panel/endpoints/services.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
+import 'package:gisila_panel/infra/audit_middleware.dart';
 import 'package:gisila_panel/infra/database_provider.dart';
 import 'package:gisila_panel/infra/jwt_authenticator.dart';
 import 'package:gisila_panel/infra/postgres_error_mapper.dart';
 import 'package:gisila_panel/services/apps_service.dart';
+import 'package:gisila_panel/services/audit_service.dart';
 import 'package:gisila_panel/services/auth_service.dart';
 import 'package:gisila_panel/services/deployments_service.dart';
 import 'package:gisila_panel/services/domains_service.dart';
@@ -78,11 +81,17 @@ Future<Handler> application() async {
   app.registerService<ManagedServiceService>(ManagedServiceService.new);
   app.registerService<PostgresService>(PostgresService.new);
   app.registerService<MailService>(MailService.new);
+  app.registerService<AuditService>(AuditService.new);
+
+  // Record every successful state-changing request to the AuditLog so the
+  // Activity view reflects exactly what each user did.
+  app.use(auditMiddleware(database));
 
   // ── Controllers + admin + docs ───────────────────────────────────────
   app.registerController(
     attacher: (app, router, {prefix = ''}) {
       AuthApi().attachToApp(app, router, spec, prefix: prefix);
+      AuditApi().attachToApp(app, router, spec, prefix: prefix);
       TeamsApi().attachToApp(app, router, spec, prefix: prefix);
       ProjectsApi().attachToApp(app, router, spec, prefix: prefix);
       AppsApi().attachToApp(app, router, spec, prefix: prefix);

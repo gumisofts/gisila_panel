@@ -22,6 +22,19 @@ export interface Team {
   createdAt: string;
 }
 
+export interface AuditLog {
+  id: ID;
+  actorId?: ID | null;
+  teamId?: ID | null;
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  data?: string | null;
+  createdAt: string;
+}
+
 export interface Project {
   id: ID;
   teamId: ID;
