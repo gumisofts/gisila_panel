@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "@/compat/link";
-import { useEffect } from "react";
-import { useRouter } from "@/compat/navigation";
+import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/api";
 import {
@@ -17,10 +16,9 @@ import {
 } from "lucide-react";
 
 export default function LandingPage() {
-  const router = useRouter();
-  useEffect(() => {
-    if (getToken()) router.replace("/dashboard");
-  }, [router]);
+  // Send already-authenticated visitors straight to the dashboard during render
+  // — redirecting in an effect would flash the marketing page first.
+  if (getToken()) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(139,_92,_246,_0.12),_transparent_60%)]">

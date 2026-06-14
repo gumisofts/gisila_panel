@@ -101,7 +101,55 @@ Future<Handler> application() async {
     },
   );
 
-  return app.buildHandler();
+  // The panel is a client-routed SPA whose routes (`/apps/123`, `/projects`, …)
+  // share the URL namespace with the API controllers above. Without this, a
+  // hard browser refresh of a deep route is matched by the auth-protected API
+  // route — the navigation carries no Bearer token, so the server answers with
+  // a 401 JSON body instead of the app. Intercept top-level HTML navigations
+  // and serve index.html so React Router can take over; real `fetch`/XHR API
+  // calls (which send `Accept: */*` and the Bearer token) fall straight
+  // through to the controllers untouched.
+  return _spaNavigationFallback(app.buildHandler());
+}
+
+/// Wrap [inner] so browser navigations (GET requests that ask for `text/html`)
+/// to non-API, non-asset paths are served the SPA shell instead of hitting the
+/// API router. Everything else — API calls, WebSocket upgrades, the admin and
+/// docs UIs, and static assets — is delegated to [inner] unchanged.
+Handler _spaNavigationFallback(Handler inner) {
+  final index = File('web/index.html');
+  return (Request req) async {
+    if (req.method == 'GET' &&
+        _isSpaNavigation(req) &&
+        index.existsSync()) {
+      return Response.ok(
+        index.readAsBytesSync(),
+        headers: {'content-type': 'text/html; charset=utf-8'},
+      );
+    }
+    return inner(req);
+  };
+}
+
+bool _isSpaNavigation(Request req) {
+  // Only genuine top-level navigations declare they want an HTML document;
+  // `fetch`/XHR from the loaded app send `Accept: */*`, and sub-resource
+  // requests (scripts, styles, images) advertise their own MIME types.
+  final accept = req.headers['accept'] ?? '';
+  if (!accept.contains('text/html')) return false;
+
+  final segments = req.url.pathSegments;
+  final first = segments.isEmpty ? '' : segments.first;
+  // Tooling / API namespaces that own their own HTML or protocol handlers.
+  const reserved = {'ws', 'admin', 'docs', 'openapi.json', 'assets', 'favicon.ico'};
+  if (reserved.contains(first)) return false;
+
+  // A static asset request (the last segment has a file extension) must reach
+  // the static file handler, not the SPA shell.
+  final last = segments.isEmpty ? '' : segments.last;
+  if (last.contains('.')) return false;
+
+  return true;
 }
 
 /// Public entry point called by `gisila-panel --seed-superuser` during

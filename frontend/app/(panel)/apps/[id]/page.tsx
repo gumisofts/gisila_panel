@@ -1,13 +1,22 @@
 "use client";
 
-import { useParams } from "@/compat/navigation";
+import { useState } from "react";
+import { useParams, useRouter } from "@/compat/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Play, RotateCw, Square, Rocket } from "lucide-react";
+import { Play, RotateCw, Square, Rocket, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/status-dot";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tabs,
   TabsContent,
@@ -28,10 +37,13 @@ import { SettingsTab } from "./_tabs/settings";
 
 export default function AppDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const appId = Number(params.id);
   const { data: app, mutate } = useSWR<App>(`/apps/${appId}`, fetcher, {
     refreshInterval: 5000,
   });
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   if (!app) {
     return (
@@ -65,6 +77,23 @@ export default function AppDetailPage() {
     }
   }
 
+  async function removeApp() {
+    setRemoving(true);
+    try {
+      await api(`/apps/${appId}`, { method: "DELETE" });
+      toast.success("App removal started");
+      setConfirmRemove(false);
+      router.push("/apps");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+      setRemoving(false);
+    }
+  }
+
+  // Removal is only offered while the app isn't actively running, building, or
+  // already being deleted — i.e. stopped/created/failed/crashed apps.
+  const canRemove = !["running", "building", "deleting"].includes(app.status);
+
   return (
     <div className="container space-y-6 py-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -95,8 +124,53 @@ export default function AppDetailPage() {
           <Button onClick={deployNow} size="sm">
             <Rocket className="h-4 w-4" /> Deploy now
           </Button>
+          {canRemove && (
+            <Button
+              onClick={() => setConfirmRemove(true)}
+              variant="destructive"
+              size="sm"
+            >
+              <Trash2 className="h-4 w-4" /> Remove
+            </Button>
+          )}
+          {app.status === "deleting" && (
+            <Button variant="destructive" size="sm" disabled>
+              <Trash2 className="h-4 w-4" /> Removing…
+            </Button>
+          )}
         </div>
       </header>
+
+      <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {app.name}?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the app and all of its resources — the
+              systemd service, AppArmor profile, nginx vhost, TLS certificates,
+              the Linux user, and every file under its work directory. Env vars,
+              domains and deployment history are removed too. This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmRemove(false)}
+              disabled={removing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={removeApp}
+              disabled={removing}
+            >
+              {removing ? "Removing…" : "Remove app"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Tabs defaultValue="overview">
         <TabsList>

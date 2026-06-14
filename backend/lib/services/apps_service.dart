@@ -178,15 +178,6 @@ class AppsService extends Service {
     return rows.first;
   }
 
-  Future<void> delete(User actor, int appId) async {
-    final app = await findForUser(actor, appId);
-    // The actual systemd / nginx / user teardown is performed by the worker.
-    await Query<App>(AppTable.metadata)
-        .where(AppTable.id.eq(app.id!))
-        .delete()
-        .run(_db.context());
-  }
-
   Future<void> _validatePort(int port, {int? excludeAppId}) async {
     if (port < 1024 || port > 65535) {
       throw BadRequest('Port must be between 1024 and 65535.');

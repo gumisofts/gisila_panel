@@ -82,7 +82,8 @@ extension AppsApiGisilaDoc on AppsApi {
         'celeryExtraArgs': <String, Object?>{'type': 'string'},
         'staticRoot': <String, Object?>{'type': 'string'},
         'staticSpa': <String, Object?>{'type': 'boolean'},
-        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
     spec.putSchema('UpdateAppForm', <String, Object?>{
@@ -139,7 +140,8 @@ extension AppsApiGisilaDoc on AppsApi {
         'celeryExtraArgs': <String, Object?>{'type': 'string'},
         'staticRoot': <String, Object?>{'type': 'string'},
         'staticSpa': <String, Object?>{'type': 'boolean'},
-        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
     spec.putSchema('ExecCommandForm', <String, Object?>{
@@ -388,8 +390,8 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final apps = ctx.service<AppsService>();
-                final result = await this.delete(id, apps, ctx);
+                final lifecycle = ctx.service<LifecycleService>();
+                final result = await this.delete(id, lifecycle, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -403,7 +405,7 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'delete',
           Operation(
-            summary: 'Delete an app',
+            summary: 'Remove an app and all of its resources',
             tags: <String>['Apps'],
             parameters: <Parameter>[
               Parameter(

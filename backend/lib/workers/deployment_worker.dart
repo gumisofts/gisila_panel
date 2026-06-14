@@ -244,6 +244,12 @@ class DeploymentWorker {
     final app = await _findApp(appId);
     if (app == null) return;
 
+    // Removal tears down every host resource, then drops the DB row.
+    if (action == 'delete') {
+      await _destroyApp(app);
+      return;
+    }
+
     final agentAction = switch (action) {
       'start' => 'start',
       'stop' => 'stop',
@@ -259,6 +265,36 @@ class DeploymentWorker {
       'status': action == 'stop' ? 'stopped' : 'running',
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     }).run(database.context());
+  }
+
+  /// Tear down all host-side resources for [app], then delete its DB row.
+  ///
+  /// The agent removes the systemd/supervisor units, AppArmor profile, nginx
+  /// vhost, TLS certs, work dir and Linux user. Deleting the [App] row cascades
+  /// to its env vars, domains, deployments, metrics and events, so nothing is
+  /// left behind on disk or in the database.
+  Future<void> _destroyApp(App app) async {
+    final domains = await Query<Domain>(DomainTable.metadata)
+        .where(DomainTable.appId.eq(app.id!))
+        .all(database.context());
+    final hostnames = domains
+        .where((d) => d.hostname != null)
+        .map((d) => d.hostname!)
+        .toList();
+
+    await _runAgent([
+      'uninstall',
+      '--app-id', '${app.id}',
+      '--user', app.linuxUser!,
+      '--runtime', app.runtime,
+      '--work-dir', app.workDir,
+      for (final h in hostnames) ...['--hostname', h],
+    ]);
+
+    await Query<App>(AppTable.metadata)
+        .where(AppTable.id.eq(app.id!))
+        .delete()
+        .run(database.context());
   }
 
   Future<void> onVhost(Map<String, Object?> payload) async {

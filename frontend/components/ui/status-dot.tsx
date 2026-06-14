@@ -10,6 +10,7 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "bg-red-500 ring-red-500/30",
   crashed: "bg-red-500 ring-red-500/30",
   created: "bg-zinc-400 ring-zinc-400/30",
+  deleting: "bg-red-500 ring-red-500/30 animate-pulse",
 };
 
 export function StatusDot({

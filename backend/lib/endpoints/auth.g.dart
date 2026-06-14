@@ -28,7 +28,7 @@ extension AuthApiGisilaDoc on AuthApi {
     spec.putSchema('LoginForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'email': <String, Object?>{'type': 'string', 'format': 'email'},
+        'email': <String, Object?>{'type': 'string'},
         'password': <String, Object?>{'type': 'string'}
       }
     });

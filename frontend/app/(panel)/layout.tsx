@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
-import { useRouter } from "@/compat/navigation";
+import { Navigate, Outlet } from "react-router-dom";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { getToken } from "@/lib/api";
 
 export default function PanelLayout() {
-  const router = useRouter();
-  useEffect(() => {
-    if (!getToken()) router.replace("/login");
-  }, [router]);
+  // Guard synchronously during render so logged-out users are redirected before
+  // the panel paints (no flash), and the protected API calls inside child pages
+  // never fire without a token.
+  if (!getToken()) return <Navigate to="/login" replace />;
 
   return (
     <div className="flex min-h-screen">

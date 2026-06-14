@@ -546,8 +546,26 @@ class Applier {
     }
   }
 
-  Future<void> uninstall(String linuxUser, int? appId,
-      {String runtime = ''}) async {
+  /// Fully tear down every host resource an app created, leaving nothing
+  /// behind. Each step is best-effort (`requireSuccess: false`) so a missing
+  /// piece never blocks removal of the rest.
+  ///
+  /// Removed, in order:
+  ///   1. process-manager units (systemd services/target or supervisor conf)
+  ///   2. the AppArmor profile (unloaded from the kernel, then deleted)
+  ///   3. the nginx vhost
+  ///   4. Let's Encrypt certificates for the app's [hostnames]
+  ///   5. the work dir (`/srv/apps/<user>` — releases, shared, logs, …)
+  ///   6. the Linux user account
+  Future<void> uninstall(
+    String linuxUser,
+    int? appId, {
+    String runtime = '',
+    String? workDir,
+    List<String> hostnames = const [],
+    bool removeUser = true,
+  }) async {
+    // ── 1. Process-manager units ──────────────────────────────────────────
     if (isDocker) {
       // Stop the group (celery) or single program (others).
       final target = runtime == 'celery'
@@ -566,7 +584,7 @@ class Applier {
         await ShellExec.run(
             'systemctl', ['disable', 'gisila-$linuxUser.target'],
             requireSuccess: false);
-        // Remove all related unit files
+        // Remove all related unit files (target + worker/beat/flower services).
         for (final f in Directory(systemdDir)
             .listSync()
             .whereType<File>()
@@ -589,12 +607,22 @@ class Applier {
             requireSuccess: false);
         final unitPath = '$systemdDir/gisila-$linuxUser.service';
         if (File(unitPath).existsSync()) File(unitPath).deleteSync();
-        final apparmorPath = '$apparmorDir/gisila-$linuxUser';
-        if (File(apparmorPath).existsSync()) File(apparmorPath).deleteSync();
       }
       await ShellExec.run('systemctl', ['daemon-reload'],
           requireSuccess: false);
+
+      // ── 2. AppArmor profile ─────────────────────────────────────────────
+      // Unload the profile from the kernel before deleting the file, otherwise
+      // the policy lingers in memory until the next reboot.
+      final apparmorPath = '$apparmorDir/gisila-$linuxUser';
+      if (File(apparmorPath).existsSync()) {
+        await ShellExec.run('apparmor_parser', ['-R', apparmorPath],
+            requireSuccess: false);
+        File(apparmorPath).deleteSync();
+      }
     }
+
+    // ── 3. nginx vhost ────────────────────────────────────────────────────
     if (appId != null) {
       final vhost = '$nginxDir/gisila-app-$appId.conf';
       if (File(vhost).existsSync()) File(vhost).deleteSync();
@@ -604,6 +632,29 @@ class Applier {
         await ShellExec.run('systemctl', ['reload', 'nginx'],
             requireSuccess: false);
       }
+    }
+
+    // ── 4. TLS certificates ───────────────────────────────────────────────
+    // Each domain gets its own certbot lineage named after the hostname.
+    for (final hostname in hostnames) {
+      await ShellExec.run(
+        'certbot',
+        ['delete', '--cert-name', hostname, '--non-interactive'],
+        requireSuccess: false,
+      );
+    }
+
+    // ── 5. Work dir ───────────────────────────────────────────────────────
+    // releases/, shared/, logs/, tmp/, the venv/runtime symlinks — everything.
+    if (workDir != null && workDir.isNotEmpty) {
+      await ShellExec.run('rm', ['-rf', workDir], requireSuccess: false);
+    }
+
+    // ── 6. Linux user ─────────────────────────────────────────────────────
+    // The account was created with --no-create-home and its work dir is gone,
+    // so a plain userdel removes it completely.
+    if (removeUser) {
+      await ShellExec.run('userdel', [linuxUser], requireSuccess: false);
     }
   }
 }

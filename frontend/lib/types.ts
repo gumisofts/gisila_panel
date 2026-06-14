@@ -37,7 +37,8 @@ export type AppStatus =
   | "running"
   | "stopped"
   | "failed"
-  | "crashed";
+  | "crashed"
+  | "deleting";
 
 export interface App {
   id: ID;

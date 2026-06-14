@@ -135,15 +135,15 @@ class AppsApi {
     return app.toJson();
   }
 
-  @Delete('/{id}', summary: 'Delete an app')
+  @Delete('/{id}', summary: 'Remove an app and all of its resources')
   Future<Map<String, Object?>> delete(
     int id,
-    AppsService apps,
+    LifecycleService lifecycle,
     RequestContext ctx,
   ) async {
     final user = ctx.principal!.claims['user'] as User;
-    await apps.delete(user, id);
-    return <String, Object?>{'detail': 'App deleted.'};
+    await lifecycle.destroy(user, id);
+    return <String, Object?>{'detail': 'App removal requested.'};
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────

@@ -510,11 +510,25 @@ Future<void> _uninstall(List<String> args) async {
     p.addOption('user', mandatory: true);
     p.addOption('app-id');
     p.addOption('runtime', defaultsTo: '');
+    p.addOption('work-dir');
+    p.addMultiOption('hostname');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final appId = int.tryParse((r['app-id'] as String?) ?? '');
   final runtime = r['runtime'] as String;
-  await Applier().uninstall(user, appId, runtime: runtime);
+  final workDirRaw = (r['work-dir'] as String?)?.trim() ?? '';
+  final workDir =
+      workDirRaw.isEmpty ? null : AgentValidators.requireWorkDir(workDirRaw);
+  final hostnames = (r['hostname'] as List<String>? ?? <String>[])
+      .map(AgentValidators.requireHostname)
+      .toList();
+  await Applier().uninstall(
+    user,
+    appId,
+    runtime: runtime,
+    workDir: workDir,
+    hostnames: hostnames,
+  );
 }
 
 /// Stream an app's runtime logs to stdout (consumed by the panel WebSocket).
