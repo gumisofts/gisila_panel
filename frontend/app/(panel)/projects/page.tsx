@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, Project, Team } from "@/lib/types";
 import { Boxes, FolderOpen, Plus, Trash2 } from "lucide-react";
@@ -41,6 +42,7 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Project | null>(null);
   const [removing, setRemoving] = useState(false);
+  const { canForTeam } = usePermissions();
 
   const teams = teamsData?.results ?? [];
   const projects = projectsData?.results ?? [];
@@ -161,15 +163,17 @@ export default function ProjectsPage() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                        title="Remove project"
-                        onClick={() => setRemoveTarget(p)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canForTeam(p.teamId, "admin") && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                          title="Remove project"
+                          onClick={() => setRemoveTarget(p)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                     {p.description && (
                       <p className="mt-3 text-xs text-muted-foreground line-clamp-2">

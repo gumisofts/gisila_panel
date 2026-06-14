@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/postgres_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart';
@@ -25,7 +26,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> installInstance(
     CreateInstanceForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.installInstance(
       version: form.version.value!,
       displayName: form.displayName.value!,
@@ -47,7 +50,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> startInstance(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.startInstance(id);
     return _serializeInstance(instance);
   }
@@ -56,7 +61,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> stopInstance(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.stopInstance(id);
     return _serializeInstance(instance);
   }
@@ -65,7 +72,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> setDefault(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.setDefault(id);
     return _serializeInstance(instance);
   }
@@ -74,7 +83,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> uninstallInstance(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     await svc.uninstallInstance(id);
     return {'detail': 'Uninstall queued.'};
   }
@@ -102,7 +113,9 @@ class DatabasesApi {
     int id,
     UpdateConfigForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.updateConfig(id, _toStringMap(form.settings.value));
     return _serializeInstance(instance);
   }
@@ -129,7 +142,9 @@ class DatabasesApi {
     int id,
     CreateDatabaseForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     final extList = _toStringList(form.extensions.value);
     final password = form.password.value?.isNotEmpty == true
@@ -165,7 +180,9 @@ class DatabasesApi {
     int id,
     int dbId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     await svc.dropDatabase(dbId);
     return {'detail': 'Drop queued.'};
   }
@@ -188,7 +205,9 @@ class DatabasesApi {
     int dbId,
     BackupForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final scope = form.scope.value?.isNotEmpty == true ? form.scope.value! : 'full';
     final backup = await svc.triggerBackup(dbId, scope: scope);
     return _serializeBackup(backup);
@@ -223,7 +242,9 @@ class DatabasesApi {
     int dbId,
     int backupId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     await svc.deleteBackup(backupId);
     return {'detail': 'Backup deleted.'};
   }
@@ -235,7 +256,9 @@ class DatabasesApi {
     int dbId,
     RestoreBackupForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     await svc.restoreFromBackup(form.backupId.value!);
     return {'detail': 'Restore queued.'};
   }
@@ -248,6 +271,7 @@ class DatabasesApi {
     RequestContext ctx,
     PostgresService svc,
   ) async {
+    requireSuperuser(ctx);
     final filename = ctx.request.headers['x-filename'] ?? 'upload.sql';
     final bytes = <int>[];
     await for (final chunk in ctx.request.read()) {
@@ -276,7 +300,9 @@ class DatabasesApi {
     int dbId,
     BackupScheduleForm form,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final s = await svc.updateSchedule(
       dbId,
       enabled: form.enabled.value,

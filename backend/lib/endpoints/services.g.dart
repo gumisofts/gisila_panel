@@ -135,7 +135,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final request = ctx.request;
                 final form = await bindForm(request, InstallServiceForm.new);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.install(form, svc);
+                final result = await this.install(form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -236,7 +236,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final form =
                     await bindForm(request, UpdateServiceConfigForm.new);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.configure(id, form, svc);
+                final result = await this.configure(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -292,7 +292,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.start(id, svc);
+                final result = await this.start(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -343,7 +343,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.stop(id, svc);
+                final result = await this.stop(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -394,7 +394,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.uninstall(id, svc);
+                final result = await this.uninstall(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

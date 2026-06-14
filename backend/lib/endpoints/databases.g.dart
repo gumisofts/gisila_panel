@@ -128,7 +128,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final request = ctx.request;
                 final form = await bindForm(request, CreateInstanceForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.installInstance(form, svc);
+                final result = await this.installInstance(form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -227,7 +227,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.startInstance(id, svc);
+                final result = await this.startInstance(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -278,7 +278,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.stopInstance(id, svc);
+                final result = await this.stopInstance(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -329,7 +329,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.setDefault(id, svc);
+                final result = await this.setDefault(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -380,7 +380,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.uninstallInstance(id, svc);
+                final result = await this.uninstallInstance(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -534,7 +534,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, UpdateConfigForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.updateConfig(id, form, svc);
+                final result = await this.updateConfig(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -642,7 +642,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, CreateDatabaseForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.createDatabase(id, form, svc);
+                final result = await this.createDatabase(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -760,7 +760,7 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 final dbId =
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.dropDatabase(id, dbId, svc);
+                final result = await this.dropDatabase(id, dbId, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -881,7 +881,8 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final form = await bindForm(request, BackupForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.createBackup(id, dbId, form, svc);
+                final result =
+                    await this.createBackup(id, dbId, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1018,7 +1019,8 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     request.params['backupId'], 'backupId',
                     required: true);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.deleteBackup(id, dbId, backupId, svc);
+                final result =
+                    await this.deleteBackup(id, dbId, backupId, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1086,7 +1088,8 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final form = await bindForm(request, RestoreBackupForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.restoreBackup(id, dbId, form, svc);
+                final result =
+                    await this.restoreBackup(id, dbId, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1272,7 +1275,8 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final form = await bindForm(request, BackupScheduleForm.new);
                 final svc = ctx.service<PostgresService>();
-                final result = await this.updateSchedule(id, dbId, form, svc);
+                final result =
+                    await this.updateSchedule(id, dbId, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

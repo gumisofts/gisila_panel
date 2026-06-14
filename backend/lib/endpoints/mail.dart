@@ -1,4 +1,5 @@
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/mail_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/mail_service.dart';
@@ -16,7 +17,8 @@ class MailApi {
   }
 
   @Post('/install', summary: 'Install the mail tooling on this host')
-  Future<Map<String, Object?>> install(MailService svc) async {
+  Future<Map<String, Object?>> install(MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     await svc.enqueueInstall();
     return {'detail': 'Installation queued.'};
   }
@@ -33,7 +35,9 @@ class MailApi {
   Future<Map<String, Object?>> addDomain(
     MailDomainForm form,
     MailService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final domain = await svc.addDomain(form.domain.value!);
     return _serializeDomain(domain);
   }
@@ -43,7 +47,9 @@ class MailApi {
     int id,
     MailDomainUpdateForm form,
     MailService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final domain = await svc.updateDomain(
       id,
       mailHostname: form.mailHostname.value,
@@ -53,7 +59,12 @@ class MailApi {
   }
 
   @Delete('/domains/{id}', summary: 'Remove a mail domain and its mailboxes')
-  Future<Map<String, Object?>> removeDomain(int id, MailService svc) async {
+  Future<Map<String, Object?>> removeDomain(
+    int id,
+    MailService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
     await svc.removeDomain(id);
     return {'detail': 'Domain removed.'};
   }
@@ -71,7 +82,12 @@ class MailApi {
   }
 
   @Post('/domains/{id}/sync', summary: 'Re-queue a mail sync for this domain')
-  Future<Map<String, Object?>> syncDomain(int id, MailService svc) async {
+  Future<Map<String, Object?>> syncDomain(
+    int id,
+    MailService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
     await svc.findDomain(id); // validates existence
     await svc.enqueueSync();
     return {'detail': 'Sync queued.'};
@@ -93,7 +109,9 @@ class MailApi {
     int id,
     MailAccountForm form,
     MailService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final account = await svc.addAccount(
       domainId: id,
       localPart: form.localPart.value!,
@@ -109,14 +127,21 @@ class MailApi {
     int id,
     MailPasswordForm form,
     MailService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final account = await svc.setPassword(id, form.password.value!);
     final domain = await svc.findDomain(account.mailDomainId);
     return _serializeAccount(account, domain);
   }
 
   @Delete('/accounts/{id}', summary: 'Delete a mailbox')
-  Future<Map<String, Object?>> removeAccount(int id, MailService svc) async {
+  Future<Map<String, Object?>> removeAccount(
+    int id,
+    MailService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
     await svc.removeAccount(id);
     return {'detail': 'Mailbox deleted.'};
   }

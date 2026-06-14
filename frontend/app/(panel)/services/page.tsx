@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { ListResponse, ManagedService, ServiceDef } from "@/lib/types";
 
@@ -284,6 +285,7 @@ function CatalogCard({
 }) {
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState("");
+  const { isSuperuser } = usePermissions();
 
   const isInstalled = !!installed;
 
@@ -364,7 +366,7 @@ function CatalogCard({
             Installed · View
             <ArrowRight className="h-3 w-3" />
           </Link>
-        ) : (
+        ) : isSuperuser ? (
           <Button
             size="sm"
             variant="outline"
@@ -379,7 +381,7 @@ function CatalogCard({
             )}
             {def.requiresInstall ? "Install" : "Configure"}
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );

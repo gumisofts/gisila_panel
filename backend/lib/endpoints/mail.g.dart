@@ -106,7 +106,7 @@ extension MailApiGisilaDoc on MailApi {
             handler: (RequestContext ctx) async {
               try {
                 final svc = ctx.service<MailService>();
-                final result = await this.install(svc);
+                final result = await this.install(svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -188,7 +188,7 @@ extension MailApiGisilaDoc on MailApi {
                 final request = ctx.request;
                 final form = await bindForm(request, MailDomainForm.new);
                 final svc = ctx.service<MailService>();
-                final result = await this.addDomain(form, svc);
+                final result = await this.addDomain(form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -237,7 +237,7 @@ extension MailApiGisilaDoc on MailApi {
                     coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, MailDomainUpdateForm.new);
                 final svc = ctx.service<MailService>();
-                final result = await this.updateDomain(id, form, svc);
+                final result = await this.updateDomain(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -293,7 +293,7 @@ extension MailApiGisilaDoc on MailApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MailService>();
-                final result = await this.removeDomain(id, svc);
+                final result = await this.removeDomain(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -395,7 +395,7 @@ extension MailApiGisilaDoc on MailApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MailService>();
-                final result = await this.syncDomain(id, svc);
+                final result = await this.syncDomain(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -498,7 +498,7 @@ extension MailApiGisilaDoc on MailApi {
                     coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, MailAccountForm.new);
                 final svc = ctx.service<MailService>();
-                final result = await this.addAccount(id, form, svc);
+                final result = await this.addAccount(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -555,7 +555,7 @@ extension MailApiGisilaDoc on MailApi {
                     coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, MailPasswordForm.new);
                 final svc = ctx.service<MailService>();
-                final result = await this.setPassword(id, form, svc);
+                final result = await this.setPassword(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -611,7 +611,7 @@ extension MailApiGisilaDoc on MailApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MailService>();
-                final result = await this.removeAccount(id, svc);
+                final result = await this.removeAccount(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

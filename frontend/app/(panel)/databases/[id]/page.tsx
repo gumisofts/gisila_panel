@@ -33,6 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { MetricsPanel } from "./_panels/metrics-panel";
 import { ConfigPanel } from "./_panels/config-panel";
@@ -128,6 +129,7 @@ export default function InstancePage() {
   const { data: dbsData } =
     useSWR<ListResponse<PostgresDatabase>>(dbsKey, fetcher, { refreshInterval: 4000 });
 
+  const { isSuperuser } = usePermissions();
   const [busy, setBusy] = useState<string | null>(null);
   const [showCreate, setShowCreate]   = useState(false);
   const [newDb, setNewDb]             = useState("");
@@ -229,7 +231,7 @@ export default function InstancePage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {!instance.isDefault && isRunning && (
+          {isSuperuser && !instance.isDefault && isRunning && (
             <Button
               variant="outline"
               size="sm"
@@ -240,7 +242,7 @@ export default function InstancePage() {
               Set default
             </Button>
           )}
-          {instance.status === "stopped" && (
+          {isSuperuser && instance.status === "stopped" && (
             <Button
               variant="outline"
               size="sm"
@@ -251,7 +253,7 @@ export default function InstancePage() {
               Start
             </Button>
           )}
-          {isRunning && (
+          {isSuperuser && isRunning && (
             <Button
               variant="outline"
               size="sm"
@@ -262,7 +264,7 @@ export default function InstancePage() {
               Stop
             </Button>
           )}
-          {!instance.isDefault && (
+          {isSuperuser && !instance.isDefault && (
             <Button
               variant="outline"
               size="sm"
@@ -297,7 +299,7 @@ export default function InstancePage() {
             <Table2 className="h-4 w-4 text-muted-foreground" />
             Databases &amp; users
           </h2>
-          {isRunning && (
+          {isRunning && isSuperuser && (
             <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
               <Plus className="mr-1.5 h-3.5 w-3.5" />
               Create database
@@ -359,7 +361,7 @@ export default function InstancePage() {
                         >
                           Connection info
                         </Button>
-                        {db.status === "active" && (
+                        {db.status === "active" && isSuperuser && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -370,15 +372,17 @@ export default function InstancePage() {
                             Backups
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-destructive hover:text-destructive"
-                          onClick={() => handleDrop(db.id)}
-                          disabled={!!busy}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {isSuperuser && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-destructive hover:text-destructive"
+                            onClick={() => handleDrop(db.id)}
+                            disabled={!!busy}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardContent>

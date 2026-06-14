@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
@@ -29,7 +30,8 @@ class DeploymentsService extends Service {
     String? artifactPath,
   }) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    // Deploying is a developer-level action.
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     final now = DateTime.now().toUtc();
     final deployment = await Query<Deployment>(DeploymentTable.metadata)
@@ -73,7 +75,7 @@ class DeploymentsService extends Service {
 
   Future<Deployment> rollback(User actor, int appId, int deploymentId) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     final target = await Query<Deployment>(DeploymentTable.metadata)
         .where(DeploymentTable.id.eq(deploymentId))

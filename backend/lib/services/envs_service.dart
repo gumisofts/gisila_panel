@@ -1,5 +1,6 @@
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
 
@@ -22,7 +23,7 @@ class EnvsService extends Service {
     bool isSecret = false,
   }) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     final existing = await Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.appId.eq(app.id!))
@@ -62,7 +63,7 @@ class EnvsService extends Service {
 
   Future<void> delete(User actor, int appId, int envId) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
     await Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.id.eq(envId))
         .where(EnvVarTable.appId.eq(app.id!))

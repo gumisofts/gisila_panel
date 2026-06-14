@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/slugs.dart';
@@ -89,16 +90,30 @@ class TeamsService extends Service {
     );
   }
 
+  /// Map of teamId → the caller's role, for every team they belong to.
+  Future<Map<int, String>> membershipRoles(User user) async {
+    final memberships = await Query<TeamMember>(TeamMemberTable.metadata)
+        .where(TeamMemberTable.userId.eq(user.id!))
+        .all(_db.context());
+    return <int, String>{
+      for (final m in memberships)
+        if (m.teamId != null) m.teamId!: m.role ?? 'developer',
+    };
+  }
+
   Future<List<TeamMember>> members(int teamId) =>
       Query<TeamMember>(TeamMemberTable.metadata)
           .where(TeamMemberTable.teamId.eq(teamId))
           .all(_db.context());
 
   Future<TeamMember> invite(
+    User actor,
     Team team, {
     required String email,
     String role = 'developer',
   }) async {
+    // Managing team members is an admin-level action.
+    await requireTeamRole(_db, actor, team.id!, TeamRole.admin);
     final user = await Query<User>(UserTable.metadata)
         .where(UserTable.email.eq(email))
         .first(_db.context());

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:gisila_doc/gisila_doc.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/app_forms.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
@@ -196,7 +197,8 @@ class AppsApi {
     RequestContext ctx,
   ) async {
     final user = ctx.principal!.claims['user'] as User;
-    final app = await apps.findForUser(user, id);
+    // Running an arbitrary command inside the app is a developer-level action.
+    final app = await apps.requireAppRole(user, id, TeamRole.developer);
     final command = form.command.value!.trim();
     if (command.isEmpty) {
       throw HttpException(422, 'command is required');

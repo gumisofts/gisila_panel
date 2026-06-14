@@ -15,8 +15,16 @@ class TeamsApi {
   ) async {
     final user = ctx.principal!.claims['user'] as User;
     final result = await teams.listForUser(user);
+    final roles = await teams.membershipRoles(user);
     return <String, Object?>{
-      'results': result.map((t) => t.toJson()).toList(),
+      'results': result.map((t) {
+        final json = t.toJson();
+        // Surface the caller's role so the UI can hide actions they can't perform.
+        json['myRole'] = user.isSuperuser == true
+            ? 'owner'
+            : (roles[t.id] ?? 'viewer');
+        return json;
+      }).toList(),
     };
   }
 
@@ -81,6 +89,7 @@ class TeamsApi {
     final user = ctx.principal!.claims['user'] as User;
     final team = await teams.findForUser(user, id);
     final member = await teams.invite(
+      user,
       team,
       email: form.email.value!,
       role: form.role.value ?? 'developer',

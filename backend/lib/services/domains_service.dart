@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
@@ -27,7 +28,7 @@ class DomainsService extends Service {
   }) async {
     final appsSvc = AppsService();
     appsSvc.attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     final domain =
         await Query<Domain>(DomainTable.metadata).insert(<String, Object?>{
@@ -55,7 +56,7 @@ class DomainsService extends Service {
 
   Future<void> issueCert(User actor, int appId, int domainId) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     final domain = await Query<Domain>(DomainTable.metadata)
         .where(DomainTable.id.eq(domainId))
@@ -79,7 +80,7 @@ class DomainsService extends Service {
 
   Future<void> delete(User actor, int appId, int domainId) async {
     final appsSvc = AppsService()..attach(ctx);
-    final app = await appsSvc.findForUser(actor, appId);
+    final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
     await Query<Domain>(DomainTable.metadata)
         .where(DomainTable.id.eq(domainId))

@@ -1,4 +1,5 @@
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/service_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/catalog.dart';
@@ -36,7 +37,9 @@ class ServicesApi {
   Future<Map<String, Object?>> install(
     InstallServiceForm form,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final installed = await svc.install(
       serviceType: form.serviceType.value!,
       displayName: form.displayName.value!,
@@ -59,7 +62,9 @@ class ServicesApi {
     int id,
     UpdateServiceConfigForm form,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final updated = await svc.configure(
       id,
       _toStringMap(form.config.value),
@@ -71,7 +76,9 @@ class ServicesApi {
   Future<Map<String, Object?>> start(
     int id,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final updated = await svc.start(id);
     return _serialize(updated);
   }
@@ -80,7 +87,9 @@ class ServicesApi {
   Future<Map<String, Object?>> stop(
     int id,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final updated = await svc.stop(id);
     return _serialize(updated);
   }
@@ -89,7 +98,9 @@ class ServicesApi {
   Future<Map<String, Object?>> uninstall(
     int id,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     await svc.uninstall(id);
     return <String, Object?>{'detail': 'Uninstall queued.'};
   }

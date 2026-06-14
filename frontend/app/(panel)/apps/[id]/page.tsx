@@ -24,6 +24,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { App } from "@/lib/types";
 import { OverviewTab } from "./_tabs/overview";
@@ -44,6 +45,7 @@ export default function AppDetailPage() {
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const { canForProject } = usePermissions();
 
   if (!app) {
     return (
@@ -90,9 +92,15 @@ export default function AppDetailPage() {
     }
   }
 
-  // Removal is only offered while the app isn't actively running, building, or
-  // already being deleted — i.e. stopped/created/failed/crashed apps.
-  const canRemove = !["running", "building", "deleting"].includes(app.status);
+  // Role-based gating (backend enforces these too; this just hides controls).
+  const canDeploy = canForProject(app.projectId, "developer");
+  const canStop = canForProject(app.projectId, "admin");
+  const canDelete = canForProject(app.projectId, "admin");
+
+  // Removal is only offered to admins while the app isn't actively running,
+  // building, or already being deleted — i.e. stopped/created/failed/crashed.
+  const canRemove =
+    canDelete && !["running", "building", "deleting"].includes(app.status);
 
   return (
     <div className="container space-y-6 py-8">
@@ -112,18 +120,26 @@ export default function AppDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => lifecycle("start")} variant="outline" size="sm">
-            <Play className="h-4 w-4" /> Start
-          </Button>
-          <Button onClick={() => lifecycle("restart")} variant="outline" size="sm">
-            <RotateCw className="h-4 w-4" /> Restart
-          </Button>
-          <Button onClick={() => lifecycle("stop")} variant="outline" size="sm">
-            <Square className="h-4 w-4" /> Stop
-          </Button>
-          <Button onClick={deployNow} size="sm">
-            <Rocket className="h-4 w-4" /> Deploy now
-          </Button>
+          {canDeploy && (
+            <Button onClick={() => lifecycle("start")} variant="outline" size="sm">
+              <Play className="h-4 w-4" /> Start
+            </Button>
+          )}
+          {canDeploy && (
+            <Button onClick={() => lifecycle("restart")} variant="outline" size="sm">
+              <RotateCw className="h-4 w-4" /> Restart
+            </Button>
+          )}
+          {canStop && (
+            <Button onClick={() => lifecycle("stop")} variant="outline" size="sm">
+              <Square className="h-4 w-4" /> Stop
+            </Button>
+          )}
+          {canDeploy && (
+            <Button onClick={deployNow} size="sm">
+              <Rocket className="h-4 w-4" /> Deploy now
+            </Button>
+          )}
           {canRemove && (
             <Button
               onClick={() => setConfirmRemove(true)}

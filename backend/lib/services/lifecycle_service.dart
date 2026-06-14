@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
@@ -22,19 +23,20 @@ class LifecycleService extends Service {
       );
 
   Future<void> start(User actor, int appId) async {
-    final app = await _resolveApp(actor, appId);
+    final app = await _resolveApp(actor, appId, TeamRole.developer);
     await _enqueueLifecycle(app.id!, 'start');
     await _markEvent(app, actor, 'restart', 'Start requested.');
   }
 
   Future<void> stop(User actor, int appId) async {
-    final app = await _resolveApp(actor, appId);
+    // Taking an app down is an admin-level action.
+    final app = await _resolveApp(actor, appId, TeamRole.admin);
     await _enqueueLifecycle(app.id!, 'stop');
     await _markEvent(app, actor, 'stop', 'Stop requested.');
   }
 
   Future<void> restart(User actor, int appId) async {
-    final app = await _resolveApp(actor, appId);
+    final app = await _resolveApp(actor, appId, TeamRole.developer);
     await _enqueueLifecycle(app.id!, 'restart');
     await _markEvent(app, actor, 'restart', 'Restart requested.');
   }
@@ -45,7 +47,8 @@ class LifecycleService extends Service {
   /// Marks the app `deleting`, enqueues the teardown job, and the worker
   /// performs the host-side cleanup before dropping the DB row.
   Future<void> destroy(User actor, int appId) async {
-    final app = await _resolveApp(actor, appId);
+    // Removing an app is an admin-level action.
+    final app = await _resolveApp(actor, appId, TeamRole.admin);
     // Block removal only while the app is actively running or building. A
     // previously-requested removal that got stuck in `deleting` may be retried —
     // the worker's teardown is idempotent.
@@ -66,9 +69,9 @@ class LifecycleService extends Service {
     await _markEvent(app, actor, 'delete', 'Removal requested.');
   }
 
-  Future<App> _resolveApp(User actor, int appId) async {
+  Future<App> _resolveApp(User actor, int appId, TeamRole min) async {
     final appsSvc = AppsService()..attach(ctx);
-    return appsSvc.findForUser(actor, appId);
+    return appsSvc.requireAppRole(actor, appId, min);
   }
 
   Future<void> _markEvent(App app, User actor, String kind, String msg) async {

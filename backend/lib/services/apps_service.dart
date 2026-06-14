@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/projects_service.dart';
@@ -36,6 +37,19 @@ class AppsService extends Service {
     if (app == null) throw NotFound('App not found.');
     final projectsSvc = ProjectsService()..attach(ctx);
     await projectsSvc.findForUser(user, app.projectId);
+    return app;
+  }
+
+  /// Like [findForUser] but also enforces that the caller holds at least the
+  /// [min] role in the app's owning team. Returns the app on success. Used by
+  /// every mutating app operation (deploy, lifecycle, env, domains, …).
+  Future<App> requireAppRole(User user, int appId, TeamRole min) async {
+    final app = await findForUser(user, appId); // membership (read) gate first
+    final project = await Query<Project>(ProjectTable.metadata)
+        .where(ProjectTable.id.eq(app.projectId))
+        .first(_db.context());
+    if (project == null) throw NotFound('App not found.');
+    await requireTeamRole(_db, user, project.teamId, min);
     return app;
   }
 
@@ -89,7 +103,9 @@ class AppsService extends Service {
     int? deployKeyId,
   }) async {
     final projectsSvc = ProjectsService()..attach(ctx);
-    await projectsSvc.findForUser(actor, projectId);
+    final project = await projectsSvc.findForUser(actor, projectId);
+    // Creating an app is a developer-level action.
+    await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
 
     // Static apps carry no port; every service runtime needs a unique one.
     final isStatic = runtime == 'static';
@@ -163,7 +179,8 @@ class AppsService extends Service {
     int appId,
     Map<String, Object?> patch,
   ) async {
-    final app = await findForUser(actor, appId);
+    // Editing app settings is a developer-level action.
+    final app = await requireAppRole(actor, appId, TeamRole.developer);
     if (patch.isEmpty) {
       throw BadRequest('No updatable fields provided.');
     }

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type {
   ManagedService,
@@ -513,6 +514,10 @@ function ServiceActions({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const { isSuperuser } = usePermissions();
+
+  // Managed services are node-global infra — only superusers may control them.
+  if (!isSuperuser) return null;
 
   async function act(action: "start" | "stop" | "uninstall") {
     setBusy(action);

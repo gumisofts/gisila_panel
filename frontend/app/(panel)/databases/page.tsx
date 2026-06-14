@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { ListResponse, PostgresInstance, PgInstanceStatus } from "@/lib/types";
 
@@ -61,6 +62,7 @@ export default function DatabasesPage() {
     { refreshInterval: 5000 }
   );
 
+  const { isSuperuser } = usePermissions();
   const [showInstall, setShowInstall] = useState(false);
   const [version, setVersion]         = useState<string>("16");
   const [displayName, setDisplayName] = useState("");
@@ -103,10 +105,12 @@ export default function DatabasesPage() {
             Manage PostgreSQL instances. Each version runs on its own port.
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowInstall(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Install version
-        </Button>
+        {isSuperuser && (
+          <Button size="sm" onClick={() => setShowInstall(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Install version
+          </Button>
+        )}
       </div>
 
       {/* Instances list */}
@@ -122,10 +126,12 @@ export default function DatabasesPage() {
                 Install a version to get started. Multiple versions can run side-by-side.
               </p>
             </div>
-            <Button size="sm" onClick={() => setShowInstall(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Install version
-            </Button>
+            {isSuperuser && (
+              <Button size="sm" onClick={() => setShowInstall(true)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Install version
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (

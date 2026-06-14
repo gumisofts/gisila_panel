@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/slugs.dart';
@@ -27,7 +28,8 @@ class ProjectsService extends Service {
     required String name,
     String? description,
   }) async {
-    await _ensureTeamAccess(actor, teamId);
+    // Creating projects is a developer-level action.
+    await requireTeamRole(_db, actor, teamId, TeamRole.developer);
     return Query<Project>(ProjectTable.metadata).insert(<String, Object?>{
       'teamId': teamId,
       'name': name,
@@ -53,6 +55,7 @@ class ProjectsService extends Service {
     String? description,
   }) async {
     final project = await findForUser(actor, projectId);
+    await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
     final payload = <String, Object?>{
       if (name != null) 'name': name,
       if (description != null) 'description': description,
@@ -76,6 +79,8 @@ class ProjectsService extends Service {
   /// project (and its cascaded rows).
   Future<void> delete(User actor, int projectId) async {
     final project = await findForUser(actor, projectId);
+    // Deleting a project (and all its apps) is an admin-level action.
+    await requireTeamRole(_db, actor, project.teamId, TeamRole.admin);
     await Query<App>(AppTable.metadata)
         .where(AppTable.projectId.eq(project.id!))
         .update(<String, Object?>{

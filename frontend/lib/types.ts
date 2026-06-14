@@ -13,6 +13,8 @@ export interface User {
   updatedAt?: string | null;
 }
 
+export type Role = "viewer" | "developer" | "admin" | "owner";
+
 export interface Team {
   id: ID;
   name: string;
@@ -20,6 +22,8 @@ export interface Team {
   ownerId: ID;
   plan: string;
   createdAt: string;
+  /** The current user's role in this team (added by the API on list). */
+  myRole?: Role;
 }
 
 export interface AuditLog {
