@@ -178,6 +178,18 @@ export default function InstancePage() {
     }
   }
 
+  async function showConnection(db: PostgresDatabase) {
+    // The list endpoint omits connection info (the plain-text password is only
+    // returned for a single database), so fetch the single-database view, which
+    // includes it. Fall back to the row we already have on error.
+    try {
+      const full = await api<PostgresDatabase>(`/databases/${id}/dbs/${db.id}`);
+      setJustCreated(full);
+    } catch {
+      setJustCreated(db);
+    }
+  }
+
   async function handleDrop(dbId: number) {
     if (!confirm("Drop this database and its role? This cannot be undone.")) return;
     await action(`/databases/${id}/dbs/${dbId}`, "DELETE", dbsKey);
@@ -356,7 +368,7 @@ export default function InstancePage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setJustCreated(db)}
+                          onClick={() => showConnection(db)}
                           className="h-7 px-2 text-xs"
                         >
                           Connection info
