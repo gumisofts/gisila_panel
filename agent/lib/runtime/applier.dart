@@ -317,9 +317,27 @@ class Applier {
     required int appId,
     required int port,
     required List<String> hostnames,
+    String? staticRoot,
+    String? mediaRoot,
   }) async {
-    final vhost =
-        NginxVhost(appId: appId, port: port, hostnames: hostnames).render();
+    // Only let nginx serve a file root that actually exists and is non-empty
+    // (e.g. Django collectstatic produced it). A bare/missing dir is dropped so
+    // non-Django apps keep every path proxied to the app process.
+    final effectiveStatic = _servableDir(staticRoot, requireNonEmpty: true);
+    // Media is served even when empty so uploads created after deploy are
+    // reachable without re-rendering the vhost.
+    final effectiveMedia = _servableDir(mediaRoot, requireNonEmpty: false);
+    // www-data must be able to traverse the per-app dirs and read the tree.
+    if (effectiveStatic != null) await _grantNginxAccess(effectiveStatic);
+    if (effectiveMedia != null) await _grantNginxAccess(effectiveMedia);
+
+    final vhost = NginxVhost(
+      appId: appId,
+      port: port,
+      hostnames: hostnames,
+      staticRoot: effectiveStatic,
+      mediaRoot: effectiveMedia,
+    ).render();
     Directory(nginxDir).createSync(recursive: true);
     File('$nginxDir/gisila-app-$appId.conf').writeAsStringSync(vhost);
     await ShellExec.run('nginx', ['-t'], requireSuccess: false);
@@ -358,6 +376,18 @@ class Applier {
       await ShellExec.run('systemctl', ['reload', 'nginx'],
           requireSuccess: false);
     }
+  }
+
+  /// Returns [dir] when it is a directory nginx should serve, else null.
+  ///
+  /// A null/empty path, or (when [requireNonEmpty]) an empty directory, yields
+  /// null so the caller omits the corresponding nginx `location` block.
+  static String? _servableDir(String? dir, {required bool requireNonEmpty}) {
+    if (dir == null || dir.isEmpty) return null;
+    final d = Directory(dir);
+    if (!d.existsSync()) return null;
+    if (requireNonEmpty && d.listSync().isEmpty) return null;
+    return dir;
   }
 
   /// Resolve the directory nginx should actually serve for a static app.

@@ -209,6 +209,14 @@ class DeploymentWorker {
           'apply-vhost',
           '--app-id', '${app.id}',
           if (app.internalPort != null) ...['--port', '${app.internalPort}'],
+          // Django apps collect static/media under shared/ (see builders.dart);
+          // let nginx serve them directly at /static/ and /media/. The agent
+          // ignores roots that don't exist, so non-Django Python apps proxy as
+          // before.
+          if (app.runtime == 'python') ...[
+            '--static-root', '${app.workDir}/shared/static',
+            '--media-root', '${app.workDir}/shared/media',
+          ],
           for (final h in hostnames) ...['--hostname', h],
         ], deploymentId: deploymentId);
       }

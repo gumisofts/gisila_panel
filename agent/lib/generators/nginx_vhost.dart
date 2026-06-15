@@ -70,17 +70,53 @@ class NginxVhost {
     required this.appId,
     required this.port,
     required this.hostnames,
+    this.staticRoot,
+    this.staticUrl = '/static/',
+    this.mediaRoot,
+    this.mediaUrl = '/media/',
   });
 
   final int appId;
   final int port;
   final List<String> hostnames;
 
+  /// When set, nginx serves [staticUrl] (default `/static/`) directly from this
+  /// directory via `alias`, bypassing the app process. Used for Django's
+  /// collected static files. Null leaves all paths proxied to the app.
+  final String? staticRoot;
+  final String staticUrl;
+
+  /// When set, nginx serves [mediaUrl] (default `/media/`) from this directory.
+  final String? mediaRoot;
+  final String mediaUrl;
+
+  /// One `location <url> { alias <root>/; }` block, or '' when [root] is null.
+  /// [immutable] adds a long-lived cache header (right for hashed static assets,
+  /// wrong for user-uploaded media which can change in place).
+  String _fileLocation(String? root, String url, {required bool immutable}) {
+    if (root == null) return '';
+    final u = url.endsWith('/') ? url : '$url/';
+    final cache = immutable
+        ? '        expires 1y;\n'
+            '        add_header Cache-Control "public, immutable";\n'
+            '        access_log off;\n'
+        : '';
+    return '''
+
+    location $u {
+        alias $root/;
+$cache        try_files \$uri =404;
+    }
+''';
+  }
+
   String render() {
     if (hostnames.isEmpty) {
       return '# app=$appId has no hostnames yet — vhost intentionally empty.\n';
     }
     final names = hostnames.join(' ');
+    final staticBlock = _fileLocation(staticRoot, staticUrl, immutable: true);
+    final mediaBlock = _fileLocation(mediaRoot, mediaUrl, immutable: false);
     return '''
 # Managed by gisila-agent — do not edit by hand.
 server {
@@ -92,7 +128,7 @@ server {
     location /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
     }
-
+$staticBlock$mediaBlock
     location / {
         proxy_pass http://127.0.0.1:$port;
         proxy_http_version 1.1;

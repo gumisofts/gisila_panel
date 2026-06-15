@@ -450,6 +450,10 @@ Future<void> _applyVhost(List<String> args) async {
     p.addOption('runtime', defaultsTo: '');
     p.addOption('static-dir');   // absolute path to static files directory
     p.addFlag('static-spa', defaultsTo: false);
+    // Reverse-proxy apps (e.g. Django) may additionally serve collected static
+    // and uploaded media straight from disk at /static/ and /media/.
+    p.addOption('static-root'); // absolute path to collected static files
+    p.addOption('media-root');  // absolute path to uploaded media files
   });
   final appId = int.parse(r['app-id'] as String);
   final runtime = r['runtime'] as String;
@@ -473,7 +477,13 @@ Future<void> _applyVhost(List<String> args) async {
 
   // Non-static vhosts reverse-proxy to the app's listening port.
   final port = AgentValidators.requirePort(r['port'] as String?);
-  await Applier().applyVhost(appId: appId, port: port, hostnames: hostnames);
+  await Applier().applyVhost(
+    appId: appId,
+    port: port,
+    hostnames: hostnames,
+    staticRoot: r['static-root'] as String?,
+    mediaRoot: r['media-root'] as String?,
+  );
 }
 
 Future<void> _issueCert(List<String> args) async {
