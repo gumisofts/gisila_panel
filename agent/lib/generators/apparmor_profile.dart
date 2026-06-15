@@ -55,6 +55,14 @@ ${writableSource ? '''
     # system libs plus the pyenv / fnm / pnpm / bun runtime stores.
     /etc/ssl/certs/** r,
     /usr/share/ca-certificates/** r,
+    # System config is read-only and not where per-app secrets live (those come
+    # via the unit's Environment=, not files). Granting the whole tree read keeps
+    # us out of a whack-a-mole with libraries that probe /etc — e.g. Python's
+    # mimetypes / WhiteNoise reading /etc/mime.types (without this the app 500s
+    # with "PermissionError: [Errno 13] '/etc/mime.types'"), GSSAPI's
+    # /etc/gss/mech.d, timezone data, etc. DAC still protects root-only files
+    # like /etc/shadow since the app runs as an unprivileged user.
+    /etc/** r,
     /usr/lib/** rm,
     /lib/** rm,
     /opt/** rm,

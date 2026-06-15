@@ -292,7 +292,11 @@ class PostgresService extends Service {
 
   Map<String, Object?> connectionInfo(
       PostgresInstance instance, PostgresDatabase db) {
-    final host = 'localhost';
+    // Use 127.0.0.1, not 'localhost': PgBouncer binds IPv4 only, but 'localhost'
+    // resolves to ::1 (IPv6) first on dual-stack hosts, so a libpq client gets
+    // ECONNREFUSED on 6432 before it ever tries 127.0.0.1. Pinning IPv4 here
+    // keeps connection strings working regardless of resolver order.
+    final host = '127.0.0.1';
     final port = instance.port;
     final url =
         'postgresql://${db.roleName}:${db.password}@$host:$port/${db.dbName}';
