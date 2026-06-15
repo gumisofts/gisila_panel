@@ -123,6 +123,7 @@ class Builders {
     required String user,
     String? buildCommand,
     String? nodeVersion,
+    Map<String, String>? appEnv,
   }) async {
     final src = '$workDir/releases/current_build';
 
@@ -196,9 +197,18 @@ class Builders {
       'npm_config_confirm_modules_purge': 'false',
       'pnpm_config_confirm_modules_purge': 'false',
     };
-    final installEnv = env != null
-        ? {...env, ...nodeEnv}
-        : {...Platform.environment, ...nodeEnv};
+    // Layer the app's configured env vars (the panel's "env vars" / .env) under
+    // the build environment so client-side frameworks bake them into the bundle
+    // at build time. Vite (`VITE_*`), CRA (`REACT_APP_*`), Astro, etc. read
+    // these prefixed vars from `process.env`; without them the build falls back
+    // to its compiled-in defaults (e.g. a default backend URL). appEnv goes
+    // BELOW nodeEnv so the infra overrides (HOME, COREPACK_*, npm cache, CI)
+    // always win over anything the user may have set with the same name.
+    final installEnv = <String, String>{
+      ...(env ?? Platform.environment),
+      ...?appEnv,
+      ...nodeEnv,
+    };
 
     // 4. pnpm 10+ ignores dependency build scripts (Prisma, esbuild, sharp, …)
     //    by default and aborts with ERR_PNPM_IGNORED_BUILDS.  Approving them
@@ -482,6 +492,7 @@ class Builders {
     required String user,
     String? buildCommand,
     String? bunVersion,
+    Map<String, String>? appEnv,
   }) async {
     final src = '$workDir/releases/current_build';
     Map<String, String>? env;
@@ -498,8 +509,15 @@ class Builders {
       ], requireSuccess: false);
     }
     final cmd = buildCommand ?? 'bun install';
-    if (env != null) {
-      await _runAsUserWithEnv(user, src, cmd, env);
+    // Inject the app's configured env vars so a build step bakes client-side
+    // vars (e.g. NEXT_PUBLIC_*) into its output. The bun PATH override (when
+    // present) is layered first so app vars never shadow it.
+    if (env != null || appEnv != null) {
+      await _runAsUserWithEnv(user, src, cmd, {
+        ...(env ?? Platform.environment),
+        ...?appEnv,
+        if (env != null) 'PATH': env['PATH']!,
+      });
     } else {
       await _runAsUser(user, src, cmd);
     }
@@ -898,10 +916,18 @@ class Builders {
     required String workDir,
     required String user,
     String? buildCommand,
+    Map<String, String>? appEnv,
   }) async {
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
-      // Install deps first (npm ci / bun install), then run the build.
-      await buildNode(workDir: workDir, user: user, buildCommand: buildCommand);
+      // Install deps first (npm ci / bun install), then run the build. appEnv is
+      // forwarded so the build bakes the app's configured env vars (e.g.
+      // VITE_*/REACT_APP_* backend URLs) into the static bundle.
+      await buildNode(
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        appEnv: appEnv,
+      );
     }
     // No compiled binary to install — Nginx will serve the files directly
     // from releases/current_build/<static_root>.

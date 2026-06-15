@@ -207,6 +207,7 @@ Future<void> _build(List<String> args) async {
         user: user,
         buildCommand: buildCommand,
         nodeVersion: r['node-version'] as String?,
+        appEnv: appEnv,
       );
       break;
     case 'bun':
@@ -215,6 +216,7 @@ Future<void> _build(List<String> args) async {
         user: user,
         buildCommand: buildCommand,
         bunVersion: r['bun-version'] as String?,
+        appEnv: appEnv,
       );
       break;
     case 'python':
@@ -237,7 +239,11 @@ Future<void> _build(List<String> args) async {
       break;
     case 'static':
       await Builders.buildStatic(
-          workDir: workDir, user: user, buildCommand: buildCommand);
+        workDir: workDir,
+        user: user,
+        buildCommand: buildCommand,
+        appEnv: appEnv,
+      );
       break;
     case 'zig':
     case 'binary':

@@ -81,12 +81,14 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
-        // Django build-time commands (migrate/collectstatic) need the app's
-        // runtime env to reach the right database.
-        if (app.runtime == 'python' || app.runtime == 'celery') ...[
-          '--env-json',
-          jsonEncode(envMap),
-        ],
+        // App env vars are needed at build time across runtimes:
+        //  - Django (python/celery): migrate/collectstatic must reach the same
+        //    DB/config as the runtime unit.
+        //  - static/node/bun: client-side frameworks bake VITE_*/REACT_APP_*/
+        //    NEXT_PUBLIC_* into the bundle at build time, so a missing env here
+        //    leaves the build on its compiled-in defaults (e.g. backend URL).
+        // It is harmless for runtimes that don't consult it, so always pass it.
+        '--env-json', jsonEncode(envMap),
         if (app.gitUrl != null) ...['--git-url', app.gitUrl!],
         if (app.gitBranch != null) ...['--git-branch', app.gitBranch!],
         if (app.buildCommand != null && app.buildCommand!.isNotEmpty) ...[
