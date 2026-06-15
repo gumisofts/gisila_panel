@@ -2311,7 +2311,8 @@ Future<void> _postgres(List<String> args) async {
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
           .toList();
-      await _pgCreateDatabase(version, db, role, pass, exts);
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgCreateDatabase(version, port, db, role, pass, exts);
 
     case 'drop-db':
       if (version == null) throw ArgumentError('--version required');
@@ -2320,7 +2321,8 @@ Future<void> _postgres(List<String> args) async {
       if (db.isEmpty || role.isEmpty) {
         throw ArgumentError('--db and --role required');
       }
-      await _pgDropDatabase(version, db, role);
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgDropDatabase(version, port, db, role);
 
     case 'ensure-monitor':
       if (version == null) throw ArgumentError('--version required');
@@ -2341,7 +2343,9 @@ Future<void> _postgres(List<String> args) async {
       if (db.isEmpty || output.isEmpty) {
         throw ArgumentError('--db and --output required');
       }
-      await _pgBackup(version, db, output, opts['scope'] as String? ?? 'full');
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgBackup(
+          version, port, db, output, opts['scope'] as String? ?? 'full');
 
     case 'restore':
       if (version == null) throw ArgumentError('--version required');
@@ -2350,7 +2354,8 @@ Future<void> _postgres(List<String> args) async {
       if (db.isEmpty || input.isEmpty) {
         throw ArgumentError('--db and --input required');
       }
-      await _pgRestore(version, db, input);
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgRestore(version, port, db, input);
 
     default:
       throw ArgumentError('Unknown postgres subcommand: $sub');
@@ -2447,6 +2452,7 @@ Future<void> _pgUninstallInstance(int version) async {
 /// Create a Postgres role + database and optionally install extensions.
 Future<void> _pgCreateDatabase(
   int version,
+  int port,
   String dbName,
   String role,
   String password,
@@ -2456,7 +2462,7 @@ Future<void> _pgCreateDatabase(
   final pgBin = '/usr/lib/postgresql/$version/bin/psql';
 
   Future<void> sql(String statement) =>
-      _runAs('postgres', [pgBin, '-p', '${5400 + version}', '-c', statement]);
+      _runAs('postgres', [pgBin, '-p', '$port', '-c', statement]);
 
   // Idempotent role creation.
   await sql("DO \$\$ BEGIN "
@@ -2470,7 +2476,7 @@ Future<void> _pgCreateDatabase(
   final exists = await _runAsCapture('postgres', [
     pgBin,
     '-p',
-    '${5400 + version}',
+    '$port',
     '-tAc',
     "SELECT 1 FROM pg_database WHERE datname = '$dbName'",
   ]);
@@ -2486,7 +2492,7 @@ Future<void> _pgCreateDatabase(
     await _runAs('postgres', [
       pgBin,
       '-p',
-      '${5400 + version}',
+      '$port',
       '-d',
       dbName,
       '-c',
@@ -2542,11 +2548,12 @@ Future<void> _pgConfigure(int version, int port, String settingsJson) async {
   await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
 }
 
-Future<void> _pgDropDatabase(int version, String dbName, String role) async {
+Future<void> _pgDropDatabase(
+    int version, int port, String dbName, String role) async {
   final pgBin = '/usr/lib/postgresql/$version/bin/psql';
 
   Future<void> sql(String statement) =>
-      _runAs('postgres', [pgBin, '-p', '${5400 + version}', '-c', statement]);
+      _runAs('postgres', [pgBin, '-p', '$port', '-c', statement]);
 
   // Terminate active connections then drop.
   await sql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -2572,6 +2579,7 @@ String _shq(String s) => "'${s.replaceAll("'", r"'\''")}'";
 /// masked by gzip's success. Prints `{"sizeBytes": N}` on success.
 Future<void> _pgBackup(
   int version,
+  int port,
   String dbName,
   String output,
   String scope,
@@ -2585,7 +2593,6 @@ Future<void> _pgBackup(
     _ => '',
   };
   final pgDump = '/usr/lib/postgresql/$version/bin/pg_dump';
-  final port = 5400 + version;
   final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
 
   final inner = 'set -o pipefail; '
@@ -2610,12 +2617,12 @@ Future<void> _pgBackup(
 ///
 /// Best-effort (ON_ERROR_STOP=0) so a full dump applied over an existing schema
 /// still loads what it can; corruption is caught by pipefail on the decompressor.
-Future<void> _pgRestore(int version, String dbName, String input) async {
+Future<void> _pgRestore(
+    int version, int port, String dbName, String input) async {
   if (!await File(input).exists()) {
     throw Exception('Restore source not found: $input');
   }
   final psql = '/usr/lib/postgresql/$version/bin/psql';
-  final port = 5400 + version;
   final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
   final decompress = input.endsWith('.gz') ? 'gunzip -c' : 'cat';
 
