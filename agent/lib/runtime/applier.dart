@@ -349,21 +349,56 @@ class Applier {
     }
   }
 
-  /// Write a static-file nginx vhost.
+  /// How many published static releases to retain under `releases/web/` (the
+  /// live one always counts toward this budget and is never pruned).
+  static const _keepStaticReleases = 5;
+
+  /// Write a static-file nginx vhost backed by an atomically-swapped release.
+  ///
+  /// nginx always serves the **stable symlink** `<workDir>/current/web`. On a
+  /// deploy ([publishFrom] set) the freshly-built output is copied into a new
+  /// `releases/web/<id>` directory and `current/web` is repointed at it with a
+  /// single `ln -sfn` (a `rename(2)`, hence atomic); old releases are then
+  /// pruned. Because the swap happens only after a successful build and nginx's
+  /// `root` never changes, nginx never observes a deleted or half-built root —
+  /// this is what fixes the "works, then 404" bug where the previous design
+  /// served `releases/current_build` directly and that directory was `rm -rf`'d
+  /// at the start of the next build.
+  ///
+  /// When [publishFrom] is null (e.g. a domain add/remove re-rendering the
+  /// vhost) the current release is left in place and only the `server_name` /
+  /// SPA settings are refreshed.
   Future<void> applyStaticVhost({
     required int appId,
-    required String staticDir,
+    required String workDir,
     required List<String> hostnames,
+    String? publishFrom,
+    String? releaseId,
+    String? user,
     bool isSpa = false,
   }) async {
-    final resolved = _resolveStaticDir(staticDir);
-    // nginx (www-data) must be able to reach + read the build output. The per-app
-    // work dir and its releases/ are 0750 app-owned, so without this nginx gets
-    // "stat() … failed (13: Permission denied)" and serves nothing.
-    await _grantNginxAccess(resolved);
+    final served = '$workDir/current/web';
+
+    if (publishFrom != null && publishFrom.isNotEmpty) {
+      final resolved = _resolveStaticDir(publishFrom);
+      final realDir = await _publishStaticRelease(
+        workDir: workDir,
+        sourceDir: resolved,
+        releaseId: releaseId,
+        user: user,
+      );
+      // nginx (www-data) must reach + read the published tree. The per-app work
+      // dir and its releases/ are 0750 app-owned, so without this nginx gets
+      // "stat() … failed (13: Permission denied)" and serves nothing.
+      await _grantNginxAccess(realDir);
+    }
+    // nginx follows `current/web` → the real release dir; grant traverse on
+    // `current/` so it can resolve the symlink even on a no-publish re-render.
+    await _grantTraverse('$workDir/current');
+
     final vhost = StaticNginxVhost(
       appId: appId,
-      staticDir: resolved,
+      staticDir: served,
       hostnames: hostnames,
       isSpa: isSpa,
     ).render();
@@ -375,6 +410,85 @@ class Applier {
     } else {
       await ShellExec.run('systemctl', ['reload', 'nginx'],
           requireSuccess: false);
+    }
+  }
+
+  /// Copy [sourceDir] into a fresh `releases/web/<id>` directory, atomically
+  /// repoint `current/web` at it, then prune all but the newest
+  /// [_keepStaticReleases] releases (never the live one). Returns the absolute
+  /// path of the new release dir.
+  Future<String> _publishStaticRelease({
+    required String workDir,
+    required String sourceDir,
+    String? releaseId,
+    String? user,
+  }) async {
+    final id = (releaseId != null && releaseId.isNotEmpty)
+        ? releaseId
+        : DateTime.now().toUtc().millisecondsSinceEpoch.toString();
+    final webRoot = '$workDir/releases/web';
+    final releaseDir = '$webRoot/$id';
+    final link = '$workDir/current/web';
+
+    await ShellExec.run('mkdir', ['-p', webRoot]);
+    // Re-deploying the same id (e.g. a retried deployment) must start clean.
+    await ShellExec.run('rm', ['-rf', releaseDir]);
+    await ShellExec.run('mkdir', ['-p', releaseDir]);
+    // Copy the *contents* of the resolved build output (the trailing `/.` keeps
+    // dotfiles and avoids nesting the source dir name inside the release).
+    await ShellExec.run('cp', ['-a', '$sourceDir/.', releaseDir]);
+    // Never expose VCS metadata (the source may be the repo root when a plain
+    // HTML site has no build subdir). Best-effort.
+    await ShellExec.run('rm', ['-rf', '$releaseDir/.git'], requireSuccess: false);
+    if (user != null && user.isNotEmpty) {
+      await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
+          requireSuccess: false);
+    }
+
+    // Atomic swap: `ln -sfn` replaces the symlink via rename(2), so nginx sees
+    // either the old target or the new one — never a missing root.
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
+    if (user != null && user.isNotEmpty) {
+      await ShellExec.run('chown', ['-h', '$user:$user', link],
+          requireSuccess: false);
+    }
+
+    await _pruneStaticReleases(webRoot, liveTarget: releaseDir);
+    return releaseDir;
+  }
+
+  /// Keep the newest [_keepStaticReleases] release dirs under [webRoot] (always
+  /// including [liveTarget]); delete the rest. Best-effort — a failed prune must
+  /// never fail the deploy.
+  Future<void> _pruneStaticReleases(String webRoot,
+      {required String liveTarget}) async {
+    final dir = Directory(webRoot);
+    if (!dir.existsSync()) return;
+    final dirs = dir.listSync().whereType<Directory>().toList()
+      // Newest first by mtime — deployment ids and ms timestamps don't sort
+      // lexically, so order by modification time instead.
+      ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+    final keep = <String>{liveTarget};
+    for (final d in dirs) {
+      if (keep.length >= _keepStaticReleases) break;
+      keep.add(d.path);
+    }
+    for (final d in dirs) {
+      if (!keep.contains(d.path)) {
+        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+      }
+    }
+  }
+
+  /// Grant www-data the traverse (execute) bit on a single directory, falling
+  /// back to widening the "other" bit when ACLs are unavailable.
+  Future<void> _grantTraverse(String dir) async {
+    if (await _ensureAcl()) {
+      await ShellExec.run('setfacl', ['-m', 'u:www-data:--x', dir],
+          requireSuccess: false);
+    } else {
+      await ShellExec.run('chmod', ['o+x', dir], requireSuccess: false);
     }
   }
 

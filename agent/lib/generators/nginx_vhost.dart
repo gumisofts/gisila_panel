@@ -12,8 +12,11 @@ class StaticNginxVhost {
 
   final int appId;
 
-  /// Absolute path to the directory Nginx should serve (e.g.
-  /// `/srv/apps/app_xxx/releases/current_build/dist`).
+  /// Absolute path to the directory Nginx should serve. This is the stable
+  /// symlink `/srv/apps/app_xxx/current/web`, which the agent atomically
+  /// repoints at the latest published release (`releases/web/<id>`) on each
+  /// deploy — so the path here never changes and never points at a build dir
+  /// that is about to be wiped.
   final String staticDir;
   final List<String> hostnames;
   final bool isSpa;

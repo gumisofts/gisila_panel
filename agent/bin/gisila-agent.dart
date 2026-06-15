@@ -461,7 +461,11 @@ Future<void> _applyVhost(List<String> args) async {
     p.addMultiOption('hostname');
     // Static-specific
     p.addOption('runtime', defaultsTo: '');
-    p.addOption('static-dir');   // absolute path to static files directory
+    p.addOption('work-dir');     // app work dir; nginx serves <work-dir>/current/web
+    p.addOption('user');         // app's Linux user (owns the published release)
+    p.addOption('publish-from'); // build output to publish into a new release + swap
+    p.addOption('release-id');   // release dir name (defaults to a timestamp)
+    p.addOption('static-dir');   // deprecated: superseded by --work-dir/--publish-from
     p.addFlag('static-spa', defaultsTo: false);
     // Reverse-proxy apps (e.g. Django) may additionally serve collected static
     // and uploaded media straight from disk at /static/ and /media/.
@@ -475,14 +479,14 @@ Future<void> _applyVhost(List<String> args) async {
       .toList();
 
   if (runtime == 'static') {
-    final staticDir = r['static-dir'] as String?;
-    if (staticDir == null || staticDir.isEmpty) {
-      throw ArgumentError('--static-dir is required for runtime=static');
-    }
+    final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
     await Applier().applyStaticVhost(
       appId: appId,
-      staticDir: staticDir,
+      workDir: workDir,
       hostnames: hostnames,
+      publishFrom: r['publish-from'] as String?,
+      releaseId: r['release-id'] as String?,
+      user: r['user'] as String?,
       isSpa: r['static-spa'] as bool,
     );
     return;

@@ -197,19 +197,26 @@ class DeploymentWorker {
           .toList();
 
       if (app.runtime == 'static') {
-        // Static sites are served directly by Nginx — pass the static dir.
+        // Static sites are served by Nginx from the stable symlink
+        // <workDir>/current/web. The agent publishes the freshly-built output
+        // into releases/web/<deploymentId> and atomically repoints that symlink,
+        // so nginx never serves a half-built or deleted root (the old
+        // "works then 404" bug). Pass the build output as --publish-from.
         final staticRoot =
             (app.staticRoot != null && app.staticRoot!.isNotEmpty)
                 ? app.staticRoot!
                 : '';
-        final staticDir = staticRoot.isNotEmpty
+        final buildOutput = staticRoot.isNotEmpty
             ? '${app.workDir}/releases/current_build/$staticRoot'
             : '${app.workDir}/releases/current_build';
         await _runAgent([
           'apply-vhost',
           '--app-id', '${app.id}',
           '--runtime', 'static',
-          '--static-dir', staticDir,
+          '--work-dir', app.workDir,
+          '--user', app.linuxUser!,
+          '--publish-from', buildOutput,
+          '--release-id', '$deploymentId',
           if (app.staticSpa == true) '--static-spa',
           for (final h in hostnames) ...['--hostname', h],
         ], deploymentId: deploymentId);
@@ -371,18 +378,15 @@ class DeploymentWorker {
         .toList();
 
     if (app.runtime == 'static') {
-      final staticRoot =
-          (app.staticRoot != null && app.staticRoot!.isNotEmpty)
-              ? app.staticRoot!
-              : '';
-      final staticDir = staticRoot.isNotEmpty
-          ? '${app.workDir}/releases/current_build/$staticRoot'
-          : '${app.workDir}/releases/current_build';
+      // A vhost-only change (e.g. adding/removing a domain) must NOT republish
+      // or rebuild — re-render the vhost against the existing live release at
+      // <workDir>/current/web, leaving the served files untouched.
       await _runAgent([
         'apply-vhost',
         '--app-id', '${app.id}',
         '--runtime', 'static',
-        '--static-dir', staticDir,
+        '--work-dir', app.workDir,
+        '--user', app.linuxUser!,
         if (app.staticSpa == true) '--static-spa',
         for (final h in hostnames) ...['--hostname', h],
       ]);
