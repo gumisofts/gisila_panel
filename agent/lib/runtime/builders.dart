@@ -522,6 +522,7 @@ class Builders {
     String? buildCommand,
     String? pythonVersion,
     String pyenvRoot = '/opt/pyenv',
+    Map<String, String>? appEnv,
   }) async {
     final src = '$workDir/releases/current_build';
     final venv = '$src/.venv';
@@ -588,7 +589,7 @@ class Builders {
     //     interpreter. They are best-effort: collectstatic is skipped silently
     //     when STATIC_ROOT is not configured, and migrate failures are surfaced
     //     in the build log without aborting the whole deployment.
-    await _runDjangoManagementCommands(user, src, workDir);
+    await _runDjangoManagementCommands(user, src, workDir, appEnv);
 
     // 6. Symlink the venv into <workDir>/current so the systemd ExecStart
     //    path is stable across deployments.
@@ -610,7 +611,8 @@ class Builders {
   /// Detect a Django project and run its standard deploy-time management
   /// commands. No-op for non-Django Python apps.
   static Future<void> _runDjangoManagementCommands(
-      String user, String src, String workDir) async {
+      String user, String src, String workDir,
+      [Map<String, String>? appEnv]) async {
     if (!File('$src/manage.py').existsSync()) return;
 
     // Confirm Django is actually installed in the venv before invoking
@@ -630,10 +632,11 @@ class Builders {
       ['-u', user, '--', 'bash', '-lc',
         'source .venv/bin/activate && python manage.py migrate --noinput'],
       cwd: src,
+      env: appEnv,
       requireSuccess: false,
     );
 
-    await _runDjangoCollectStatic(user, src, workDir);
+    await _runDjangoCollectStatic(user, src, workDir, appEnv);
   }
 
   /// Collect Django static files into a writable, per-app directory that nginx
@@ -652,7 +655,8 @@ class Builders {
   /// `collectstatic --settings=<shim>` then writes into the app-owned directory.
   /// The matching nginx `location /static/` is added by the vhost step.
   static Future<void> _runDjangoCollectStatic(
-      String user, String src, String workDir) async {
+      String user, String src, String workDir,
+      [Map<String, String>? appEnv]) async {
     final staticRoot = djangoStaticRoot(workDir);
     final mediaRoot = djangoMediaRoot(workDir);
 
@@ -694,6 +698,7 @@ class Builders {
         'source .venv/bin/activate && '
             'python manage.py collectstatic --noinput$settingsArg'],
       cwd: src,
+      env: appEnv,
       requireSuccess: false,
     );
   }
@@ -840,6 +845,7 @@ class Builders {
     String? buildCommand,
     String? pythonVersion,
     String pyenvRoot = '/opt/pyenv',
+    Map<String, String>? appEnv,
   }) async {
     final src = '$workDir/releases/current_build';
     final venv = '$src/.venv';
@@ -873,7 +879,7 @@ class Builders {
         '"celery>=5.3" "flower>=2.0"');
 
     // Run Django management commands if applicable.
-    await _runDjangoManagementCommands(user, src, workDir);
+    await _runDjangoManagementCommands(user, src, workDir, appEnv);
 
     // Symlink venv for stable path in systemd units.
     await ShellExec.run('mkdir', ['-p', '$workDir/current']);

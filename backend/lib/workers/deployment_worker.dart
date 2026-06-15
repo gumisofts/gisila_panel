@@ -65,6 +65,14 @@ class DeploymentWorker {
         if (app.internalPort != null) ...['--port', '${app.internalPort}'],
       ], deploymentId: deploymentId);
 
+      // App env vars are needed both by the build (Django migrate/collectstatic
+      // must hit the same DB/config as the runtime unit) and by apply-unit
+      // below, so fetch them once up front.
+      final appEnvVars = await Query<EnvVar>(EnvVarTable.metadata)
+          .where(EnvVarTable.appId.eq(app.id!))
+          .all(database.context());
+      final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
+
       // 2. Build / fetch artifact.
       await _runAgent([
         'build',
@@ -73,6 +81,12 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
+        // Django build-time commands (migrate/collectstatic) need the app's
+        // runtime env to reach the right database.
+        if (app.runtime == 'python' || app.runtime == 'celery') ...[
+          '--env-json',
+          jsonEncode(envMap),
+        ],
         if (app.gitUrl != null) ...['--git-url', app.gitUrl!],
         if (app.gitBranch != null) ...['--git-branch', app.gitBranch!],
         if (app.buildCommand != null && app.buildCommand!.isNotEmpty) ...[
@@ -106,13 +120,8 @@ class DeploymentWorker {
       ], deploymentId: deploymentId);
 
       // 3. Generate systemd + AppArmor + nginx vhost (idempotent).
-      //    Env vars are fetched from the DB and embedded directly into the
-      //    unit file as Environment= lines — no separate .env file needed.
-      final appEnvVars = await Query<EnvVar>(EnvVarTable.metadata)
-          .where(EnvVarTable.appId.eq(app.id!))
-          .all(database.context());
-      final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
-
+      //    Env vars (fetched above) are embedded directly into the unit file as
+      //    Environment= lines — no separate .env file needed.
       await _runAgent([
         'apply-unit',
         '--app-id', '${app.id}',

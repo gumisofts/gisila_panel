@@ -127,6 +127,9 @@ Future<void> _build(List<String> args) async {
     p.addOption('go-version');
     p.addOption('rust-version');
     p.addOption('bun-version');
+    // App env vars (JSON object) so build-time Django commands — migrate,
+    // collectstatic — run against the same DB/config as the runtime unit.
+    p.addOption('env-json');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -135,6 +138,14 @@ Future<void> _build(List<String> args) async {
       AgentValidators.requireSourceType(r['source-type'] as String?);
   final buildCommand =
       AgentValidators.optionalCommand(r['build-command'] as String?);
+  // Decode app env vars (if supplied) into a String→String map for build-time
+  // Django management commands.
+  Map<String, String>? appEnv;
+  final envJson = r['env-json'] as String?;
+  if (envJson != null && envJson.isNotEmpty) {
+    final decoded = jsonDecode(envJson) as Map<String, dynamic>;
+    appEnv = {for (final e in decoded.entries) e.key: '${e.value}'};
+  }
 
   switch (sourceType) {
     case 'binary':
@@ -212,6 +223,7 @@ Future<void> _build(List<String> args) async {
         user: user,
         buildCommand: buildCommand,
         pythonVersion: r['python-version'] as String?,
+        appEnv: appEnv,
       );
       break;
     case 'celery':
@@ -220,6 +232,7 @@ Future<void> _build(List<String> args) async {
         user: user,
         buildCommand: buildCommand,
         pythonVersion: r['python-version'] as String?,
+        appEnv: appEnv,
       );
       break;
     case 'static':
