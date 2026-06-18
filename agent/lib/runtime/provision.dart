@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:gisila_agent/generators/env_file.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 
 /// Idempotently provisions the Linux user + work dir + base layout for an
@@ -46,11 +47,18 @@ class Provisioner {
     await ShellExec.run('chmod', ['o+x', parent]);
   }
 
-  /// Touch the env file so EnvironmentFile= references don't break the unit.
-  static Future<void> ensureEnvFile(String workDir, String user) async {
+  /// Write the app's env file referenced by each unit's `EnvironmentFile=`.
+  ///
+  /// Holds every user-defined env var so the running service — and a developer
+  /// running `manage.py` by hand after `set -a; source .env` — see the same
+  /// configuration. Owned by the app user and 0640 (readable by the user, not
+  /// world). Called with an empty map during provisioning (so the
+  /// `EnvironmentFile=` reference never dangles before the first deploy) and
+  /// with the real vars during apply-unit.
+  static Future<void> ensureEnvFile(
+      String workDir, String user, Map<String, String> envVars) async {
     final file = File('$workDir/.env');
-    if (!file.existsSync())
-      file.writeAsStringSync('# managed by gisila-agent\n');
+    file.writeAsStringSync(renderEnvFile(envVars));
     await ShellExec.run('chown', ['$user:$user', file.path]);
     await ShellExec.run('chmod', ['0640', file.path]);
   }

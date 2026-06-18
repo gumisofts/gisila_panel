@@ -102,7 +102,9 @@ Future<void> _provision(List<String> args) async {
   }
   await Provisioner.ensureLinuxUser(user);
   await Provisioner.ensureWorkDir(workDir, user);
-  await Provisioner.ensureEnvFile(workDir, user);
+  // Placeholder env file so each unit's EnvironmentFile= never dangles; the
+  // real vars are written by apply-unit once they're known.
+  await Provisioner.ensureEnvFile(workDir, user, const {});
 }
 
 Future<void> _build(List<String> args) async {
@@ -300,6 +302,13 @@ Future<void> _applyUnit(List<String> args) async {
   final envJson = r['env-json'] as String;
   final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
       .map((k, v) => MapEntry(k, (v as String?) ?? ''));
+
+  // Write the app's env vars to <workDir>/.env, which every unit below
+  // references via EnvironmentFile=. This is the single source of the runtime
+  // env (the units no longer inline per-var Environment= lines) and lets a
+  // developer `set -a; source .env` before running management commands so they
+  // hit the configured database instead of Django's sqlite fallback.
+  await Provisioner.ensureEnvFile(workDir, user, envVars);
 
   // ── Celery: creates a target + worker/beat/flower services ────────────────
   if (runtime == 'celery') {

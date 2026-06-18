@@ -122,8 +122,9 @@ class DeploymentWorker {
       ], deploymentId: deploymentId);
 
       // 3. Generate systemd + AppArmor + nginx vhost (idempotent).
-      //    Env vars (fetched above) are embedded directly into the unit file as
-      //    Environment= lines — no separate .env file needed.
+      //    Env vars (fetched above) are written by apply-unit to <workDir>/.env
+      //    and pulled into each unit via EnvironmentFile=. The same file can be
+      //    sourced (set -a; source .env) to run management commands by hand.
       await _runAgent([
         'apply-unit',
         '--app-id', '${app.id}',

@@ -61,13 +61,6 @@ class CeleryWorkerUnit {
     final extraArgsStr =
         (extraArgs != null && extraArgs!.isNotEmpty) ? ' ${extraArgs!.trim()}' : '';
 
-    final envLines = StringBuffer();
-    for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      envLines.writeln('Environment=${entry.key}="$escaped"');
-    }
-
     return '''
 [Unit]
 Description=Gisila Celery worker $workerIndex for $linuxUser (id=$appId)
@@ -84,7 +77,7 @@ Restart=always
 RestartSec=10
 
 Environment=GISILA_APP_ID=$appId
-${envLines.toString().trimRight()}
+EnvironmentFile=-$workDir/.env
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true
@@ -151,13 +144,6 @@ class CeleryBeatUnit {
     final src = '$workDir/releases/current_build';
     final tmp = '$workDir/tmp';
 
-    final envLines = StringBuffer();
-    for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      envLines.writeln('Environment=${entry.key}="$escaped"');
-    }
-
     return '''
 [Unit]
 Description=Gisila Celery beat scheduler for $linuxUser (id=$appId)
@@ -174,7 +160,7 @@ Restart=always
 RestartSec=10
 
 Environment=GISILA_APP_ID=$appId
-${envLines.toString().trimRight()}
+EnvironmentFile=-$workDir/.env
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -237,13 +223,6 @@ class CeleryFlowerUnit {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
 
-    final envLines = StringBuffer();
-    for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      envLines.writeln('Environment=${entry.key}="$escaped"');
-    }
-
     return '''
 [Unit]
 Description=Gisila Celery Flower UI for $linuxUser (id=$appId)
@@ -261,7 +240,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${envLines.toString().trimRight()}
+EnvironmentFile=-$workDir/.env
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -380,15 +359,12 @@ class SystemdUnit {
     final workingDir = workingDirectory ??
         ((isPython || isJit) ? src : '$workDir/current');
 
-    // Embed each user-defined env var as its own Environment= line.
-    // Values are double-quoted; embedded double-quotes and backslashes are
-    // escaped so systemd parses them correctly.
-    final envLines = StringBuffer();
-    for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      envLines.writeln('Environment=${entry.key}="$escaped"');
-    }
+    // User-defined env vars live in <workDir>/.env, pulled in via the
+    // EnvironmentFile= line below (rather than inlined as Environment= lines).
+    // The single file is also what a developer sources before running
+    // management commands by hand. The `-` prefix makes systemd tolerate a
+    // missing file instead of failing the unit.
+    final envFileLine = 'EnvironmentFile=-$workDir/.env';
 
     // For Node.js / Bun apps pinned to a specific version, prepend the
     // versioned runtime's bin directory to PATH so `node` / `bun` in the
@@ -473,7 +449,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${pathLine}${corepkLines}${homeLines}${pnpmLines}${envLines.toString().trimRight()}
+${pathLine}${corepkLines}${homeLines}${pnpmLines}$envFileLine
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true
