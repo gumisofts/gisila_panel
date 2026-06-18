@@ -131,8 +131,26 @@ class AppsApi {
       if (form.bunVersion.value != null) 'bunVersion': form.bunVersion.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
       if (form.internalPort.value != null) 'internalPort': form.internalPort.value,
+      if (form.staticRoot.value != null) 'staticRoot': form.staticRoot.value,
+      if (form.staticSpa.value != null) 'staticSpa': form.staticSpa.value,
     };
     final app = await apps.update(user, id, patch);
+
+    // Static serving behaviour (SPA fallback / served root) is baked into the
+    // nginx vhost at render time, so persisting the flag alone changes nothing
+    // live. Re-render the vhost against the current release — no rebuild — so
+    // the change (e.g. enabling SPA mode to stop deep-link refreshes 404ing)
+    // takes effect immediately.
+    if (app.runtime == 'static' &&
+        (form.staticRoot.value != null || form.staticSpa.value != null)) {
+      await RedisClient.instance.rpush(
+        'gisila:queue:vhosts',
+        jsonEncode(<String, Object?>{
+          'appId': app.id,
+          'reason': 'static_settings',
+        }),
+      );
+    }
     return app.toJson();
   }
 
