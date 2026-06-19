@@ -292,7 +292,9 @@ class Applier {
       workDir: workDir,
       celeryApp: params.celeryApp,
       port: port,
-      memoryMb: 128,
+      // Flower accumulates task/event state over time; 128M was too tight and
+      // led to systemd OOM-kills + restarts. 512M gives ample headroom.
+      memoryMb: 512,
       cpuQuotaPercent: 10,
       envVars: envVars,
     );
