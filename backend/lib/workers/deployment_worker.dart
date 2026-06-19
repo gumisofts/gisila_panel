@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
@@ -72,6 +73,54 @@ class DeploymentWorker {
           .where(EnvVarTable.appId.eq(app.id!))
           .all(database.context());
       final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
+
+      // Celery deploys always ship a Flower monitoring UI that the agent
+      // reverse-proxies at the app's domain. Flower has no authentication of
+      // its own, so an un-guarded deploy exposes worker internals — and the
+      // ability to revoke/terminate tasks — to anyone who reaches the domain.
+      // Guarantee HTTP basic-auth: honour a user-set FLOWER_BASIC_AUTH
+      // ("user:password"), and otherwise generate one once and persist it as a
+      // secret env var so it survives redeploys and is viewable/editable from
+      // the panel's env-var screen. The agent passes it to Flower via
+      // `--basic-auth` (see CeleryFlowerUnit / CeleryWorkerSupervisorConf).
+      if (app.runtime == 'celery') {
+        EnvVar? flowerAuth;
+        for (final e in appEnvVars) {
+          if (e.name == 'FLOWER_BASIC_AUTH') {
+            flowerAuth = e;
+            break;
+          }
+        }
+        if (flowerAuth == null || (flowerAuth.value ?? '').isEmpty) {
+          final creds = _generateFlowerBasicAuth();
+          final now = DateTime.now().toUtc().toIso8601String();
+          if (flowerAuth == null) {
+            await Query<EnvVar>(EnvVarTable.metadata).insert(<String, Object?>{
+              'appId': app.id,
+              'name': 'FLOWER_BASIC_AUTH',
+              'value': creds,
+              'isSecret': true,
+              'updatedAt': now,
+            }).one(database.context());
+          } else {
+            await Query<EnvVar>(EnvVarTable.metadata)
+                .where(EnvVarTable.id.eq(flowerAuth.id!))
+                .update(<String, Object?>{
+              'value': creds,
+              'isSecret': true,
+              'updatedAt': now,
+            }).run(database.context());
+          }
+          envMap['FLOWER_BASIC_AUTH'] = creds;
+          await _publishBuildLog(
+            deploymentId,
+            stream: 'system',
+            line: 'Flower UI secured with auto-generated basic-auth '
+                'credentials. View or change them via the FLOWER_BASIC_AUTH '
+                'environment variable.',
+          );
+        }
+      }
 
       // 2. Build / fetch artifact.
       await _runAgent([
@@ -490,6 +539,21 @@ class DeploymentWorker {
       'gisila:logs:build:$deploymentId',
       jsonEncode({'stream': stream, 'line': line}),
     );
+  }
+
+  /// Generate `user:password` credentials for Flower's `--basic-auth`.
+  ///
+  /// The alphabet is restricted to URL/shell-safe characters (no `:`, `%`,
+  /// quotes or whitespace) so the value can be embedded verbatim in the
+  /// generated systemd/supervisor process command without escaping, and
+  /// ambiguous look-alikes (0/O, 1/l/I) are dropped so a human can retype it.
+  static String _generateFlowerBasicAuth() {
+    const alphabet =
+        'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rng = Random.secure();
+    final pw = List.generate(
+        24, (_) => alphabet[rng.nextInt(alphabet.length)]).join();
+    return 'flower:$pw';
   }
 
   Future<void> _runAgent(

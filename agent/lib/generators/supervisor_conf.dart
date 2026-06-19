@@ -53,6 +53,17 @@ class CeleryWorkerSupervisorConf {
     final extraArgsStr =
         (extraArgs != null && extraArgs!.isNotEmpty) ? ' ${extraArgs!.trim()}' : '';
 
+    // Flower is reverse-proxied at the app's domain and has no auth of its own,
+    // so it must run with HTTP basic-auth from `FLOWER_BASIC_AUTH`
+    // ("user:password"). Supervisor runs `command=` without a shell and does
+    // not expand `${VAR}`, so the value is inlined here; `%` is doubled because
+    // supervisor treats it as the start of an expansion specifier. The deploy
+    // worker guarantees the var is set for Celery apps.
+    final flowerAuth = envVars['FLOWER_BASIC_AUTH'];
+    final basicAuthArg = (flowerAuth != null && flowerAuth.isNotEmpty)
+        ? ' --basic-auth=${flowerAuth.replaceAll('%', '%%')}'
+        : '';
+
     final buf = StringBuffer();
 
     // Worker processes
@@ -81,7 +92,7 @@ environment=${_envPairs({})}
     // Flower UI
     buf.write('''
 [program:gisila-$linuxUser-flower]
-command=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info
+command=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info$basicAuthArg
 directory=$src
 user=$linuxUser
 autostart=true

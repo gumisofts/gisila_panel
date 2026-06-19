@@ -223,6 +223,17 @@ class CeleryFlowerUnit {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
 
+    // Flower has no auth of its own and is reverse-proxied at the app's domain,
+    // so it must run with HTTP basic-auth. The credentials live in the app's
+    // env (`FLOWER_BASIC_AUTH`, "user:password"), loaded below via
+    // EnvironmentFile=. We reference the variable with systemd's `${...}`
+    // expansion rather than inlining the value so the secret never lands in the
+    // world-readable unit file. Only emit the flag when the var is present,
+    // since `--basic-auth=` (empty) would silently leave Flower open.
+    final basicAuth = (envVars['FLOWER_BASIC_AUTH'] ?? '').isNotEmpty
+        ? r' --basic-auth=${FLOWER_BASIC_AUTH}'
+        : '';
+
     return '''
 [Unit]
 Description=Gisila Celery Flower UI for $linuxUser (id=$appId)
@@ -234,7 +245,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info
+ExecStart=$venv/bin/celery -A $celeryApp flower --port=$port --address=127.0.0.1 --logging=info$basicAuth
 Restart=always
 RestartSec=5
 
