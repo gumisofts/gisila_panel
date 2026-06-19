@@ -79,9 +79,12 @@ class DeploymentWorker {
       // its own, so an un-guarded deploy exposes worker internals — and the
       // ability to revoke/terminate tasks — to anyone who reaches the domain.
       // Guarantee HTTP basic-auth: honour a user-set FLOWER_BASIC_AUTH
-      // ("user:password"), and otherwise generate one once and persist it as a
-      // secret env var so it survives redeploys and is viewable/editable from
-      // the panel's env-var screen. The agent passes it to Flower via
+      // ("user:password"), and otherwise generate one once and persist it so it
+      // survives redeploys. It is stored NON-secret on purpose: the env-list API
+      // strips `value` from secret vars, so a secret credential would be
+      // enforced by Flower yet impossible to retrieve from the panel — leaving
+      // Flower permanently locked out. (Apps from earlier builds that stored it
+      // as secret are un-hidden below.) The agent passes it to Flower via
       // `--basic-auth` (see CeleryFlowerUnit / CeleryWorkerSupervisorConf).
       if (app.runtime == 'celery') {
         EnvVar? flowerAuth;
@@ -99,7 +102,7 @@ class DeploymentWorker {
               'appId': app.id,
               'name': 'FLOWER_BASIC_AUTH',
               'value': creds,
-              'isSecret': true,
+              'isSecret': false,
               'updatedAt': now,
             }).one(database.context());
           } else {
@@ -107,7 +110,7 @@ class DeploymentWorker {
                 .where(EnvVarTable.id.eq(flowerAuth.id!))
                 .update(<String, Object?>{
               'value': creds,
-              'isSecret': true,
+              'isSecret': false,
               'updatedAt': now,
             }).run(database.context());
           }
@@ -118,6 +121,22 @@ class DeploymentWorker {
             line: 'Flower UI secured with auto-generated basic-auth '
                 'credentials. View or change them via the FLOWER_BASIC_AUTH '
                 'environment variable.',
+          );
+        } else if (flowerAuth.isSecret == true) {
+          // Older deploys stored this credential as secret, so the env API hid
+          // its value and the operator could never read it. Un-hide it (value
+          // unchanged) so the existing Flower login becomes retrievable.
+          await Query<EnvVar>(EnvVarTable.metadata)
+              .where(EnvVarTable.id.eq(flowerAuth.id!))
+              .update(<String, Object?>{
+            'isSecret': false,
+            'updatedAt': DateTime.now().toUtc().toIso8601String(),
+          }).run(database.context());
+          await _publishBuildLog(
+            deploymentId,
+            stream: 'system',
+            line: 'Flower basic-auth credentials are now viewable via the '
+                'FLOWER_BASIC_AUTH environment variable.',
           );
         }
       }
