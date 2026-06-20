@@ -704,10 +704,14 @@ Future<void> _exec(List<String> args) async {
   final timeout = int.tryParse(r['timeout'] as String? ?? '300') ?? 300;
 
   final isPython = runtime == 'python';
-  // Python source (with .venv) lives under releases/current_build; other
-  // runtimes keep their artifact under current/.
+  // Python source (with .venv), and the Node/Bun build tree (package.json +
+  // node_modules), live under releases/current_build — current/ holds no
+  // manifest for them, so `pnpm db:migrate` there fails with
+  // ERR_PNPM_NO_PKG_MANIFEST. Only binary/static keep their artifact in current/.
+  final isSourceTree =
+      isPython || runtime == 'node' || runtime == 'bun';
   final runDir =
-      isPython ? '$workDir/releases/current_build' : '$workDir/current';
+      isSourceTree ? '$workDir/releases/current_build' : '$workDir/current';
   final activate = isPython
       ? '[ -f .venv/bin/activate ] && source .venv/bin/activate; '
       : '';
