@@ -104,8 +104,11 @@ Future<void> _provision(List<String> args) async {
   await Provisioner.ensureLinuxUser(user);
   await Provisioner.ensureWorkDir(workDir, user);
   // Placeholder env file so each unit's EnvironmentFile= never dangles; the
-  // real vars are written by apply-unit once they're known.
-  await Provisioner.ensureEnvFile(workDir, user, const {});
+  // real vars are written by apply-unit once they're known. Only create it when
+  // absent — never clobber a populated .env from a prior deploy, otherwise a
+  // redeploy (or a build that fails before apply-unit) would leave the app with
+  // an empty env and break console management commands that source it.
+  await Provisioner.ensureEnvFile(workDir, user, const {}, onlyIfMissing: true);
 }
 
 Future<void> _build(List<String> args) async {
@@ -155,6 +158,13 @@ Future<void> _build(List<String> args) async {
   if (envJson != null && envJson.isNotEmpty) {
     final decoded = jsonDecode(envJson) as Map<String, dynamic>;
     appEnv = {for (final e in decoded.entries) e.key: '${e.value}'};
+    // Write the real env to <workDir>/.env up front, before the (potentially
+    // failing) build runs. apply-unit rewrites the same file on success, but
+    // writing it here means console / management commands see the configured
+    // env even while the build is in progress or after a build that fails
+    // before apply-unit — instead of sourcing the empty provisioning
+    // placeholder.
+    await Provisioner.ensureEnvFile(workDir, user, appEnv);
   }
 
   switch (sourceType) {

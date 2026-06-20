@@ -55,9 +55,19 @@ class Provisioner {
   /// world). Called with an empty map during provisioning (so the
   /// `EnvironmentFile=` reference never dangles before the first deploy) and
   /// with the real vars during apply-unit.
+  ///
+  /// [onlyIfMissing] makes the write a no-op when `.env` already exists. The
+  /// provisioning step passes this so it lays down a placeholder ONLY on the
+  /// very first deploy and never clobbers an env file that a previous
+  /// apply-unit already populated. Without it, every redeploy would reset
+  /// `.env` to empty between provision and apply-unit — and if the build failed
+  /// in between (so apply-unit never ran), the app would be left with an empty
+  /// `.env`, breaking console management commands that source it.
   static Future<void> ensureEnvFile(
-      String workDir, String user, Map<String, String> envVars) async {
+      String workDir, String user, Map<String, String> envVars,
+      {bool onlyIfMissing = false}) async {
     final file = File('$workDir/.env');
+    if (onlyIfMissing && file.existsSync()) return;
     file.writeAsStringSync(renderEnvFile(envVars));
     await ShellExec.run('chown', ['$user:$user', file.path]);
     await ShellExec.run('chmod', ['0640', file.path]);
