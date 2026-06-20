@@ -686,7 +686,32 @@ Future<void> _exec(List<String> args) async {
   final activate = isPython
       ? '[ -f .venv/bin/activate ] && source .venv/bin/activate; '
       : '';
-  final script = 'cd "$runDir" 2>/dev/null || cd "$workDir"; $activate$command';
+
+  // Load the app's configured env vars (DATABASE_URL, …) so a console command
+  // like `pnpm db:migrate` or `python manage.py migrate` hits the real service
+  // instead of the framework's local fallback (Django's sqlite, etc.). Sourced
+  // before the infra exports below so HOME/COREPACK_* always win over anything
+  // the user set with the same name.
+  final loadEnv = 'set -a; [ -f "$workDir/.env" ] && . "$workDir/.env"; set +a; ';
+
+  // The app's Linux user is created with `useradd --no-create-home`, so its
+  // passwd home (/home/<user>) never exists. runuser/sudo run the command under
+  // PAM, which sets HOME to that missing directory — so any tool that writes to
+  // ~ aborts with `EACCES: mkdir '/home/<user>'`: corepack
+  // (~/.cache/node/corepack), npm/pip caches, pnpm's global config. Point HOME —
+  // and the caches derived from it — at the app's own workdir (owned by the
+  // user, writable), mirroring the build environment in builders.dart so console
+  // commands behave the same way the build did. corepack is also defused (strict
+  // off, no auto-pin) and aimed at the provisioned $workDir/.corepack.
+  final infraEnv = 'export HOME="$workDir"; '
+      'export COREPACK_ENABLE_STRICT=0; '
+      'export COREPACK_ENABLE_AUTO_PIN=0; '
+      'export COREPACK_HOME="$workDir/.corepack"; '
+      'export npm_config_cache="$workDir/.npm"; '
+      'export XDG_CACHE_HOME="$workDir/.cache"; ';
+
+  final script = '$loadEnv$infraEnv'
+      'cd "$runDir" 2>/dev/null || cd "$workDir"; $activate$command';
 
   final invocation = _isRoot
       ? ['runuser', '-u', user, '--', 'bash', '-lc', script]

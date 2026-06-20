@@ -44,7 +44,8 @@ Router logsRouter({required Database database}) {
 
 /// Live command-execution logs — replays the buffered history then tails the
 /// channel the exec worker publishes to.
-Handler _execLogSocket(Database database) => webSocketHandler((webSocket) async {
+Handler _execLogSocket(Database database) =>
+    webSocketHandler((webSocket) async {
       await _authThen(webSocket, database: database,
           handler: (auth, closed) async {
         final execId = auth.execId;
@@ -147,8 +148,7 @@ Future<void> _authThen(
       if (handled) return; // ignore any further frames
       handled = true;
       try {
-        final auth =
-            await _authenticate(webSocket, database, raw, requireApp);
+        final auth = await _authenticate(webSocket, database, raw, requireApp);
         if (auth == null) return; // error already sent + socket closed
         handlerFuture = handler(auth, closed.future);
         await handlerFuture;
@@ -275,7 +275,7 @@ Future<void> _streamRuntimeLogs(
     '--work-dir',
     app.workDir,
     '--runtime',
-    app.runtime ?? '',
+    app.runtime,
     '--lines',
     '300',
     '--follow',
