@@ -141,7 +141,9 @@ class DeploymentWorker {
         }
       }
 
-      // 2. Build / fetch artifact.
+      // 2. Build / fetch artifact. A force-rebuild deployment bypasses the
+      //    agent's dependency/build cache so everything is reinstalled clean.
+      final forceRebuild = payload['forceRebuild'] == true;
       await _runAgent([
         'build',
         '--app-id', '${app.id}',
@@ -149,6 +151,7 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
+        if (forceRebuild) '--no-cache',
         // App env vars are needed at build time across runtimes:
         //  - Django (python/celery): migrate/collectstatic must reach the same
         //    DB/config as the runtime unit.

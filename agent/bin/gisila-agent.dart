@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:gisila_agent/runtime/applier.dart';
+import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
@@ -132,6 +133,9 @@ Future<void> _build(List<String> args) async {
     // App env vars (JSON object) so build-time Django commands — migrate,
     // collectstatic — run against the same DB/config as the runtime unit.
     p.addOption('env-json');
+    // Force a clean rebuild: bypass the dependency/build cache, wipe preserved
+    // artifacts, and reinstall everything from scratch.
+    p.addFlag('no-cache', defaultsTo: false);
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -140,6 +144,10 @@ Future<void> _build(List<String> args) async {
       AgentValidators.requireSourceType(r['source-type'] as String?);
   final buildCommand =
       AgentValidators.optionalCommand(r['build-command'] as String?);
+  final noCache = r['no-cache'] as bool? ?? false;
+  // Drop every cache marker up front so a force-rebuild starts from a clean
+  // slate and re-records fresh fingerprints as each step reinstalls.
+  if (noCache) await BuildCache.clear(workDir);
   // Decode app env vars (if supplied) into a String→String map for build-time
   // Django management commands.
   Map<String, String>? appEnv;
@@ -167,6 +175,7 @@ Future<void> _build(List<String> args) async {
         url: url,
         branch: r['git-branch'] as String?,
         deployKeyPath: r['deploy-key-path'] as String?,
+        noCache: noCache,
       );
       break;
     case 'zip':
@@ -174,7 +183,8 @@ Future<void> _build(List<String> args) async {
       if (artifact == null || !File(artifact).existsSync()) {
         throw ArgumentError('Missing or unreadable --artifact-path');
       }
-      await Builders.fromZip(workDir: workDir, user: user, zipPath: artifact);
+      await Builders.fromZip(
+          workDir: workDir, user: user, zipPath: artifact, noCache: noCache);
       break;
   }
 
@@ -210,6 +220,7 @@ Future<void> _build(List<String> args) async {
         buildCommand: buildCommand,
         nodeVersion: r['node-version'] as String?,
         appEnv: appEnv,
+        noCache: noCache,
       );
       break;
     case 'bun':
@@ -219,6 +230,7 @@ Future<void> _build(List<String> args) async {
         buildCommand: buildCommand,
         bunVersion: r['bun-version'] as String?,
         appEnv: appEnv,
+        noCache: noCache,
       );
       break;
     case 'python':
@@ -228,6 +240,7 @@ Future<void> _build(List<String> args) async {
         buildCommand: buildCommand,
         pythonVersion: r['python-version'] as String?,
         appEnv: appEnv,
+        noCache: noCache,
       );
       break;
     case 'celery':
@@ -237,6 +250,7 @@ Future<void> _build(List<String> args) async {
         buildCommand: buildCommand,
         pythonVersion: r['python-version'] as String?,
         appEnv: appEnv,
+        noCache: noCache,
       );
       break;
     case 'static':
@@ -245,6 +259,7 @@ Future<void> _build(List<String> args) async {
         user: user,
         buildCommand: buildCommand,
         appEnv: appEnv,
+        noCache: noCache,
       );
       break;
     case 'zig':

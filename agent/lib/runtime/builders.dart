@@ -1,23 +1,30 @@
 import 'dart:io';
 
+import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 
 /// Per-runtime build / fetch routines. Each helper leaves the latest source
 /// in `<workDir>/releases/current_build/` and (for compiled runtimes) the
 /// final executable under `<workDir>/current/app`.
 class Builders {
+  /// Gitignored dependency/build artifacts that are worth preserving across a
+  /// source refresh so the cache layer can reuse them. The git fetch path keeps
+  /// these implicitly (it never touches ignored files); the zip path has to
+  /// stash and restore them explicitly.
+  static const _artifactDirs = ['node_modules', '.venv'];
+
   static Future<void> fromGit({
     required String workDir,
     required String user,
     required String url,
     String? branch,
     String? deployKeyPath,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
-    await ShellExec.run('rm', ['-rf', src]);
 
-    // Build the environment; if a deploy key is provided, configure ssh-agent
-    // wrapper so `git clone` authenticates with that key.
+    // Build the environment; if a deploy key is provided, configure an ssh
+    // wrapper so `git` authenticates with that key (for both clone and fetch).
     final Map<String, String> env;
     if (deployKeyPath != null && File(deployKeyPath).existsSync()) {
       env = {
@@ -29,30 +36,132 @@ class Builders {
       env = Platform.environment;
     }
 
-    await ShellExec.run(
-        'git',
-        [
-          'clone',
-          '--depth',
-          '1',
-          if (branch != null) ...['--branch', branch],
-          url,
-          src,
-        ],
-        env: env);
+    // Prefer an in-place incremental update of an existing checkout of the SAME
+    // remote: `fetch` + `reset --hard` re-points the tree at the new commit
+    // while leaving gitignored artifacts (node_modules, .venv, .next/cache, …)
+    // untouched, so the install/build steps can reuse them. Any mismatch or git
+    // error falls back to a clean shallow clone, which is always correct. A
+    // force-rebuild skips the incremental path entirely so the clone wipes
+    // every preserved artifact.
+    final updated = noCache
+        ? false
+        : await _tryGitUpdate(src: src, url: url, branch: branch, env: env);
+    if (!updated) {
+      await ShellExec.run('rm', ['-rf', src]);
+      await ShellExec.run(
+          'git',
+          [
+            'clone',
+            '--depth',
+            '1',
+            if (branch != null) ...['--branch', branch],
+            url,
+            src,
+          ],
+          env: env);
+    }
     await ShellExec.run('chown', ['-R', '$user:$user', src]);
+  }
+
+  /// Attempt an in-place shallow update of an existing git checkout at [src].
+  /// Returns true only when the tree now reflects the requested ref with its
+  /// build artifacts preserved; false (a signal to fall back to a clean clone)
+  /// on a missing repo, a different remote, or any git failure.
+  static Future<bool> _tryGitUpdate({
+    required String src,
+    required String url,
+    String? branch,
+    required Map<String, String> env,
+  }) async {
+    if (!Directory('$src/.git').existsSync()) return false;
+    try {
+      // git refuses to operate on a repo owned by another uid ("dubious
+      // ownership"); the tree is owned by the app user while the agent runs as
+      // root, so scope an explicit safe.directory to every invocation.
+      final safe = ['-c', 'safe.directory=$src'];
+
+      // Bail out (→ clean clone) when the remote changed: the preserved
+      // artifacts would no longer match the new project.
+      final remote = await Process.run(
+          'git', [...safe, '-C', src, 'remote', 'get-url', 'origin']);
+      if (remote.exitCode != 0 ||
+          (remote.stdout as String).trim() != url) {
+        return false;
+      }
+
+      final ref = (branch != null && branch.isNotEmpty) ? branch : 'HEAD';
+      final fetch = await ShellExec.run(
+          'git', [...safe, '-C', src, 'fetch', '--depth', '1', 'origin', ref],
+          env: env, requireSuccess: false);
+      if (fetch != 0) return false;
+
+      final reset = await ShellExec.run(
+          'git', [...safe, '-C', src, 'reset', '--hard', 'FETCH_HEAD'],
+          requireSuccess: false);
+      if (reset != 0) return false;
+
+      // Remove stray tracked-type files left over from the previous commit, but
+      // NOT ignored files (no `-x`): node_modules / .venv / framework build
+      // caches are all gitignored, so this keeps them for the cache layer.
+      await ShellExec.run('git', [...safe, '-C', src, 'clean', '-fd'],
+          requireSuccess: false);
+
+      stdout.writeln(
+          '[agent] git: incremental update — preserved build artifacts');
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> fromZip({
     required String workDir,
     required String user,
     required String zipPath,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
+    final stash = '${BuildCache.dir(workDir)}/stash';
+
+    // A zip carries no version history to update in place, so the tree is
+    // replaced wholesale. Preserve the dependency artifacts across that wipe so
+    // a lock file that hasn't changed still skips the install. The uploaded zip
+    // wins if it happens to ship its own node_modules/.venv. A force-rebuild
+    // skips the stash so the artifacts are wiped with the rest of the tree.
+    if (!noCache) await _stashArtifacts(src, stash);
     await ShellExec.run('rm', ['-rf', src]);
     Directory(src).createSync(recursive: true);
     await ShellExec.run('unzip', ['-q', '-d', src, zipPath]);
+    if (!noCache) await _restoreArtifacts(src, stash);
     await ShellExec.run('chown', ['-R', '$user:$user', src]);
+  }
+
+  /// Move [_artifactDirs] out of [src] into [stash] before the tree is wiped.
+  static Future<void> _stashArtifacts(String src, String stash) async {
+    await ShellExec.run('rm', ['-rf', stash], requireSuccess: false);
+    var created = false;
+    for (final d in _artifactDirs) {
+      if (!Directory('$src/$d').existsSync()) continue;
+      if (!created) {
+        Directory(stash).createSync(recursive: true);
+        created = true;
+      }
+      await ShellExec.run('mv', ['$src/$d', '$stash/$d'],
+          requireSuccess: false);
+    }
+  }
+
+  /// Restore stashed artifacts into the freshly-extracted [src], unless the new
+  /// tree already provides its own copy. The stash is removed either way.
+  static Future<void> _restoreArtifacts(String src, String stash) async {
+    for (final d in _artifactDirs) {
+      if (Directory('$stash/$d').existsSync() &&
+          !Directory('$src/$d').existsSync()) {
+        await ShellExec.run('mv', ['$stash/$d', '$src/$d'],
+            requireSuccess: false);
+      }
+    }
+    await ShellExec.run('rm', ['-rf', stash], requireSuccess: false);
   }
 
   static Future<void> buildDart({
@@ -124,6 +233,7 @@ class Builders {
     String? buildCommand,
     String? nodeVersion,
     Map<String, String>? appEnv,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
 
@@ -300,9 +410,37 @@ class Builders {
       File('$workDir/.pnpm-bin').writeAsStringSync('$pnpmBinDir\n');
     }
 
-    // 5. Install dependencies.
-    final installCmd = _nodeInstallCommand(pkgMgr);
-    await _runAsUserWithEnv(user, src, installCmd, installEnv);
+    // 5. Install dependencies — skipped when the lock file and the pinned Node
+    //    version are unchanged since the last successful deploy AND the
+    //    node_modules tree survived the source refresh. The fingerprint covers
+    //    every lock-file flavour plus package.json, so any dependency edit (and
+    //    only a dependency edit) forces a reinstall.
+    const installKey = 'node-install';
+    final installFp = BuildCache.fingerprint([
+      '$src/pnpm-lock.yaml',
+      '$src/package-lock.json',
+      '$src/npm-shrinkwrap.json',
+      '$src/yarn.lock',
+      '$src/bun.lockb',
+      '$src/bun.lock',
+      '$src/package.json',
+    ], [
+      'pm:$pkgMgr',
+      'node:${nodeVersion ?? 'system'}',
+    ]);
+    if (!noCache &&
+        BuildCache.isFresh(workDir, installKey, installFp,
+            artifact: '$src/node_modules')) {
+      stdout.writeln(
+          '[agent] dependencies unchanged — reusing cached node_modules');
+    } else {
+      // Invalidate before installing so an interrupted install can never leave
+      // a marker that lets the next deploy skip a now-incomplete node_modules.
+      BuildCache.invalidate(workDir, installKey);
+      final installCmd = _nodeInstallCommand(pkgMgr);
+      await _runAsUserWithEnv(user, src, installCmd, installEnv);
+      await BuildCache.store(workDir, user, installKey, installFp);
+    }
 
     // 5b. Generate Prisma client when a schema is present.
     //
@@ -493,6 +631,7 @@ class Builders {
     String? buildCommand,
     String? bunVersion,
     Map<String, String>? appEnv,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
     Map<String, String>? env;
@@ -508,19 +647,43 @@ class Builders {
         '-sfn', bunBin.path, '$workDir/current/.runtime'
       ], requireSuccess: false);
     }
-    final cmd = buildCommand ?? 'bun install';
     // Inject the app's configured env vars so a build step bakes client-side
     // vars (e.g. NEXT_PUBLIC_*) into its output. The bun PATH override (when
-    // present) is layered first so app vars never shadow it.
-    if (env != null || appEnv != null) {
-      await _runAsUserWithEnv(user, src, cmd, {
-        ...(env ?? Platform.environment),
-        ...?appEnv,
-        if (env != null) 'PATH': env['PATH']!,
-      });
-    } else {
-      await _runAsUser(user, src, cmd);
+    // present) is layered last so app vars never shadow it.
+    final runEnv = <String, String>{
+      ...(env ?? Platform.environment),
+      ...?appEnv,
+      if (env != null) 'PATH': env['PATH']!,
+    };
+    final cmd = buildCommand ?? 'bun install';
+
+    // Only the default `bun install` is cache-gated; a custom build command can
+    // do arbitrary work and is always re-run. The default install is skipped
+    // when the bun lock file and pinned Bun version are unchanged and the
+    // node_modules tree survived the source refresh.
+    if (buildCommand == null) {
+      const installKey = 'bun-install';
+      final installFp = BuildCache.fingerprint([
+        '$src/bun.lockb',
+        '$src/bun.lock',
+        '$src/package.json',
+      ], [
+        'bun:${bunVersion ?? 'system'}',
+      ]);
+      if (!noCache &&
+          BuildCache.isFresh(workDir, installKey, installFp,
+              artifact: '$src/node_modules')) {
+        stdout.writeln(
+            '[agent] dependencies unchanged — reusing cached node_modules');
+        return;
+      }
+      BuildCache.invalidate(workDir, installKey);
+      await _runAsUserWithEnv(user, src, cmd, runEnv);
+      await BuildCache.store(workDir, user, installKey, installFp);
+      return;
     }
+
+    await _runAsUserWithEnv(user, src, cmd, runEnv);
   }
 
   /// Build a Python app using pyenv + venv.
@@ -541,6 +704,7 @@ class Builders {
     String? pythonVersion,
     String pyenvRoot = '/opt/pyenv',
     Map<String, String>? appEnv,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
     final venv = '$src/.venv';
@@ -561,39 +725,65 @@ class Builders {
         ? await _pyenvPython(pyenvRoot, version)
         : 'python3'; // fallback to system python3
 
-    // 3. Create virtualenv (always, even for custom build commands, so that
-    //    bare `pip install` calls inside the buildCommand work without hitting
-    //    PEP 668's "externally-managed-environment" restriction).
-    //
-    // --copies is required: without it the venv's bin/python is a symlink to
-    // the pyenv binary.  On Linux, Python uses /proc/self/exe to find its real
-    // path, which resolves the symlink to /opt/pyenv/…/bin/python3.x.  Python
-    // then searches for pyvenv.cfg relative to that resolved path — which has
-    // none — so it falls back to treating the pyenv prefix as sys.prefix,
-    // leaving the venv's site-packages off sys.path entirely and causing
-    // gunicorn / app dependencies to be missing at runtime.
-    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
+    // 3. Create (or reuse) the virtualenv. Reused as-is when the pinned Python
+    //    version is unchanged and .venv survived the source refresh; rebuilt
+    //    from scratch on a version change or force-rebuild. See _ensureVenv for
+    //    why --copies is required.
+    final venvRebuilt = await _ensureVenv(
+      user: user,
+      src: src,
+      workDir: workDir,
+      pythonBin: pythonBin,
+      version: version,
+      noCache: noCache,
+    );
+
+    // Persistent pip cache so unchanged wheels are not re-downloaded.
+    final pipEnv = _pythonBuildEnv(workDir, appEnv);
 
     if (buildCommand != null) {
       // 4a. Custom build command — run it with the venv activated so that
       //     plain `pip install` / `python` references resolve into the venv.
-      await _runAsUser(user, src, 'source .venv/bin/activate && $buildCommand');
+      //     Arbitrary commands can't be fingerprinted, so this always runs, but
+      //     it still benefits from the warm pip cache and reused venv.
+      await _runAsUserWithEnv(
+          user, src, 'source .venv/bin/activate && $buildCommand', pipEnv);
     } else {
-      // 4b. Install app dependencies.
+      // 4b. Install app dependencies — skipped when requirements.txt and the
+      //     Python version are unchanged and the venv was reused.
       final hasDeps = File('$src/requirements.txt').existsSync();
       if (hasDeps) {
-        await _runAsUser(user, src,
-            '.venv/bin/pip install --no-cache-dir -q -r requirements.txt');
+        const depsKey = 'py-deps';
+        final depsFp = BuildCache.fingerprint(
+            ['$src/requirements.txt'], ['py:${version ?? 'system'}']);
+        if (!noCache &&
+            !venvRebuilt &&
+            BuildCache.isFresh(workDir, depsKey, depsFp,
+                artifact: '$venv/bin/python')) {
+          stdout.writeln(
+              '[agent] requirements unchanged — skipping pip install');
+        } else {
+          BuildCache.invalidate(workDir, depsKey);
+          await _runAsUserWithEnv(user, src,
+              '.venv/bin/pip install -q -r requirements.txt', pipEnv);
+          await BuildCache.store(workDir, user, depsKey, depsFp);
+        }
       }
     }
 
-    // 5. Install server dependencies (always needed for the gunicorn start
-    //    command generated by apply-unit).
-    await _runAsUser(
-        user,
-        src,
-        '.venv/bin/pip install --no-cache-dir -q '
-        '"gunicorn>=21.0" "uvicorn[standard]>=0.29"');
+    // 5. Install server dependencies (needed for the gunicorn start command
+    //    generated by apply-unit). The gunicorn binary's presence is the
+    //    freshness signal, so a reused venv skips this network round-trip.
+    await _ensurePipServerDeps(
+      user: user,
+      src: src,
+      workDir: workDir,
+      env: pipEnv,
+      key: 'py-server',
+      probeBin: '$venv/bin/gunicorn',
+      packages: '"gunicorn>=21.0" "uvicorn[standard]>=0.29"',
+      noCache: noCache || venvRebuilt,
+    );
 
     // 5b. Django out-of-the-box support. A Django project ships a manage.py at
     //     its root; detect it and run the two management commands every Django
@@ -616,6 +806,90 @@ class Builders {
     if (link.existsSync()) link.deleteSync();
     await ShellExec.run('ln', ['-sfn', venv, currentVenv]);
     await ShellExec.run('chown', ['-hR', '$user:$user', venv]);
+  }
+
+  /// Persistent build environment for pip-based runtimes.
+  ///
+  /// `runuser` runs the install as the app user with HOME=/home/<user>, a
+  /// directory that never exists for panel apps, so pip can neither cache nor
+  /// write logs there. We point HOME — and pip's cache explicitly — at the
+  /// app-owned workdir, so wheels survive across deploys and unchanged
+  /// dependencies are not re-downloaded. App env vars are layered first so the
+  /// infra keys (HOME, PIP_CACHE_DIR) always win.
+  static Map<String, String> _pythonBuildEnv(
+          String workDir, Map<String, String>? appEnv) =>
+      <String, String>{
+        ...Platform.environment,
+        ...?appEnv,
+        'HOME': workDir,
+        'PIP_CACHE_DIR': '$workDir/.cache/pip',
+        'PIP_DISABLE_PIP_VERSION_CHECK': '1',
+      };
+
+  /// Create the project virtualenv at `<src>/.venv`, reusing an existing one
+  /// when the pinned Python [version] is unchanged and the venv survived the
+  /// source refresh. Returns true when a fresh venv was built (so the caller can
+  /// force its dependent installs to re-run). [noCache] forces a rebuild.
+  ///
+  /// --copies is required: without it the venv's bin/python is a symlink to the
+  /// pyenv binary. On Linux, Python uses /proc/self/exe to find its real path,
+  /// which resolves that symlink to /opt/pyenv/…/bin/python3.x. Python then
+  /// looks for pyvenv.cfg relative to the resolved path — which has none — so it
+  /// treats the pyenv prefix as sys.prefix and leaves the venv's site-packages
+  /// off sys.path entirely, making app dependencies missing at runtime.
+  static Future<bool> _ensureVenv({
+    required String user,
+    required String src,
+    required String workDir,
+    required String pythonBin,
+    required String? version,
+    required bool noCache,
+  }) async {
+    const venvKey = 'py-venv';
+    final venv = '$src/.venv';
+    final venvFp =
+        BuildCache.fingerprint(const <String>[], ['py:${version ?? 'system'}']);
+    final reusable = !noCache &&
+        File('$venv/bin/python').existsSync() &&
+        BuildCache.isFresh(workDir, venvKey, venvFp,
+            artifact: '$venv/bin/python');
+    if (reusable) {
+      stdout.writeln('[agent] reusing cached virtualenv (.venv)');
+      return false;
+    }
+    // Rebuild from scratch: the venv is tied to a specific interpreter, so a
+    // version change (or force-rebuild) must not reuse the old one.
+    await ShellExec.run('rm', ['-rf', venv], requireSuccess: false);
+    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
+    await BuildCache.store(workDir, user, venvKey, venvFp);
+    // A fresh venv has no packages, so any dependent install markers are stale.
+    BuildCache.invalidate(workDir, 'py-deps');
+    BuildCache.invalidate(workDir, 'py-server');
+    BuildCache.invalidate(workDir, 'py-celery');
+    return true;
+  }
+
+  /// Install the server packages a runtime always needs (gunicorn/uvicorn, or
+  /// celery/flower) into the venv, skipping the install when [probeBin] already
+  /// exists and the marker [key] is recorded. [noCache] forces a reinstall.
+  static Future<void> _ensurePipServerDeps({
+    required String user,
+    required String src,
+    required String workDir,
+    required Map<String, String> env,
+    required String key,
+    required String probeBin,
+    required String packages,
+    required bool noCache,
+  }) async {
+    if (!noCache &&
+        BuildCache.isFresh(workDir, key, key, artifact: probeBin)) {
+      return;
+    }
+    BuildCache.invalidate(workDir, key);
+    await _runAsUserWithEnv(
+        user, src, '.venv/bin/pip install -q $packages', env);
+    await BuildCache.store(workDir, user, key, key);
   }
 
   /// Per-app directory Django static assets are collected into.
@@ -864,6 +1138,7 @@ class Builders {
     String? pythonVersion,
     String pyenvRoot = '/opt/pyenv',
     Map<String, String>? appEnv,
+    bool noCache = false,
   }) async {
     final src = '$workDir/releases/current_build';
     final venv = '$src/.venv';
@@ -877,24 +1152,53 @@ class Builders {
         ? await _pyenvPython(pyenvRoot, version)
         : 'python3';
 
-    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
+    final venvRebuilt = await _ensureVenv(
+      user: user,
+      src: src,
+      workDir: workDir,
+      pythonBin: pythonBin,
+      version: version,
+      noCache: noCache,
+    );
+
+    final pipEnv = _pythonBuildEnv(workDir, appEnv);
 
     if (buildCommand != null) {
-      await _runAsUser(user, src, 'source .venv/bin/activate && $buildCommand');
+      await _runAsUserWithEnv(
+          user, src, 'source .venv/bin/activate && $buildCommand', pipEnv);
     } else {
       final hasDeps = File('$src/requirements.txt').existsSync();
       if (hasDeps) {
-        await _runAsUser(user, src,
-            '.venv/bin/pip install --no-cache-dir -q -r requirements.txt');
+        const depsKey = 'py-deps';
+        final depsFp = BuildCache.fingerprint(
+            ['$src/requirements.txt'], ['py:${version ?? 'system'}']);
+        if (!noCache &&
+            !venvRebuilt &&
+            BuildCache.isFresh(workDir, depsKey, depsFp,
+                artifact: '$venv/bin/python')) {
+          stdout.writeln(
+              '[agent] requirements unchanged — skipping pip install');
+        } else {
+          BuildCache.invalidate(workDir, depsKey);
+          await _runAsUserWithEnv(user, src,
+              '.venv/bin/pip install -q -r requirements.txt', pipEnv);
+          await BuildCache.store(workDir, user, depsKey, depsFp);
+        }
       }
     }
 
-    // Always install celery and flower so the generated unit commands work.
-    await _runAsUser(
-        user,
-        src,
-        '.venv/bin/pip install --no-cache-dir -q '
-        '"celery>=5.3" "flower>=2.0"');
+    // Always ensure celery and flower so the generated unit commands work;
+    // skipped when a reused venv already has them.
+    await _ensurePipServerDeps(
+      user: user,
+      src: src,
+      workDir: workDir,
+      env: pipEnv,
+      key: 'py-celery',
+      probeBin: '$venv/bin/celery',
+      packages: '"celery>=5.3" "flower>=2.0"',
+      noCache: noCache || venvRebuilt,
+    );
 
     // Run Django management commands if applicable.
     await _runDjangoManagementCommands(user, src, workDir, appEnv);
@@ -917,6 +1221,7 @@ class Builders {
     required String user,
     String? buildCommand,
     Map<String, String>? appEnv,
+    bool noCache = false,
   }) async {
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
       // Install deps first (npm ci / bun install), then run the build. appEnv is
@@ -927,6 +1232,7 @@ class Builders {
         user: user,
         buildCommand: buildCommand,
         appEnv: appEnv,
+        noCache: noCache,
       );
     }
     // No compiled binary to install — Nginx will serve the files directly

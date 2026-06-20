@@ -35,6 +35,7 @@ class DeploymentsApi {
       sourceType: form.sourceType.value!,
       gitCommitSha: form.gitCommitSha.value,
       artifactPath: form.artifactId.value,
+      forceRebuild: form.forceRebuild.value ?? false,
     );
     return deployment.toJson();
   }

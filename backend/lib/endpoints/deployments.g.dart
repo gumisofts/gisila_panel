@@ -30,7 +30,8 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       'properties': <String, Object?>{
         'sourceType': <String, Object?>{'type': 'string'},
         'gitCommitSha': <String, Object?>{'type': 'string'},
-        'artifactId': <String, Object?>{'type': 'string'}
+        'artifactId': <String, Object?>{'type': 'string'},
+        'forceRebuild': <String, Object?>{'type': 'boolean'}
       }
     });
     spec.putTag('Deployments');

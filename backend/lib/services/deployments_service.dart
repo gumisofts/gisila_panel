@@ -28,6 +28,7 @@ class DeploymentsService extends Service {
     required String sourceType,
     String? gitCommitSha,
     String? artifactPath,
+    bool forceRebuild = false,
   }) async {
     final appsSvc = AppsService()..attach(ctx);
     // Deploying is a developer-level action.
@@ -66,6 +67,7 @@ class DeploymentsService extends Service {
         'sourceType': sourceType,
         'gitCommitSha': gitCommitSha,
         'artifactPath': artifactPath,
+        'forceRebuild': forceRebuild,
         'queuedAt': now.toIso8601String(),
       }),
     );
