@@ -739,7 +739,31 @@ Future<void> _exec(List<String> args) async {
       'export npm_config_cache="$workDir/.npm"; '
       'export XDG_CACHE_HOME="$workDir/.cache"; ';
 
-  final script = '$loadEnv$infraEnv'
+  // Stop pnpm from reinstalling deps before a `pnpm run <script>` (e.g.
+  // `pnpm db:migrate`). pnpm 9+ runs a deps-status check before a script and,
+  // because the console runs in a different environment than the build (HOME,
+  // store path), it can wrongly decide node_modules is stale and kick off an
+  // automatic `pnpm install`. That reinstall is both wasteful and dangerous
+  // here: it re-evaluates the supply-chain policy and aborts the whole command
+  // on e.g. a freshly-published lockfile entry (ERR_PNPM_MINIMUM_RELEASE_AGE_
+  // VIOLATION), so a plain migrate fails for reasons unrelated to migrating.
+  // Deps were already installed at build time, so skip the check entirely —
+  // matching the systemd unit (see systemd_unit.dart). Keys are pnpm-specific
+  // and harmlessly ignored by npm/yarn/bun; set both env prefixes (pnpm 11 reads
+  // pnpm_config_*, pnpm 9/10 read npm_config_*) so it is version-agnostic.
+  // CI=true mirrors the build env (builders.dart): pnpm's documented signal for
+  // a non-interactive run, so any modules-purge prompt aborts cleanly instead of
+  // hanging on the TTY-less exec.
+  final isJit = runtime == 'node' || runtime == 'bun';
+  final pnpmEnv = isJit
+      ? 'export CI=true; '
+          'export npm_config_verify_deps_before_run=false; '
+          'export pnpm_config_verify_deps_before_run=false; '
+          'export npm_config_confirm_modules_purge=false; '
+          'export pnpm_config_confirm_modules_purge=false; '
+      : '';
+
+  final script = '$loadEnv$infraEnv$pnpmEnv'
       'cd "$runDir" 2>/dev/null || cd "$workDir"; $activate$command';
 
   final invocation = _isRoot
