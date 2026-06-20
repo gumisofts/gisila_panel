@@ -320,6 +320,21 @@ class Builders {
       ...nodeEnv,
     };
 
+    // Dependency install + codegen must include devDependencies — that is where
+    // the build toolchain lives (tsc, webpack/vite, prisma, …). If the app sets
+    // NODE_ENV=production in its panel env vars, that value flows through
+    // installEnv into `pnpm/npm/yarn/bun install` and makes them OMIT
+    // devDependencies, so the build later fails — e.g. prisma's CLI is a devDep,
+    // so `node_modules/.bin/prisma generate` dies with `No such file` (exit 127)
+    // even though the install itself succeeded. Force a non-production NODE_ENV
+    // for the install and prisma-generate steps only; the build COMMAND below
+    // still runs with the app's own NODE_ENV so framework production
+    // optimisations (next build, vite build, …) are preserved.
+    final depInstallEnv = <String, String>{
+      ...installEnv,
+      'NODE_ENV': 'development',
+    };
+
     // 4. pnpm 10+ ignores dependency build scripts (Prisma, esbuild, sharp, …)
     //    by default and aborts with ERR_PNPM_IGNORED_BUILDS.  Approving them
     //    non-interactively is the only viable path for an automated deploy.
@@ -427,6 +442,12 @@ class Builders {
     ], [
       'pm:$pkgMgr',
       'node:${nodeVersion ?? 'system'}',
+      // Bump when the install semantics change. 'with-dev' marks node_modules
+      // installed with devDependencies forced on (see depInstallEnv); it also
+      // invalidates any cache marker left by an older prod-only install that
+      // omitted devDeps, so the next deploy reinstalls instead of reusing an
+      // incomplete tree (e.g. one missing prisma / the build toolchain).
+      'deps:with-dev',
     ]);
     if (!noCache &&
         BuildCache.isFresh(workDir, installKey, installFp,
@@ -438,7 +459,7 @@ class Builders {
       // a marker that lets the next deploy skip a now-incomplete node_modules.
       BuildCache.invalidate(workDir, installKey);
       final installCmd = _nodeInstallCommand(pkgMgr);
-      await _runAsUserWithEnv(user, src, installCmd, installEnv);
+      await _runAsUserWithEnv(user, src, installCmd, depInstallEnv);
       await BuildCache.store(workDir, user, installKey, installFp);
     }
 
@@ -464,7 +485,7 @@ class Builders {
         user,
         src,
         'node_modules/.bin/prisma generate --schema=$schemaPrisma',
-        installEnv,
+        depInstallEnv,
       );
     }
 
