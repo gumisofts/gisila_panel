@@ -99,6 +99,9 @@ class AppsService extends Service {
     // Static site (runtime = static)
     String? staticRoot,
     bool? staticSpa,
+    // Local disk media (Model A)
+    bool? mediaEnabled,
+    int? mediaMaxUploadMb,
     // SSH deploy key (for git source)
     int? deployKeyId,
   }) async {
@@ -163,6 +166,8 @@ class AppsService extends Service {
       if (celeryExtraArgs != null) 'celeryExtraArgs': celeryExtraArgs,
       if (staticRoot != null) 'staticRoot': staticRoot,
       if (staticSpa != null) 'staticSpa': staticSpa,
+      if (mediaEnabled != null) 'mediaEnabled': mediaEnabled,
+      if (mediaMaxUploadMb != null) 'mediaMaxUploadMb': mediaMaxUploadMb,
       if (deployKeyId != null) 'deployKeyId': deployKeyId,
       'status': 'created',
       'createdAt': now.toIso8601String(),

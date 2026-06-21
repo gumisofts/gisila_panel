@@ -97,6 +97,8 @@ export function SettingsTab({
     // Static
     staticRoot: app.staticRoot ?? "",
     staticSpa: app.staticSpa ?? false,
+    mediaEnabled: app.mediaEnabled ?? false,
+    mediaMaxUploadMb: app.mediaMaxUploadMb != null ? String(app.mediaMaxUploadMb) : "25",
     deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
     internalPort: app.internalPort != null ? String(app.internalPort) : "",
   });
@@ -135,6 +137,8 @@ export function SettingsTab({
       celeryExtraArgs: app.celeryExtraArgs ?? "",
       staticRoot: app.staticRoot ?? "",
       staticSpa: app.staticSpa ?? false,
+      mediaEnabled: app.mediaEnabled ?? false,
+      mediaMaxUploadMb: app.mediaMaxUploadMb != null ? String(app.mediaMaxUploadMb) : "25",
       deployKeyId: app.deployKeyId ? String(app.deployKeyId) : "",
       internalPort: app.internalPort != null ? String(app.internalPort) : "",
     });
@@ -204,6 +208,12 @@ export function SettingsTab({
       if (isStatic) {
         patch.staticRoot = form.staticRoot || undefined;
         patch.staticSpa  = form.staticSpa;
+      } else {
+        // Local disk media (Model A) — not applicable to static sites.
+        patch.mediaEnabled = form.mediaEnabled;
+        patch.mediaMaxUploadMb = form.mediaMaxUploadMb
+          ? Number(form.mediaMaxUploadMb)
+          : undefined;
       }
       if (isGit) {
         patch.deployKeyId = form.deployKeyId ? Number(form.deployKeyId) : undefined;
@@ -855,6 +865,55 @@ export function SettingsTab({
                 <li>• Attach a domain to get an automatic Let&apos;s Encrypt certificate.</li>
               </ul>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Media (local disk) */}
+      {!isStatic && (
+        <Card className="border-violet-500/30 bg-violet-500/5">
+          <CardHeader>
+            <CardTitle className="text-base">Media storage (local disk)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-violet-500/20 bg-background/40 p-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-border"
+                checked={form.mediaEnabled}
+                onChange={(e) => set("mediaEnabled", e.target.checked)}
+              />
+              <div>
+                <p className="text-sm font-medium">Enable file uploads on disk</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Creates a persistent <code className="font-mono">shared/media</code>{" "}
+                  directory and exposes <code className="font-mono">MEDIA_ROOT</code> to
+                  your app. Nginx serves it at <code className="font-mono">/media/</code>{" "}
+                  and offers an internal <code className="font-mono">/_protected/</code>{" "}
+                  location for auth-gated downloads via{" "}
+                  <code className="font-mono">X-Accel-Redirect</code>.
+                </p>
+              </div>
+            </label>
+            {form.mediaEnabled && (
+              <div>
+                <Label htmlFor="s-media-max">Max upload size (MB)</Label>
+                <Input
+                  id="s-media-max"
+                  type="number"
+                  min={1}
+                  max={5120}
+                  className="mt-1 max-w-[12rem]"
+                  value={form.mediaMaxUploadMb}
+                  onChange={(e) => set("mediaMaxUploadMb", e.target.value)}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sets nginx <code className="font-mono">client_max_body_size</code> for
+                  this app. <code className="font-mono">MEDIA_ROOT</code> takes effect on
+                  the next deploy.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

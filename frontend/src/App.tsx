@@ -16,6 +16,7 @@ import ServicesPage from "../app/(panel)/services/page";
 import ServiceDetailPage from "../app/(panel)/services/[id]/page";
 import DatabasesPage from "../app/(panel)/databases/page";
 import InstancePage from "../app/(panel)/databases/[id]/page";
+import StoragePage from "../app/(panel)/storage/page";
 import MailPage from "../app/(panel)/mail/page";
 import ActivityPage from "../app/(panel)/activity/page";
 import TeamsPage from "../app/(panel)/teams/page";
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />
             <Route path="/databases/:id" element={<InstancePage />} />
+            <Route path="/storage" element={<StoragePage />} />
             <Route path="/mail" element={<MailPage />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/teams" element={<TeamsPage />} />

@@ -321,6 +321,8 @@ class Applier {
     required List<String> hostnames,
     String? staticRoot,
     String? mediaRoot,
+    bool protectedMedia = false,
+    int maxUploadMb = 50,
   }) async {
     // Only let nginx serve a file root that actually exists and is non-empty
     // (e.g. Django collectstatic produced it). A bare/missing dir is dropped so
@@ -339,6 +341,8 @@ class Applier {
       hostnames: hostnames,
       staticRoot: effectiveStatic,
       mediaRoot: effectiveMedia,
+      protectedMedia: effectiveMedia != null && protectedMedia,
+      maxUploadMb: maxUploadMb,
     ).render();
     Directory(nginxDir).createSync(recursive: true);
     File('$nginxDir/gisila-app-$appId.conf').writeAsStringSync(vhost);

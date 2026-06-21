@@ -10,6 +10,7 @@ import 'package:gisila_panel/workers/mail_worker.dart';
 import 'package:gisila_panel/workers/metrics_worker.dart';
 import 'package:gisila_panel/workers/postgres_worker.dart';
 import 'package:gisila_panel/workers/service_worker.dart';
+import 'package:gisila_panel/workers/storage_worker.dart';
 
 Future<void> main(List<String> args) async {
   await init();
@@ -17,6 +18,7 @@ Future<void> main(List<String> args) async {
   final deploymentWorker = DeploymentWorker(database);
   final serviceWorker = ServiceWorker(database);
   final postgresWorker = PostgresWorker(database);
+  final storageWorker = StorageWorker(database);
   final execWorker = ExecWorker(database);
   final mailWorker = MailWorker(database);
 
@@ -28,6 +30,7 @@ Future<void> main(List<String> args) async {
   queue.on('gisila:queue:ssl', deploymentWorker.onSsl);
   queue.on('gisila:queue:services', serviceWorker.onServiceJob);
   queue.on('gisila:queue:postgres', postgresWorker.onPostgresJob);
+  queue.on('gisila:queue:storage', storageWorker.onStorageJob);
   queue.on('gisila:queue:exec', execWorker.onExecJob);
   queue.on('gisila:queue:mail', mailWorker.onMailJob);
 

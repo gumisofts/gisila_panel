@@ -34,6 +34,7 @@ import { DomainsTab } from "./_tabs/domains";
 import { LogsTab } from "./_tabs/logs";
 import { ConsoleTab } from "./_tabs/console";
 import { MetricsTab } from "./_tabs/metrics";
+import { StorageTab } from "./_tabs/storage";
 import { SettingsTab } from "./_tabs/settings";
 
 export default function AppDetailPage() {
@@ -197,6 +198,7 @@ export default function AppDetailPage() {
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         <TabsContent value="overview"><OverviewTab app={app} /></TabsContent>
@@ -206,6 +208,7 @@ export default function AppDetailPage() {
         <TabsContent value="logs"><LogsTab appId={appId} /></TabsContent>
         <TabsContent value="console"><ConsoleTab appId={appId} /></TabsContent>
         <TabsContent value="metrics"><MetricsTab appId={appId} /></TabsContent>
+        <TabsContent value="storage"><StorageTab appId={appId} /></TabsContent>
         <TabsContent value="settings">
           <SettingsTab app={app} onSaved={mutate} />
         </TabsContent>

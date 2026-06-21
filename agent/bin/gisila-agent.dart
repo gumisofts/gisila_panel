@@ -64,6 +64,9 @@ Future<void> main(List<String> args) async {
       case 'postgres':
         await _postgres(rest);
         break;
+      case 'storage':
+        await _storage(rest);
+        break;
       case 'python':
         await _pythonCmd(rest);
         break;
@@ -511,6 +514,10 @@ Future<void> _applyVhost(List<String> args) async {
     // and uploaded media straight from disk at /static/ and /media/.
     p.addOption('static-root'); // absolute path to collected static files
     p.addOption('media-root');  // absolute path to uploaded media files
+    // Model A: emit an internal /_protected/ location for X-Accel-Redirect, and
+    // set the per-app client_max_body_size.
+    p.addFlag('protected-media', defaultsTo: false);
+    p.addOption('max-upload-mb', defaultsTo: '50');
   });
   final appId = int.parse(r['app-id'] as String);
   final runtime = r['runtime'] as String;
@@ -540,6 +547,8 @@ Future<void> _applyVhost(List<String> args) async {
     hostnames: hostnames,
     staticRoot: r['static-root'] as String?,
     mediaRoot: r['media-root'] as String?,
+    protectedMedia: r['protected-media'] as bool,
+    maxUploadMb: int.tryParse(r['max-upload-mb'] as String? ?? '50') ?? 50,
   );
 }
 
@@ -2355,6 +2364,361 @@ Future<void> _writeFileSudo(String path, String content) async {
   await proc.stdout.drain<void>();
   final exit = await proc.exitCode;
   if (exit != 0) throw Exception('tee $path failed with exit $exit');
+}
+
+// ── Object storage (MinIO + S3-compatible buckets) ───────────────────────────
+//
+// Model B. Two responsibilities:
+//   1. install/uninstall a self-hosted MinIO server (kind=minio providers).
+//   2. provision/remove buckets + scoped access keys on any S3-compatible
+//      endpoint via the MinIO client `mc` (kind=minio mints a dedicated user +
+//      bucket-scoped policy; kind=external just creates the bucket with the
+//      provider's own credentials).
+
+const _minioBin = '/usr/local/bin/minio';
+const _mcBin = '/usr/local/bin/mc';
+const _minioEnvFile = '/etc/gisila/minio.env';
+const _minioUnit = '/etc/systemd/system/gisila-minio.service';
+const _minioUser = 'gisila-minio';
+
+Future<void> _storage(List<String> args) async {
+  if (args.isEmpty) {
+    stderr.writeln('Usage: gisila-agent storage '
+        '<install-minio|uninstall-minio|start-minio|stop-minio|'
+        'create-bucket|delete-bucket> [flags]');
+    exitCode = 64;
+    return;
+  }
+  final action = args.first;
+  final r = _parse(args.sublist(1), (p) {
+    // MinIO server install.
+    p.addOption('data-dir', defaultsTo: '/var/lib/gisila/minio');
+    p.addOption('port', defaultsTo: '9000');
+    p.addOption('console-port', defaultsTo: '9001');
+    p.addOption('root-user');
+    p.addOption('root-secret');
+    p.addFlag('purge', defaultsTo: false); // uninstall: also delete data dir
+    // Bucket provisioning (any S3 endpoint).
+    p.addOption('kind', defaultsTo: 'minio'); // minio | external
+    p.addOption('endpoint'); // S3 API endpoint of the admin connection
+    p.addOption('access-key'); // admin/root key
+    p.addOption('secret-key'); // admin/root secret
+    p.addOption('bucket');
+    p.addOption('scoped-access-key'); // scoped key to mint (minio only)
+    p.addOption('scoped-secret-key');
+    p.addFlag('public', defaultsTo: false); // anonymous read policy
+  });
+
+  switch (action) {
+    case 'install-minio':
+      await _minioInstall(
+        dataDir: r['data-dir'] as String,
+        port: r['port'] as String,
+        consolePort: r['console-port'] as String,
+        rootUser: r['root-user'] as String?,
+        rootSecret: r['root-secret'] as String?,
+      );
+    case 'uninstall-minio':
+      await _minioUninstall(
+        dataDir: r['data-dir'] as String,
+        purge: r['purge'] as bool,
+      );
+    case 'start-minio':
+      await _serviceCtl('start', 'gisila-minio');
+    case 'stop-minio':
+      await _serviceCtl('stop', 'gisila-minio');
+    case 'create-bucket':
+      await _bucketCreate(
+        kind: r['kind'] as String,
+        endpoint: _req(r['endpoint'] as String?, 'endpoint'),
+        accessKey: _req(r['access-key'] as String?, 'access-key'),
+        secretKey: _req(r['secret-key'] as String?, 'secret-key'),
+        bucket: _req(r['bucket'] as String?, 'bucket'),
+        scopedAccessKey: r['scoped-access-key'] as String?,
+        scopedSecretKey: r['scoped-secret-key'] as String?,
+        public: r['public'] as bool,
+      );
+    case 'delete-bucket':
+      await _bucketDelete(
+        kind: r['kind'] as String,
+        endpoint: _req(r['endpoint'] as String?, 'endpoint'),
+        accessKey: _req(r['access-key'] as String?, 'access-key'),
+        secretKey: _req(r['secret-key'] as String?, 'secret-key'),
+        bucket: _req(r['bucket'] as String?, 'bucket'),
+        scopedAccessKey: r['scoped-access-key'] as String?,
+      );
+    default:
+      throw ArgumentError('Unknown storage action: $action');
+  }
+}
+
+String _req(String? v, String name) {
+  if (v == null || v.trim().isEmpty) {
+    throw ArgumentError('--$name is required');
+  }
+  return v.trim();
+}
+
+/// Host CPU architecture suffix used by MinIO's download URLs.
+String _minioArch() {
+  try {
+    final m = (Process.runSync('uname', ['-m']).stdout as String).trim();
+    if (m == 'aarch64' || m == 'arm64') return 'arm64';
+    if (m == 'armv7l' || m == 'arm') return 'arm';
+  } catch (_) {}
+  return 'amd64';
+}
+
+/// Download a binary from [url] to [dest] (root-owned, executable) if missing.
+Future<void> _ensureBinary(String url, String dest) async {
+  if (await File(dest).exists()) return;
+  stdout.writeln('[agent] downloading ${dest.split('/').last} from $url');
+  final cmd = _priv('sh', ['-c', "curl -fsSL '$url' -o '$dest'"]);
+  await _run(cmd.first, cmd.skip(1).toList());
+  await _sudo('chmod', ['0755', dest]);
+}
+
+/// Ensure the MinIO client `mc` is present (needed for both kinds of provider).
+Future<void> _ensureMc() async {
+  final arch = _minioArch();
+  await _ensureBinary(
+      'https://dl.min.io/client/mc/release/linux-$arch/mc', _mcBin);
+}
+
+Future<void> _minioInstall({
+  required String dataDir,
+  required String port,
+  required String consolePort,
+  String? rootUser,
+  String? rootSecret,
+}) async {
+  if (rootUser == null || rootUser.isEmpty || rootSecret == null || rootSecret.isEmpty) {
+    throw ArgumentError('--root-user and --root-secret are required');
+  }
+  final arch = _minioArch();
+  await _ensureBinary(
+      'https://dl.min.io/server/minio/release/linux-$arch/minio', _minioBin);
+  await _ensureMc();
+
+  // Dedicated system user owning the data directory.
+  await _sudo('useradd', ['-r', '-s', '/usr/sbin/nologin', _minioUser],
+      failOk: true);
+  await _sudo('mkdir', ['-p', dataDir]);
+  await _sudo('chown', ['-R', '$_minioUser:$_minioUser', dataDir]);
+  await _sudo('mkdir', ['-p', '/etc/gisila'], failOk: true);
+
+  // Root credentials + server addresses live in an env file referenced by the
+  // unit (mode 0640) so the secret never lands in the world-readable unit file.
+  await _writeFileSudo(_minioEnvFile, '''
+# Managed by gisila-agent — do not edit by hand.
+MINIO_ROOT_USER=$rootUser
+MINIO_ROOT_PASSWORD=$rootSecret
+MINIO_VOLUMES=$dataDir
+MINIO_OPTS=--address 127.0.0.1:$port --console-address 127.0.0.1:$consolePort
+''');
+  await _sudo('chmod', ['0640', _minioEnvFile], failOk: true);
+  await _sudo('chown', ['root:root', _minioEnvFile], failOk: true);
+
+  await _writeFileSudo(_minioUnit, '''
+[Unit]
+Description=Gisila MinIO object storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$_minioUser
+Group=$_minioUser
+EnvironmentFile=$_minioEnvFile
+ExecStart=$_minioBin server \$MINIO_OPTS \$MINIO_VOLUMES
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# ── Sandboxing ─────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=$dataDir
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+''');
+  await _sudo('systemctl', ['daemon-reload']);
+  await _serviceCtl('enable', 'gisila-minio');
+  await _serviceCtl('restart', 'gisila-minio');
+
+  // Wait until the S3 API answers so the worker only marks the provider running
+  // once buckets can actually be created.
+  final endpoint = 'http://127.0.0.1:$port';
+  await _waitForS3(endpoint);
+  // Register the admin alias up front (best effort) so subsequent bucket ops
+  // and a human running `mc` on the box both work.
+  await _mc(['alias', 'set', 'gx', endpoint, rootUser, rootSecret],
+      failOk: true);
+  stdout.writeln('[agent] MinIO is up on $endpoint (console :$consolePort)');
+}
+
+/// Poll the MinIO health endpoint until it responds or the timeout elapses.
+Future<void> _waitForS3(String endpoint) async {
+  final url = '$endpoint/minio/health/ready';
+  for (var i = 0; i < 30; i++) {
+    final res = await Process.run('curl', ['-fsS', '-o', '/dev/null', url]);
+    if (res.exitCode == 0) return;
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  stderr.writeln('[agent] warning: MinIO health check did not pass in time');
+}
+
+Future<void> _minioUninstall({
+  required String dataDir,
+  required bool purge,
+}) async {
+  await _serviceCtl('stop', 'gisila-minio');
+  await _serviceCtl('disable', 'gisila-minio');
+  await _sudo('rm', ['-f', _minioUnit], failOk: true);
+  await _sudo('rm', ['-f', _minioEnvFile], failOk: true);
+  await _sudo('systemctl', ['daemon-reload'], failOk: true);
+  if (purge) {
+    await _sudo('rm', ['-rf', dataDir], failOk: true);
+  }
+  // Binaries (minio, mc) are left in place — they are shared and harmless.
+}
+
+/// Build a `MC_HOST_<alias>` URL embedding credentials, e.g.
+/// `http://ACCESS:SECRET@127.0.0.1:9000`. Keys are URL-safe alphanumerics.
+String _mcHostUrl(String endpoint, String accessKey, String secretKey) {
+  final u = Uri.parse(endpoint);
+  final creds = '${Uri.encodeComponent(accessKey)}:'
+      '${Uri.encodeComponent(secretKey)}';
+  return '${u.scheme}://$creds@${u.authority}';
+}
+
+/// Run an `mc` command against the admin alias `gx`. `mc` talks to the S3 API
+/// over the network and needs no privileges, so it runs as the agent user with
+/// credentials injected via the MC_HOST_gx environment variable.
+Future<ProcessResult> _mc(
+  List<String> args, {
+  String? endpoint,
+  String? accessKey,
+  String? secretKey,
+  bool failOk = false,
+}) async {
+  final env = <String, String>{'MC_NO_COLOR': '1'};
+  // The alias/set call carries explicit endpoint+creds as args; everything else
+  // resolves `gx` via MC_HOST_gx.
+  if (endpoint != null && accessKey != null && secretKey != null) {
+    env['MC_HOST_gx'] = _mcHostUrl(endpoint, accessKey, secretKey);
+  }
+  final result = await Process.run(_mcBin, args, environment: env,
+      includeParentEnvironment: true);
+  if (result.exitCode != 0 && !failOk) {
+    throw Exception('mc ${args.join(' ')}: exit ${result.exitCode}\n'
+        '${result.stdout}\n${result.stderr}');
+  }
+  return result;
+}
+
+Future<void> _bucketCreate({
+  required String kind,
+  required String endpoint,
+  required String accessKey,
+  required String secretKey,
+  required String bucket,
+  String? scopedAccessKey,
+  String? scopedSecretKey,
+  required bool public,
+}) async {
+  await _ensureMc();
+  final c = {'endpoint': endpoint, 'accessKey': accessKey, 'secretKey': secretKey};
+
+  // Create the bucket (idempotent).
+  await _mc(['mb', '--ignore-existing', 'gx/$bucket'],
+      endpoint: c['endpoint'], accessKey: c['accessKey'], secretKey: c['secretKey']);
+
+  // Public buckets get an anonymous download policy.
+  if (public) {
+    await _mc(['anonymous', 'set', 'download', 'gx/$bucket'],
+        endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+        failOk: true);
+  }
+
+  // MinIO: mint a dedicated user scoped to just this bucket. External providers
+  // (R2/S3/B2) reuse the provider credentials — minting IAM users isn't
+  // possible over plain S3, so the caller stores the provider creds as the
+  // bucket creds.
+  if (kind == 'minio' && scopedAccessKey != null && scopedSecretKey != null) {
+    await _mc(['admin', 'user', 'add', 'gx', scopedAccessKey, scopedSecretKey],
+        endpoint: endpoint, accessKey: accessKey, secretKey: secretKey);
+
+    final policyName = 'gx-$bucket';
+    final policyDoc = jsonEncode({
+      'Version': '2012-10-17',
+      'Statement': [
+        {
+          'Effect': 'Allow',
+          'Action': ['s3:*'],
+          'Resource': [
+            'arn:aws:s3:::$bucket',
+            'arn:aws:s3:::$bucket/*',
+          ],
+        }
+      ],
+    });
+    final policyFile = '/tmp/gisila-policy-$bucket.json';
+    await File(policyFile).writeAsString(policyDoc);
+    await _mc(['admin', 'policy', 'create', 'gx', policyName, policyFile],
+        endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+        failOk: true);
+    // mc renamed `policy set` → `policy attach` across versions; try the new
+    // form first, fall back to the old one so we work on either.
+    final attached = await _mc(
+        ['admin', 'policy', 'attach', 'gx', policyName, '--user', scopedAccessKey],
+        endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+        failOk: true);
+    if (attached.exitCode != 0) {
+      await _mc(
+          ['admin', 'policy', 'set', 'gx', policyName, 'user=$scopedAccessKey'],
+          endpoint: endpoint, accessKey: accessKey, secretKey: secretKey);
+    }
+    try {
+      await File(policyFile).delete();
+    } catch (_) {}
+  }
+  stdout.writeln('[agent] bucket "$bucket" ready on $endpoint');
+}
+
+Future<void> _bucketDelete({
+  required String kind,
+  required String endpoint,
+  required String accessKey,
+  required String secretKey,
+  required String bucket,
+  String? scopedAccessKey,
+}) async {
+  await _ensureMc();
+  // Remove the bucket and all its objects.
+  await _mc(['rb', '--force', 'gx/$bucket'],
+      endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+      failOk: true);
+  if (kind == 'minio') {
+    final policyName = 'gx-$bucket';
+    if (scopedAccessKey != null && scopedAccessKey.isNotEmpty) {
+      await _mc(['admin', 'user', 'remove', 'gx', scopedAccessKey],
+          endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+          failOk: true);
+    }
+    await _mc(['admin', 'policy', 'remove', 'gx', policyName],
+        endpoint: endpoint, accessKey: accessKey, secretKey: secretKey,
+        failOk: true);
+  }
+  stdout.writeln('[agent] bucket "$bucket" removed from $endpoint');
 }
 
 // =============================================================================

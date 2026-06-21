@@ -96,6 +96,9 @@ export interface App {
   // Static site
   staticRoot?: string | null;
   staticSpa?: boolean | null;
+  // Local disk media (Model A)
+  mediaEnabled?: boolean | null;
+  mediaMaxUploadMb?: number | null;
   deployKeyId?: number | null;
   memoryMbLimit: number;
   cpuQuotaPercent: number;
@@ -401,4 +404,69 @@ export interface MailDnsResponse {
   publicIp?: string | null;
   dkimConfigured: boolean;
   records: MailDnsRecord[];
+}
+
+// ── Object storage (Model B) ──────────────────────────────────────────────────
+
+export type StorageProviderKind = "minio" | "external";
+
+export type StorageProviderStatus =
+  | "pending"
+  | "installing"
+  | "running"
+  | "stopped"
+  | "failed"
+  | "uninstalling"
+  | "config_only";
+
+export interface StorageProvider {
+  id: ID;
+  kind: StorageProviderKind;
+  displayName: string;
+  endpoint: string;
+  region?: string | null;
+  publicUrl?: string | null;
+  forcePathStyle: boolean;
+  consolePort?: number | null;
+  status: StorageProviderStatus;
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export type StorageBucketStatus = "pending" | "active" | "failed" | "deleted";
+
+export interface BucketConnectionInfo {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  publicUrl?: string | null;
+  forcePathStyle: boolean;
+}
+
+export interface StorageBucket {
+  id: ID;
+  providerId: ID;
+  bucketName: string;
+  isPublic: boolean;
+  status: StorageBucketStatus;
+  errorMessage?: string | null;
+  connection?: BucketConnectionInfo;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface AppStorageLink {
+  id: ID;
+  appId: ID;
+  bucketId: ID;
+  envPrefix: string;
+  bucketName: string;
+  providerName: string;
+  providerKind: StorageProviderKind;
+  envVars: string[];
+  createdAt: string;
 }

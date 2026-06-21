@@ -71,6 +71,8 @@ class AppsApi {
       celeryExtraArgs: form.celeryExtraArgs.value,
       staticRoot: form.staticRoot.value,
       staticSpa: form.staticSpa.value,
+      mediaEnabled: form.mediaEnabled.value,
+      mediaMaxUploadMb: form.mediaMaxUploadMb.value,
       deployKeyId: form.deployKeyId.value,
     );
     return app.toJson();
@@ -133,6 +135,10 @@ class AppsApi {
       if (form.internalPort.value != null) 'internalPort': form.internalPort.value,
       if (form.staticRoot.value != null) 'staticRoot': form.staticRoot.value,
       if (form.staticSpa.value != null) 'staticSpa': form.staticSpa.value,
+      if (form.mediaEnabled.value != null)
+        'mediaEnabled': form.mediaEnabled.value,
+      if (form.mediaMaxUploadMb.value != null)
+        'mediaMaxUploadMb': form.mediaMaxUploadMb.value,
     };
     final app = await apps.update(user, id, patch);
 
@@ -148,6 +154,22 @@ class AppsApi {
         jsonEncode(<String, Object?>{
           'appId': app.id,
           'reason': 'static_settings',
+        }),
+      );
+    }
+
+    // Media serving (the nginx /media/ + /_protected/ blocks and the upload
+    // size) is rendered into the vhost, so changing it re-renders against the
+    // current release with no rebuild. MEDIA_ROOT is written to the app's .env
+    // on the next deploy. Static apps serve files differently and are excluded.
+    if (app.runtime != 'static' &&
+        (form.mediaEnabled.value != null ||
+            form.mediaMaxUploadMb.value != null)) {
+      await RedisClient.instance.rpush(
+        'gisila:queue:vhosts',
+        jsonEncode(<String, Object?>{
+          'appId': app.id,
+          'reason': 'media_settings',
         }),
       );
     }

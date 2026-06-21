@@ -1,16 +1,16 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'apps.dart';
+part of 'storage.dart';
 
 // **************************************************************************
 // ControllerGenerator
 // **************************************************************************
 
 // **************************************************
-// gisila_doc: generated for AppsApi
+// gisila_doc: generated for StorageApi
 // **************************************************
 
-extension AppsApiGisilaDoc on AppsApi {
+extension StorageApiGisilaDoc on StorageApi {
   /// Registers every annotated route of this controller on
   /// [router] (through `gisilaRoute(...)` so the route runs
   /// through the same MVC pipeline as gisila core) and
@@ -25,159 +25,45 @@ extension AppsApiGisilaDoc on AppsApi {
     OpenApiSpec spec, {
     String prefix = '',
   }) {
-    spec.putSchema('CreateAppForm', <String, Object?>{
+    spec.putSchema('InstallMinioForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'projectId': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'name': <String, Object?>{'type': 'string'},
-        'runtime': <String, Object?>{'type': 'string'},
-        'sourceType': <String, Object?>{'type': 'string'},
-        'gitUrl': <String, Object?>{'type': 'string'},
-        'gitBranch': <String, Object?>{'type': 'string'},
-        'buildCommand': <String, Object?>{'type': 'string'},
-        'startCommand': <String, Object?>{'type': 'string'},
-        'healthCheckPath': <String, Object?>{'type': 'string'},
-        'memoryMbLimit': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'cpuQuotaPercent': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'pythonVersion': <String, Object?>{'type': 'string'},
-        'pythonMode': <String, Object?>{'type': 'string'},
-        'wsgiApp': <String, Object?>{'type': 'string'},
-        'gunicornWorkers': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornThreads': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornTimeout': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornBind': <String, Object?>{'type': 'string'},
-        'gunicornExtraArgs': <String, Object?>{'type': 'string'},
-        'nodeVersion': <String, Object?>{'type': 'string'},
-        'dartVersion': <String, Object?>{'type': 'string'},
-        'goVersion': <String, Object?>{'type': 'string'},
-        'rustVersion': <String, Object?>{'type': 'string'},
-        'bunVersion': <String, Object?>{'type': 'string'},
-        'celeryApp': <String, Object?>{'type': 'string'},
-        'celeryWorkerCount': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'celeryConcurrency': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'celeryQueues': <String, Object?>{'type': 'string'},
-        'celeryBeatEnabled': <String, Object?>{'type': 'boolean'},
-        'celeryExtraArgs': <String, Object?>{'type': 'string'},
-        'staticRoot': <String, Object?>{'type': 'string'},
-        'staticSpa': <String, Object?>{'type': 'boolean'},
-        'mediaEnabled': <String, Object?>{'type': 'boolean'},
-        'mediaMaxUploadMb': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'displayName': <String, Object?>{'type': 'string'},
+        'port': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'consolePort': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'publicUrl': <String, Object?>{'type': 'string'}
       }
     });
-    spec.putSchema('UpdateAppForm', <String, Object?>{
+    spec.putSchema('AddConnectorForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'name': <String, Object?>{'type': 'string'},
-        'gitUrl': <String, Object?>{'type': 'string'},
-        'gitBranch': <String, Object?>{'type': 'string'},
-        'buildCommand': <String, Object?>{'type': 'string'},
-        'startCommand': <String, Object?>{'type': 'string'},
-        'healthCheckPath': <String, Object?>{'type': 'string'},
-        'memoryMbLimit': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'cpuQuotaPercent': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'tasksLimit': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'pythonVersion': <String, Object?>{'type': 'string'},
-        'pythonMode': <String, Object?>{'type': 'string'},
-        'wsgiApp': <String, Object?>{'type': 'string'},
-        'gunicornWorkers': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornThreads': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornTimeout': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'gunicornBind': <String, Object?>{'type': 'string'},
-        'gunicornExtraArgs': <String, Object?>{'type': 'string'},
-        'nodeVersion': <String, Object?>{'type': 'string'},
-        'dartVersion': <String, Object?>{'type': 'string'},
-        'goVersion': <String, Object?>{'type': 'string'},
-        'rustVersion': <String, Object?>{'type': 'string'},
-        'bunVersion': <String, Object?>{'type': 'string'},
-        'celeryApp': <String, Object?>{'type': 'string'},
-        'celeryWorkerCount': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'celeryConcurrency': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'celeryQueues': <String, Object?>{'type': 'string'},
-        'celeryBeatEnabled': <String, Object?>{'type': 'boolean'},
-        'celeryExtraArgs': <String, Object?>{'type': 'string'},
-        'staticRoot': <String, Object?>{'type': 'string'},
-        'staticSpa': <String, Object?>{'type': 'boolean'},
-        'mediaEnabled': <String, Object?>{'type': 'boolean'},
-        'mediaMaxUploadMb': <String, Object?>{
-          'type': 'integer',
-          'format': 'int64'
-        },
-        'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'displayName': <String, Object?>{'type': 'string'},
+        'endpoint': <String, Object?>{'type': 'string'},
+        'region': <String, Object?>{'type': 'string'},
+        'accessKey': <String, Object?>{'type': 'string'},
+        'secretKey': <String, Object?>{'type': 'string'},
+        'publicUrl': <String, Object?>{'type': 'string'},
+        'forcePathStyle': <String, Object?>{'type': 'boolean'}
       }
     });
-    spec.putSchema('ExecCommandForm', <String, Object?>{
+    spec.putSchema('CreateBucketForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'command': <String, Object?>{'type': 'string'}
+        'bucketName': <String, Object?>{'type': 'string'},
+        'isPublic': <String, Object?>{'type': 'boolean'}
       }
     });
-    spec.putSchema('EnvVarForm', <String, Object?>{
+    spec.putSchema('LinkBucketForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'name': <String, Object?>{'type': 'string'},
-        'value': <String, Object?>{'type': 'string'},
-        'isSecret': <String, Object?>{'type': 'boolean'}
+        'bucketId': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'envPrefix': <String, Object?>{'type': 'string'}
       }
     });
-    spec.putSchema('BulkEnvVarForm', <String, Object?>{
-      'type': 'object',
-      'properties': <String, Object?>{
-        'entries': <String, Object?>{'type': 'object'}
-      }
-    });
-    spec.putTag('Apps');
+    spec.putTag('Storage');
     {
-      final basePath = '$prefix/apps/';
-      final openApiPath = '$prefix/apps/';
+      final basePath = '$prefix/storage/providers';
+      final openApiPath = '$prefix/storage/providers';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.get(
@@ -187,12 +73,8 @@ extension AppsApiGisilaDoc on AppsApi {
             config: __cfg,
             handler: (RequestContext ctx) async {
               try {
-                final request = ctx.request;
-                final apps = ctx.service<AppsService>();
-                final projectId = coerce<int?>(
-                    request.url.queryParameters['projectId'], 'projectId',
-                    required: false);
-                final result = await this.list(apps, ctx, projectId);
+                final svc = ctx.service<StorageService>();
+                final result = await this.listProviders(svc);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -206,20 +88,9 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'get',
           Operation(
-            summary: 'List apps',
-            tags: <String>['Apps'],
-            parameters: <Parameter>[
-              Parameter(
-                name: 'projectId',
-                location: 'query',
-                required: false,
-                description: null,
-                schema: <String, Object?>{
-                  'type': <Object?>['integer', 'null'],
-                  'format': 'int64'
-                },
-              )
-            ],
+            summary: 'List storage providers',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[],
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
@@ -231,8 +102,8 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/';
-      final openApiPath = '$prefix/apps/';
+      final basePath = '$prefix/storage/providers/minio';
+      final openApiPath = '$prefix/storage/providers/minio';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.post(
@@ -243,9 +114,9 @@ extension AppsApiGisilaDoc on AppsApi {
             handler: (RequestContext ctx) async {
               try {
                 final request = ctx.request;
-                final form = await bindForm(request, CreateAppForm.new);
-                final apps = ctx.service<AppsService>();
-                final result = await this.create(form, apps, ctx);
+                final form = await bindForm(request, InstallMinioForm.new);
+                final svc = ctx.service<StorageService>();
+                final result = await this.installMinio(form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -259,12 +130,12 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Create an app',
-            tags: <String>['Apps'],
+            summary: 'Install the self-hosted MinIO server',
+            tags: <String>['Storage'],
             parameters: <Parameter>[],
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/CreateAppForm'
+                r'$ref': '#/components/schemas/InstallMinioForm'
               })
             }),
             responses: <String, ResponseSpec>{
@@ -278,8 +149,55 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>';
-      final openApiPath = '$prefix/apps/{id}';
+      final basePath = '$prefix/storage/providers/external';
+      final openApiPath = '$prefix/storage/providers/external';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, AddConnectorForm.new);
+                final svc = ctx.service<StorageService>();
+                final result = await this.addConnector(form, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Register an external S3 endpoint',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/AddConnectorForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/storage/providers/<id>';
+      final openApiPath = '$prefix/storage/providers/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.get(
@@ -292,8 +210,8 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final apps = ctx.service<AppsService>();
-                final result = await this.retrieve(id, apps, ctx);
+                final svc = ctx.service<StorageService>();
+                final result = await this.getProvider(id, svc);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -307,8 +225,8 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'get',
           Operation(
-            summary: 'Get an app',
-            tags: <String>['Apps'],
+            summary: 'Get a storage provider',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -329,11 +247,11 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>';
-      final openApiPath = '$prefix/apps/{id}';
+      final basePath = '$prefix/storage/providers/<id>/start';
+      final openApiPath = '$prefix/storage/providers/{id}/start';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.patch(
+      router.post(
           basePath,
           gisilaRoute(
             app: app,
@@ -343,10 +261,9 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, UpdateAppForm.new);
-                final apps = ctx.service<AppsService>();
-                final result = await this.update(id, form, apps, ctx);
-                return jsonResponse(body: result, statusCode: 200);
+                final svc = ctx.service<StorageService>();
+                final result = await this.startProvider(id, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
               } on FormatException catch (e) {
@@ -357,10 +274,10 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
       spec.putOperation(
           openApiPath,
-          'patch',
+          'post',
           Operation(
-            summary: 'Update an app',
-            tags: <String>['Apps'],
+            summary: 'Start the MinIO server',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -370,13 +287,8 @@ extension AppsApiGisilaDoc on AppsApi {
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
               )
             ],
-            requestBody: RequestBody(required: true, content: {
-              'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/UpdateAppForm'
-              })
-            }),
             responses: <String, ResponseSpec>{
-              '200': ResponseSpec(description: 'OK', content: {
+              '201': ResponseSpec(description: 'Created', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
@@ -386,8 +298,59 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>';
-      final openApiPath = '$prefix/apps/{id}';
+      final basePath = '$prefix/storage/providers/<id>/stop';
+      final openApiPath = '$prefix/storage/providers/{id}/stop';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final svc = ctx.service<StorageService>();
+                final result = await this.stopProvider(id, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Stop the MinIO server',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/storage/providers/<id>';
+      final openApiPath = '$prefix/storage/providers/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.delete(
@@ -400,8 +363,8 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final lifecycle = ctx.service<LifecycleService>();
-                final result = await this.delete(id, lifecycle, ctx);
+                final svc = ctx.service<StorageService>();
+                final result = await this.deleteProvider(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -415,8 +378,8 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'delete',
           Operation(
-            summary: 'Remove an app and all of its resources',
-            tags: <String>['Apps'],
+            summary: 'Remove a storage provider',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -437,218 +400,8 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>/start';
-      final openApiPath = '$prefix/apps/{id}/start';
-      final RouteConfig __cfg =
-          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final lifecycle = ctx.service<LifecycleService>();
-                final result = await this.start(id, lifecycle, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
-      spec.putOperation(
-          openApiPath,
-          'post',
-          Operation(
-            summary: 'Start an app',
-            tags: <String>['Apps'],
-            parameters: <Parameter>[
-              Parameter(
-                name: 'id',
-                location: 'path',
-                required: true,
-                description: null,
-                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
-              )
-            ],
-            responses: <String, ResponseSpec>{
-              '201': ResponseSpec(description: 'Created', content: {
-                'application/json': MediaType(schema: <String, Object?>{
-                  'type': 'object',
-                  'additionalProperties': <String, Object?>{}
-                })
-              })
-            },
-          ));
-    }
-    {
-      final basePath = '$prefix/apps/<id>/stop';
-      final openApiPath = '$prefix/apps/{id}/stop';
-      final RouteConfig __cfg =
-          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final lifecycle = ctx.service<LifecycleService>();
-                final result = await this.stop(id, lifecycle, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
-      spec.putOperation(
-          openApiPath,
-          'post',
-          Operation(
-            summary: 'Stop an app',
-            tags: <String>['Apps'],
-            parameters: <Parameter>[
-              Parameter(
-                name: 'id',
-                location: 'path',
-                required: true,
-                description: null,
-                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
-              )
-            ],
-            responses: <String, ResponseSpec>{
-              '201': ResponseSpec(description: 'Created', content: {
-                'application/json': MediaType(schema: <String, Object?>{
-                  'type': 'object',
-                  'additionalProperties': <String, Object?>{}
-                })
-              })
-            },
-          ));
-    }
-    {
-      final basePath = '$prefix/apps/<id>/restart';
-      final openApiPath = '$prefix/apps/{id}/restart';
-      final RouteConfig __cfg =
-          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final lifecycle = ctx.service<LifecycleService>();
-                final result = await this.restart(id, lifecycle, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
-      spec.putOperation(
-          openApiPath,
-          'post',
-          Operation(
-            summary: 'Restart an app',
-            tags: <String>['Apps'],
-            parameters: <Parameter>[
-              Parameter(
-                name: 'id',
-                location: 'path',
-                required: true,
-                description: null,
-                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
-              )
-            ],
-            responses: <String, ResponseSpec>{
-              '201': ResponseSpec(description: 'Created', content: {
-                'application/json': MediaType(schema: <String, Object?>{
-                  'type': 'object',
-                  'additionalProperties': <String, Object?>{}
-                })
-              })
-            },
-          ));
-    }
-    {
-      final basePath = '$prefix/apps/<id>/exec';
-      final openApiPath = '$prefix/apps/{id}/exec';
-      final RouteConfig __cfg =
-          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, ExecCommandForm.new);
-                final apps = ctx.service<AppsService>();
-                final result = await this.exec(id, form, apps, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
-      spec.putOperation(
-          openApiPath,
-          'post',
-          Operation(
-            summary: 'Run a one-off command in the app environment',
-            tags: <String>['Apps'],
-            parameters: <Parameter>[
-              Parameter(
-                name: 'id',
-                location: 'path',
-                required: true,
-                description: null,
-                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
-              )
-            ],
-            requestBody: RequestBody(required: true, content: {
-              'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/ExecCommandForm'
-              })
-            }),
-            responses: <String, ResponseSpec>{
-              '201': ResponseSpec(description: 'Created', content: {
-                'application/json': MediaType(schema: <String, Object?>{
-                  'type': 'object',
-                  'additionalProperties': <String, Object?>{}
-                })
-              })
-            },
-          ));
-    }
-    {
-      final basePath = '$prefix/apps/<id>/envs';
-      final openApiPath = '$prefix/apps/{id}/envs';
+      final basePath = '$prefix/storage/providers/<id>/buckets';
+      final openApiPath = '$prefix/storage/providers/{id}/buckets';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.get(
@@ -661,8 +414,8 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final envs = ctx.service<EnvsService>();
-                final result = await this.listEnvs(id, envs, ctx);
+                final svc = ctx.service<StorageService>();
+                final result = await this.listBuckets(id, svc);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -676,8 +429,8 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'get',
           Operation(
-            summary: 'List env vars',
-            tags: <String>['Apps'],
+            summary: 'List buckets in a provider',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -698,8 +451,8 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>/envs';
-      final openApiPath = '$prefix/apps/{id}/envs';
+      final basePath = '$prefix/storage/providers/<id>/buckets';
+      final openApiPath = '$prefix/storage/providers/{id}/buckets';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.post(
@@ -712,9 +465,9 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, EnvVarForm.new);
-                final envs = ctx.service<EnvsService>();
-                final result = await this.setEnv(id, form, envs, ctx);
+                final form = await bindForm(request, CreateBucketForm.new);
+                final svc = ctx.service<StorageService>();
+                final result = await this.createBucket(id, form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -728,8 +481,8 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Set an env var',
-            tags: <String>['Apps'],
+            summary: 'Create a bucket + scoped key',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -741,7 +494,7 @@ extension AppsApiGisilaDoc on AppsApi {
             ],
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/EnvVarForm'
+                r'$ref': '#/components/schemas/CreateBucketForm'
               })
             }),
             responses: <String, ResponseSpec>{
@@ -755,11 +508,11 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>/envs/bulk';
-      final openApiPath = '$prefix/apps/{id}/envs/bulk';
+      final basePath = '$prefix/storage/providers/<id>/buckets/<bid>';
+      final openApiPath = '$prefix/storage/providers/{id}/buckets/{bid}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
+      router.get(
           basePath,
           gisilaRoute(
             app: app,
@@ -769,10 +522,11 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, BulkEnvVarForm.new);
-                final envs = ctx.service<EnvsService>();
-                final result = await this.bulkEnvs(id, form, envs, ctx);
-                return jsonResponse(body: result, statusCode: 201);
+                final bid =
+                    coerce<int>(request.params['bid'], 'bid', required: true);
+                final svc = ctx.service<StorageService>();
+                final result = await this.getBucket(id, bid, svc);
+                return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
               } on FormatException catch (e) {
@@ -783,10 +537,10 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
       spec.putOperation(
           openApiPath,
-          'post',
+          'get',
           Operation(
-            summary: 'Bulk-upsert env vars from a .env file',
-            tags: <String>['Apps'],
+            summary: 'Get a bucket (with creds)',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -794,15 +548,17 @@ extension AppsApiGisilaDoc on AppsApi {
                 required: true,
                 description: null,
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'bid',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
               )
             ],
-            requestBody: RequestBody(required: true, content: {
-              'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/BulkEnvVarForm'
-              })
-            }),
             responses: <String, ResponseSpec>{
-              '201': ResponseSpec(description: 'Created', content: {
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
@@ -812,8 +568,8 @@ extension AppsApiGisilaDoc on AppsApi {
           ));
     }
     {
-      final basePath = '$prefix/apps/<id>/envs/<envId>';
-      final openApiPath = '$prefix/apps/{id}/envs/{envId}';
+      final basePath = '$prefix/storage/providers/<id>/buckets/<bid>';
+      final openApiPath = '$prefix/storage/providers/{id}/buckets/{bid}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.delete(
@@ -826,10 +582,10 @@ extension AppsApiGisilaDoc on AppsApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final envId = coerce<int>(request.params['envId'], 'envId',
-                    required: true);
-                final envs = ctx.service<EnvsService>();
-                final result = await this.deleteEnv(id, envId, envs, ctx);
+                final bid =
+                    coerce<int>(request.params['bid'], 'bid', required: true);
+                final svc = ctx.service<StorageService>();
+                final result = await this.deleteBucket(id, bid, svc, ctx);
                 return jsonResponse(body: result, statusCode: 204);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -843,8 +599,8 @@ extension AppsApiGisilaDoc on AppsApi {
           openApiPath,
           'delete',
           Operation(
-            summary: 'Delete an env var',
-            tags: <String>['Apps'],
+            summary: 'Delete a bucket',
+            tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
@@ -854,7 +610,175 @@ extension AppsApiGisilaDoc on AppsApi {
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
               ),
               Parameter(
-                name: 'envId',
+                name: 'bid',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/storage/apps/<appId>/links';
+      final openApiPath = '$prefix/storage/apps/{appId}/links';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final appId = coerce<int>(request.params['appId'], 'appId',
+                    required: true);
+                final svc = ctx.service<StorageService>();
+                final result = await this.listAppLinks(appId, svc, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'List an app\'s linked buckets',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'appId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/storage/apps/<appId>/links';
+      final openApiPath = '$prefix/storage/apps/{appId}/links';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final appId = coerce<int>(request.params['appId'], 'appId',
+                    required: true);
+                final form = await bindForm(request, LinkBucketForm.new);
+                final svc = ctx.service<StorageService>();
+                final result = await this.linkBucket(appId, form, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Link a bucket to an app',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'appId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/LinkBucketForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/storage/apps/<appId>/links/<linkId>';
+      final openApiPath = '$prefix/storage/apps/{appId}/links/{linkId}';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final appId = coerce<int>(request.params['appId'], 'appId',
+                    required: true);
+                final linkId = coerce<int>(request.params['linkId'], 'linkId',
+                    required: true);
+                final svc = ctx.service<StorageService>();
+                final result = await this.unlinkBucket(appId, linkId, svc, ctx);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary: 'Unlink a bucket from an app',
+            tags: <String>['Storage'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'appId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'linkId',
                 location: 'path',
                 required: true,
                 description: null,

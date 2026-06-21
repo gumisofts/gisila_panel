@@ -74,6 +74,16 @@ class DeploymentWorker {
           .all(database.context());
       final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
 
+      // Model A: when local disk media is enabled, expose the upload root and
+      // URL so the app (and a developer sourcing .env for console commands) can
+      // read/write uploads. Written to .env at build + apply-unit; not persisted
+      // as user-editable EnvVars. nginx serves this dir at /media/ (see the
+      // apply-vhost step below). User-set values win, so we don't clobber them.
+      if (app.mediaEnabled == true) {
+        envMap.putIfAbsent('MEDIA_ROOT', () => '${app.workDir}/shared/media');
+        envMap.putIfAbsent('MEDIA_URL', () => '/media/');
+      }
+
       // Celery deploys always ship a Flower monitoring UI that the agent
       // reverse-proxies at the app's domain. Flower has no authentication of
       // its own, so an un-guarded deploy exposes worker internals — and the
@@ -299,13 +309,19 @@ class DeploymentWorker {
           'apply-vhost',
           '--app-id', '${app.id}',
           if (app.internalPort != null) ...['--port', '${app.internalPort}'],
-          // Django apps collect static/media under shared/ (see builders.dart);
-          // let nginx serve them directly at /static/ and /media/. The agent
-          // ignores roots that don't exist, so non-Django Python apps proxy as
-          // before.
-          if (app.runtime == 'python') ...[
-            '--static-root', '${app.workDir}/shared/static',
+          // Django apps collect static under shared/static; let nginx serve it
+          // directly at /static/. The agent ignores roots that don't exist, so
+          // non-Django Python apps proxy as before.
+          if (app.runtime == 'python')
+            ...['--static-root', '${app.workDir}/shared/static'],
+          // Model A: any runtime that opted into local disk media gets nginx
+          // serving shared/media at /media/, an internal /_protected/ location
+          // for X-Accel-Redirect handoff, and a per-app upload size. Python apps
+          // historically served /media/ regardless; preserve that.
+          if (app.mediaEnabled == true || app.runtime == 'python') ...[
             '--media-root', '${app.workDir}/shared/media',
+            '--protected-media',
+            '--max-upload-mb', '${app.mediaMaxUploadMb ?? 25}',
           ],
           for (final h in hostnames) ...['--hostname', h],
         ], deploymentId: deploymentId);
@@ -472,6 +488,15 @@ class DeploymentWorker {
       '--app-id',
       '${app.id}',
       if (app.internalPort != null) ...['--port', '${app.internalPort}'],
+      if (app.runtime == 'python')
+        ...['--static-root', '${app.workDir}/shared/static'],
+      // Keep media serving in sync on a vhost-only re-render (domain add/remove
+      // or a media-settings toggle from the API).
+      if (app.mediaEnabled == true || app.runtime == 'python') ...[
+        '--media-root', '${app.workDir}/shared/media',
+        '--protected-media',
+        '--max-upload-mb', '${app.mediaMaxUploadMb ?? 25}',
+      ],
       for (final h in hostnames) ...['--hostname', h],
     ]);
   }

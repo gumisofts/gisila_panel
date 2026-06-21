@@ -30,7 +30,19 @@ class Provisioner {
   static Future<void> ensureWorkDir(String workDir, String user) async {
     final root = Directory(workDir);
     if (!root.existsSync()) root.createSync(recursive: true);
-    for (final sub in ['current', 'releases', 'shared', 'tmp', 'logs', '.corepack']) {
+    // `shared/media` is the persistent, writable upload root (Model A). It is
+    // created for every app (harmless when media is disabled — it stays empty)
+    // so the MEDIA_ROOT path is always valid the moment an app opts in, with no
+    // re-provision needed. It lives under `shared`, already in ReadWritePaths.
+    for (final sub in [
+      'current',
+      'releases',
+      'shared',
+      'shared/media',
+      'tmp',
+      'logs',
+      '.corepack'
+    ]) {
       final d = Directory('${root.path}/$sub');
       if (!d.existsSync()) d.createSync(recursive: true);
     }

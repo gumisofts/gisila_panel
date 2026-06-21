@@ -49,6 +49,10 @@ class CreateAppForm extends Form {
   final staticRoot = StringField(name: 'staticRoot');
   final staticSpa = BoolField(name: 'staticSpa');
 
+  // Local disk media (Model A).
+  final mediaEnabled = BoolField(name: 'mediaEnabled');
+  final mediaMaxUploadMb = IntField(name: 'mediaMaxUploadMb');
+
   // Optional SSH deploy key for authenticated git clone.
   final deployKeyId = IntField(name: 'deployKeyId');
 
@@ -91,6 +95,8 @@ class CreateAppForm extends Form {
         celeryExtraArgs,
         staticRoot,
         staticSpa,
+        mediaEnabled,
+        mediaMaxUploadMb,
         deployKeyId,
         internalPort,
       ];
@@ -127,6 +133,8 @@ class UpdateAppForm extends Form {
   final celeryExtraArgs = StringField(name: 'celeryExtraArgs');
   final staticRoot = StringField(name: 'staticRoot');
   final staticSpa = BoolField(name: 'staticSpa');
+  final mediaEnabled = BoolField(name: 'mediaEnabled');
+  final mediaMaxUploadMb = IntField(name: 'mediaMaxUploadMb');
   final deployKeyId = IntField(name: 'deployKeyId');
   final internalPort = IntField(name: 'internalPort');
 
@@ -162,6 +170,8 @@ class UpdateAppForm extends Form {
         celeryExtraArgs,
         staticRoot,
         staticSpa,
+        mediaEnabled,
+        mediaMaxUploadMb,
         deployKeyId,
         internalPort,
       ];

@@ -111,6 +111,8 @@ CREATE TABLE "apps" (
   "celery_extra_args" VARCHAR(255),
   "static_root" VARCHAR(255),
   "static_spa" BOOLEAN DEFAULT FALSE,
+  "media_enabled" BOOLEAN DEFAULT FALSE,
+  "media_max_upload_mb" INTEGER DEFAULT 25,
   "memory_mb_limit" INTEGER DEFAULT 256,
   "cpu_quota_percent" INTEGER DEFAULT 50,
   "tasks_limit" INTEGER DEFAULT 100,
@@ -266,6 +268,48 @@ CREATE TABLE "postgres_backups" (
 );
 
 
+CREATE TABLE "storage_providers" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "kind" VARCHAR(255) NOT NULL,
+  "display_name" VARCHAR(255) NOT NULL,
+  "endpoint" VARCHAR(255) NOT NULL,
+  "region" VARCHAR(255) DEFAULT 'us-east-1',
+  "public_url" VARCHAR(255),
+  "access_key" VARCHAR(255) NOT NULL,
+  "secret_key" VARCHAR(255) NOT NULL,
+  "force_path_style" BOOLEAN DEFAULT TRUE,
+  "console_port" INTEGER,
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "error_message" TEXT,
+  "installed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "storage_buckets" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "provider_id" INTEGER NOT NULL,
+  "bucket_name" VARCHAR(255) NOT NULL,
+  "access_key" VARCHAR(255) NOT NULL,
+  "secret_key" VARCHAR(255) NOT NULL,
+  "is_public" BOOLEAN DEFAULT FALSE,
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "error_message" TEXT,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "app_storage_links" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "app_id" INTEGER NOT NULL,
+  "bucket_id" INTEGER NOT NULL,
+  "env_prefix" VARCHAR(255) DEFAULT 'S3',
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+
 CREATE TABLE "mail_domains" (
   "id" BIGSERIAL PRIMARY KEY,
   "domain" VARCHAR(255) NOT NULL UNIQUE,
@@ -339,6 +383,11 @@ ALTER TABLE "postgres_backup_schedules" ADD CONSTRAINT "postgres_backup_schedule
 
 ALTER TABLE "postgres_backups" ADD CONSTRAINT "postgres_backups_database_fkey" FOREIGN KEY ("database_id") REFERENCES "postgres_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+ALTER TABLE "storage_buckets" ADD CONSTRAINT "storage_buckets_provider_fkey" FOREIGN KEY ("provider_id") REFERENCES "storage_providers" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "app_storage_links" ADD CONSTRAINT "app_storage_links_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "app_storage_links" ADD CONSTRAINT "app_storage_links_bucket_fkey" FOREIGN KEY ("bucket_id") REFERENCES "storage_buckets" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 ALTER TABLE "mail_accounts" ADD CONSTRAINT "mail_accounts_mail_domain_fkey" FOREIGN KEY ("mail_domain_id") REFERENCES "mail_domains" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_fkey" FOREIGN KEY ("actor_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -351,5 +400,7 @@ CREATE INDEX "idx_projects_slug" ON "projects" ("slug");
 CREATE INDEX "idx_apps_slug" ON "apps" ("slug");
 
 CREATE INDEX "idx_managed_services_service_type" ON "managed_services" ("service_type");
+
+CREATE INDEX "idx_storage_providers_kind" ON "storage_providers" ("kind");
 
 COMMIT;

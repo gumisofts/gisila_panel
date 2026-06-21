@@ -18,6 +18,7 @@ import {
   KeySquare,
   Shield,
   Mail,
+  HardDrive,
 } from "lucide-react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/services",  label: "Services",  icon: Layers },
       { href: "/databases", label: "Databases", icon: Database },
+      { href: "/storage",   label: "Storage",   icon: HardDrive },
       { href: "/mail",      label: "Mail",      icon: Mail },
     ],
   },

@@ -308,6 +308,16 @@ App:
     static_spa:
       type: boolean
       default: false         # SPA mode: fall back all routes to index.html
+    # Local disk media (Model A). When enabled the agent creates a persistent
+    # shared/media directory, injects MEDIA_ROOT into the app's env, and nginx
+    # serves it at /media/ (public) plus an internal /_protected/ location the
+    # app can hand off to via X-Accel-Redirect for auth-gated downloads.
+    media_enabled:
+      type: boolean
+      default: false
+    media_max_upload_mb:
+      type: integer
+      default: 25            # per-app nginx client_max_body_size for uploads
     # Resource limits (translated into systemd MemoryMax / CPUQuota / TasksMax).
     memory_mb_limit:
       type: integer
@@ -692,6 +702,129 @@ PostgresBackup:
     completed_at:
       type: timestamp
       is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+
+# ─────────────────────────── Object storage (S3) ─────────────────────────────
+#
+# S3-compatible object storage (Model B). A StorageProvider is an endpoint:
+# either the self-hosted MinIO managed service (kind=minio — the panel installs
+# and runs it) or an external S3/R2/B2 connector (kind=external — credentials
+# only, nothing installed). Buckets and scoped access keys are provisioned inside
+# a provider and surfaced to apps as S3_* env vars via AppStorageLink.
+
+StorageProvider:
+  columns:
+    kind:
+      type: varchar              # minio | external
+      is_null: false
+      is_index: true
+    display_name:
+      type: varchar
+      is_null: false
+    # S3 API endpoint, e.g. http://127.0.0.1:9000 (minio) or
+    # https://<account>.r2.cloudflarestorage.com (external).
+    endpoint:
+      type: varchar
+      is_null: false
+    region:
+      type: varchar
+      default: us-east-1
+    # Base URL for public object reads (nginx-fronted MinIO or a CDN). Surfaced
+    # to apps as <PREFIX>_PUBLIC_URL when set.
+    public_url:
+      type: varchar
+      is_null: true
+    # Admin / root credentials used to provision buckets + scoped keys. Stored
+    # as-is (encrypt at the DB layer in production, like SshKey.private_key).
+    access_key:
+      type: varchar
+      is_null: false
+    secret_key:
+      type: varchar
+      is_null: false
+    # MinIO + most non-AWS providers require path-style addressing.
+    force_path_style:
+      type: boolean
+      default: true
+    # MinIO web console port (kind=minio only); null for external providers.
+    console_port:
+      type: integer
+      is_null: true
+    status:
+      type: varchar
+      default: pending           # pending | installing | running | stopped | failed | uninstalling | config_only
+    error_message:
+      type: text
+      is_null: true
+    installed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+StorageBucket:
+  columns:
+    provider:
+      type: foreign_key
+      references: StorageProvider
+      is_null: false
+      reverse_name: buckets
+      on_delete: cascade
+    bucket_name:
+      type: varchar
+      is_null: false
+    # Scoped access key/secret for this bucket. For MinIO the agent mints a
+    # dedicated user limited to this bucket; for external providers these mirror
+    # the provider credentials (no IAM user minting over plain S3).
+    access_key:
+      type: varchar
+      is_null: false
+    secret_key:
+      type: varchar
+      is_null: false             # shown once on creation
+    is_public:
+      type: boolean
+      default: false             # anonymous (public) read policy on the bucket
+    status:
+      type: varchar
+      default: pending           # pending | active | failed | deleted
+    error_message:
+      type: text
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+# Links a bucket to an app and drives credential auto-injection: creating the
+# link writes <prefix>_ENDPOINT / _REGION / _BUCKET / _ACCESS_KEY / _SECRET_KEY /
+# _PUBLIC_URL / _FORCE_PATH_STYLE into the app's EnvVars (live on next deploy);
+# deleting it removes them.
+AppStorageLink:
+  columns:
+    app:
+      type: foreign_key
+      references: App
+      is_null: false
+      reverse_name: storage_links
+      on_delete: cascade
+    bucket:
+      type: foreign_key
+      references: StorageBucket
+      is_null: false
+      reverse_name: app_links
+      on_delete: cascade
+    env_prefix:
+      type: varchar
+      default: S3                # env var prefix (allows >1 bucket per app)
     created_at:
       type: timestamp
       is_null: false

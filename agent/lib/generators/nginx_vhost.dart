@@ -77,6 +77,8 @@ class NginxVhost {
     this.staticUrl = '/static/',
     this.mediaRoot,
     this.mediaUrl = '/media/',
+    this.protectedMedia = false,
+    this.maxUploadMb = 50,
   });
 
   final int appId;
@@ -92,6 +94,15 @@ class NginxVhost {
   /// When set, nginx serves [mediaUrl] (default `/media/`) from this directory.
   final String? mediaRoot;
   final String mediaUrl;
+
+  /// When true (and [mediaRoot] is set) also emit an `internal` location at
+  /// `/_protected/` aliased to [mediaRoot]. The app validates the request, then
+  /// returns `X-Accel-Redirect: /_protected/<path>` so nginx serves the file
+  /// for auth-gated downloads without the bytes flowing through the app.
+  final bool protectedMedia;
+
+  /// Per-app `client_max_body_size` in MB (upload ceiling).
+  final int maxUploadMb;
 
   /// One `location <url> { alias <root>/; }` block, or '' when [root] is null.
   /// [immutable] adds a long-lived cache header (right for hashed static assets,
@@ -120,6 +131,16 @@ $cache        try_files \$uri =404;
     final names = hostnames.join(' ');
     final staticBlock = _fileLocation(staticRoot, staticUrl, immutable: true);
     final mediaBlock = _fileLocation(mediaRoot, mediaUrl, immutable: false);
+    // Internal location for X-Accel-Redirect handoff of auth-gated media.
+    final protectedBlock = (mediaRoot != null && protectedMedia)
+        ? '''
+
+    location /_protected/ {
+        internal;
+        alias $mediaRoot/;
+    }
+'''
+        : '';
     return '''
 # Managed by gisila-agent — do not edit by hand.
 server {
@@ -131,7 +152,7 @@ server {
     location /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
     }
-$staticBlock$mediaBlock
+$staticBlock$mediaBlock$protectedBlock
     location / {
         proxy_pass http://127.0.0.1:$port;
         proxy_http_version 1.1;
@@ -146,7 +167,7 @@ $staticBlock$mediaBlock
         proxy_send_timeout 60s;
     }
 
-    client_max_body_size 50M;
+    client_max_body_size ${maxUploadMb}M;
     access_log /var/log/nginx/gisila-app-$appId.access.log;
     error_log  /var/log/nginx/gisila-app-$appId.error.log;
 }

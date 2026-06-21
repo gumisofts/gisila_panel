@@ -1048,6 +1048,8 @@ class App with Preloadable {
   final String? celeryExtraArgs;
   final String? staticRoot;
   final bool? staticSpa;
+  final bool? mediaEnabled;
+  final int? mediaMaxUploadMb;
   final int? memoryMbLimit;
   final int? cpuQuotaPercent;
   final int? tasksLimit;
@@ -1093,6 +1095,8 @@ class App with Preloadable {
     this.celeryExtraArgs,
     this.staticRoot,
     this.staticSpa,
+    this.mediaEnabled,
+    this.mediaMaxUploadMb,
     this.memoryMbLimit,
     this.cpuQuotaPercent,
     this.tasksLimit,
@@ -1139,6 +1143,8 @@ class App with Preloadable {
     celeryExtraArgs: row['celery_extra_args'] as String?,
     staticRoot: row['static_root'] as String?,
     staticSpa: row['static_spa'] as bool?,
+    mediaEnabled: row['media_enabled'] as bool?,
+    mediaMaxUploadMb: row['media_max_upload_mb'] as int?,
     memoryMbLimit: row['memory_mb_limit'] as int?,
     cpuQuotaPercent: row['cpu_quota_percent'] as int?,
     tasksLimit: row['tasks_limit'] as int?,
@@ -1195,6 +1201,8 @@ class App with Preloadable {
     'celery_extra_args': celeryExtraArgs,
     'static_root': staticRoot,
     'static_spa': staticSpa,
+    'media_enabled': mediaEnabled,
+    'media_max_upload_mb': mediaMaxUploadMb,
     'memory_mb_limit': memoryMbLimit,
     'cpu_quota_percent': cpuQuotaPercent,
     'tasks_limit': tasksLimit,
@@ -1253,6 +1261,8 @@ class App with Preloadable {
     String? celeryExtraArgs,
     String? staticRoot,
     bool? staticSpa,
+    bool? mediaEnabled,
+    int? mediaMaxUploadMb,
     int? memoryMbLimit,
     int? cpuQuotaPercent,
     int? tasksLimit,
@@ -1297,6 +1307,8 @@ class App with Preloadable {
     celeryExtraArgs: celeryExtraArgs ?? this.celeryExtraArgs,
     staticRoot: staticRoot ?? this.staticRoot,
     staticSpa: staticSpa ?? this.staticSpa,
+    mediaEnabled: mediaEnabled ?? this.mediaEnabled,
+    mediaMaxUploadMb: mediaMaxUploadMb ?? this.mediaMaxUploadMb,
     memoryMbLimit: memoryMbLimit ?? this.memoryMbLimit,
     cpuQuotaPercent: cpuQuotaPercent ?? this.cpuQuotaPercent,
     tasksLimit: tasksLimit ?? this.tasksLimit,
@@ -1364,6 +1376,15 @@ class App with Preloadable {
     childMeta: AppEventTable.metadata,
   );
 
+  static final Relation<App, AppStorageLink> storageLinks =
+      HasManyRelation<App, AppStorageLink>(
+        parentTable: 'apps',
+        childTable: 'app_storage_links',
+        name: 'storageLinks',
+        childForeignKey: 'app_id',
+        childMeta: AppStorageLinkTable.metadata,
+      );
+
   /// Preloaded project; null when not preloaded or absent.
   Project? get projectLoaded => preloaded<Project>('project');
 
@@ -1389,6 +1410,10 @@ class App with Preloadable {
   /// Preloaded events; empty list when not preloaded.
   List<AppEvent> get eventsList =>
       preloaded<List<AppEvent>>('events') ?? const [];
+
+  /// Preloaded storageLinks; empty list when not preloaded.
+  List<AppStorageLink> get storageLinksList =>
+      preloaded<List<AppStorageLink>>('storageLinks') ?? const [];
 }
 
 class AppTable {
@@ -1537,6 +1562,14 @@ class AppTable {
     table: 'apps',
     column: 'static_spa',
   );
+  static const ColumnRef<bool?> mediaEnabled = ColumnRef<bool?>(
+    table: 'apps',
+    column: 'media_enabled',
+  );
+  static const ColumnRef<int?> mediaMaxUploadMb = ColumnRef<int?>(
+    table: 'apps',
+    column: 'media_max_upload_mb',
+  );
   static const ColumnRef<int?> memoryMbLimit = ColumnRef<int?>(
     table: 'apps',
     column: 'memory_mb_limit',
@@ -1606,6 +1639,8 @@ class AppTable {
       'celery_extra_args',
       'static_root',
       'static_spa',
+      'media_enabled',
+      'media_max_upload_mb',
       'memory_mb_limit',
       'cpu_quota_percent',
       'tasks_limit',
@@ -3454,6 +3489,542 @@ class PostgresBackupTable {
 
 Query<PostgresBackup> postgresBackups() =>
     Query<PostgresBackup>(PostgresBackupTable.metadata);
+
+class StorageProvider with Preloadable {
+  final int? id;
+  final String kind;
+  final String displayName;
+  final String endpoint;
+  final String? region;
+  final String? publicUrl;
+  final String accessKey;
+  final String secretKey;
+  final bool? forcePathStyle;
+  final int? consolePort;
+  final String? status;
+  final String? errorMessage;
+  final DateTime? installedAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  StorageProvider({
+    this.id,
+    required this.kind,
+    required this.displayName,
+    required this.endpoint,
+    this.region,
+    this.publicUrl,
+    required this.accessKey,
+    required this.secretKey,
+    this.forcePathStyle,
+    this.consolePort,
+    this.status,
+    this.errorMessage,
+    this.installedAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory StorageProvider.fromRow(Map<String, dynamic> row) => StorageProvider(
+    id: row['id'] as int?,
+    kind: row['kind'] as String,
+    displayName: row['display_name'] as String,
+    endpoint: row['endpoint'] as String,
+    region: row['region'] as String?,
+    publicUrl: row['public_url'] as String?,
+    accessKey: row['access_key'] as String,
+    secretKey: row['secret_key'] as String,
+    forcePathStyle: row['force_path_style'] as bool?,
+    consolePort: row['console_port'] as int?,
+    status: row['status'] as String?,
+    errorMessage: row['error_message'] as String?,
+    installedAt: row['installed_at'] == null
+        ? null
+        : (row['installed_at'] is DateTime
+              ? row['installed_at'] as DateTime
+              : DateTime.parse(row['installed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'kind': kind,
+    'display_name': displayName,
+    'endpoint': endpoint,
+    'region': region,
+    'public_url': publicUrl,
+    'access_key': accessKey,
+    'secret_key': secretKey,
+    'force_path_style': forcePathStyle,
+    'console_port': consolePort,
+    'status': status,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory StorageProvider.fromJson(Map<String, dynamic> json) =>
+      StorageProvider.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  StorageProvider copyWith({
+    int? id,
+    String? kind,
+    String? displayName,
+    String? endpoint,
+    String? region,
+    String? publicUrl,
+    String? accessKey,
+    String? secretKey,
+    bool? forcePathStyle,
+    int? consolePort,
+    String? status,
+    String? errorMessage,
+    DateTime? installedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => StorageProvider(
+    id: id ?? this.id,
+    kind: kind ?? this.kind,
+    displayName: displayName ?? this.displayName,
+    endpoint: endpoint ?? this.endpoint,
+    region: region ?? this.region,
+    publicUrl: publicUrl ?? this.publicUrl,
+    accessKey: accessKey ?? this.accessKey,
+    secretKey: secretKey ?? this.secretKey,
+    forcePathStyle: forcePathStyle ?? this.forcePathStyle,
+    consolePort: consolePort ?? this.consolePort,
+    status: status ?? this.status,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<StorageProvider, StorageBucket> buckets =
+      HasManyRelation<StorageProvider, StorageBucket>(
+        parentTable: 'storage_providers',
+        childTable: 'storage_buckets',
+        name: 'buckets',
+        childForeignKey: 'provider_id',
+        childMeta: StorageBucketTable.metadata,
+      );
+
+  /// Preloaded buckets; empty list when not preloaded.
+  List<StorageBucket> get bucketsList =>
+      preloaded<List<StorageBucket>>('buckets') ?? const [];
+}
+
+class StorageProviderTable {
+  StorageProviderTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'storage_providers',
+    column: 'id',
+  );
+  static const ColumnRef<String> kind = ColumnRef<String>(
+    table: 'storage_providers',
+    column: 'kind',
+  );
+  static const ColumnRef<String> displayName = ColumnRef<String>(
+    table: 'storage_providers',
+    column: 'display_name',
+  );
+  static const ColumnRef<String> endpoint = ColumnRef<String>(
+    table: 'storage_providers',
+    column: 'endpoint',
+  );
+  static const ColumnRef<String?> region = ColumnRef<String?>(
+    table: 'storage_providers',
+    column: 'region',
+  );
+  static const ColumnRef<String?> publicUrl = ColumnRef<String?>(
+    table: 'storage_providers',
+    column: 'public_url',
+  );
+  static const ColumnRef<String> accessKey = ColumnRef<String>(
+    table: 'storage_providers',
+    column: 'access_key',
+  );
+  static const ColumnRef<String> secretKey = ColumnRef<String>(
+    table: 'storage_providers',
+    column: 'secret_key',
+  );
+  static const ColumnRef<bool?> forcePathStyle = ColumnRef<bool?>(
+    table: 'storage_providers',
+    column: 'force_path_style',
+  );
+  static const ColumnRef<int?> consolePort = ColumnRef<int?>(
+    table: 'storage_providers',
+    column: 'console_port',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'storage_providers',
+    column: 'status',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'storage_providers',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> installedAt = ColumnRef<DateTime?>(
+    table: 'storage_providers',
+    column: 'installed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'storage_providers',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'storage_providers',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<StorageProvider> metadata = TableMeta<StorageProvider>(
+    tableName: 'storage_providers',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'kind',
+      'display_name',
+      'endpoint',
+      'region',
+      'public_url',
+      'access_key',
+      'secret_key',
+      'force_path_style',
+      'console_port',
+      'status',
+      'error_message',
+      'installed_at',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: StorageProvider.fromRow,
+  );
+}
+
+Query<StorageProvider> storageProviders() =>
+    Query<StorageProvider>(StorageProviderTable.metadata);
+
+class StorageBucket with Preloadable {
+  final int? id;
+  final int providerId;
+  final String bucketName;
+  final String accessKey;
+  final String secretKey;
+  final bool? isPublic;
+  final String? status;
+  final String? errorMessage;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  StorageBucket({
+    this.id,
+    required this.providerId,
+    required this.bucketName,
+    required this.accessKey,
+    required this.secretKey,
+    this.isPublic,
+    this.status,
+    this.errorMessage,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory StorageBucket.fromRow(Map<String, dynamic> row) => StorageBucket(
+    id: row['id'] as int?,
+    providerId: row['provider_id'] as int,
+    bucketName: row['bucket_name'] as String,
+    accessKey: row['access_key'] as String,
+    secretKey: row['secret_key'] as String,
+    isPublic: row['is_public'] as bool?,
+    status: row['status'] as String?,
+    errorMessage: row['error_message'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'provider_id': providerId,
+    'bucket_name': bucketName,
+    'access_key': accessKey,
+    'secret_key': secretKey,
+    'is_public': isPublic,
+    'status': status,
+    'error_message': errorMessage,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory StorageBucket.fromJson(Map<String, dynamic> json) =>
+      StorageBucket.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  StorageBucket copyWith({
+    int? id,
+    int? providerId,
+    String? bucketName,
+    String? accessKey,
+    String? secretKey,
+    bool? isPublic,
+    String? status,
+    String? errorMessage,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => StorageBucket(
+    id: id ?? this.id,
+    providerId: providerId ?? this.providerId,
+    bucketName: bucketName ?? this.bucketName,
+    accessKey: accessKey ?? this.accessKey,
+    secretKey: secretKey ?? this.secretKey,
+    isPublic: isPublic ?? this.isPublic,
+    status: status ?? this.status,
+    errorMessage: errorMessage ?? this.errorMessage,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<StorageBucket, StorageProvider> provider =
+      BelongsToRelation<StorageBucket, StorageProvider>(
+        parentTable: 'storage_buckets',
+        childTable: 'storage_providers',
+        name: 'provider',
+        parentForeignKey: 'provider_id',
+        childMeta: StorageProviderTable.metadata,
+      );
+
+  static final Relation<StorageBucket, AppStorageLink> appLinks =
+      HasManyRelation<StorageBucket, AppStorageLink>(
+        parentTable: 'storage_buckets',
+        childTable: 'app_storage_links',
+        name: 'appLinks',
+        childForeignKey: 'bucket_id',
+        childMeta: AppStorageLinkTable.metadata,
+      );
+
+  /// Preloaded provider; null when not preloaded or absent.
+  StorageProvider? get providerLoaded => preloaded<StorageProvider>('provider');
+
+  /// Preloaded appLinks; empty list when not preloaded.
+  List<AppStorageLink> get appLinksList =>
+      preloaded<List<AppStorageLink>>('appLinks') ?? const [];
+}
+
+class StorageBucketTable {
+  StorageBucketTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'storage_buckets',
+    column: 'id',
+  );
+  static const ColumnRef<int> providerId = ColumnRef<int>(
+    table: 'storage_buckets',
+    column: 'provider_id',
+  );
+  static const ColumnRef<String> bucketName = ColumnRef<String>(
+    table: 'storage_buckets',
+    column: 'bucket_name',
+  );
+  static const ColumnRef<String> accessKey = ColumnRef<String>(
+    table: 'storage_buckets',
+    column: 'access_key',
+  );
+  static const ColumnRef<String> secretKey = ColumnRef<String>(
+    table: 'storage_buckets',
+    column: 'secret_key',
+  );
+  static const ColumnRef<bool?> isPublic = ColumnRef<bool?>(
+    table: 'storage_buckets',
+    column: 'is_public',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'storage_buckets',
+    column: 'status',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'storage_buckets',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'storage_buckets',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'storage_buckets',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<StorageBucket> metadata = TableMeta<StorageBucket>(
+    tableName: 'storage_buckets',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'provider_id',
+      'bucket_name',
+      'access_key',
+      'secret_key',
+      'is_public',
+      'status',
+      'error_message',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: StorageBucket.fromRow,
+  );
+}
+
+Query<StorageBucket> storageBuckets() =>
+    Query<StorageBucket>(StorageBucketTable.metadata);
+
+class AppStorageLink with Preloadable {
+  final int? id;
+  final int appId;
+  final int bucketId;
+  final String? envPrefix;
+  final DateTime createdAt;
+
+  AppStorageLink({
+    this.id,
+    required this.appId,
+    required this.bucketId,
+    this.envPrefix,
+    required this.createdAt,
+  });
+
+  factory AppStorageLink.fromRow(Map<String, dynamic> row) => AppStorageLink(
+    id: row['id'] as int?,
+    appId: row['app_id'] as int,
+    bucketId: row['bucket_id'] as int,
+    envPrefix: row['env_prefix'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'app_id': appId,
+    'bucket_id': bucketId,
+    'env_prefix': envPrefix,
+    'created_at': createdAt,
+  };
+
+  factory AppStorageLink.fromJson(Map<String, dynamic> json) =>
+      AppStorageLink.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  AppStorageLink copyWith({
+    int? id,
+    int? appId,
+    int? bucketId,
+    String? envPrefix,
+    DateTime? createdAt,
+  }) => AppStorageLink(
+    id: id ?? this.id,
+    appId: appId ?? this.appId,
+    bucketId: bucketId ?? this.bucketId,
+    envPrefix: envPrefix ?? this.envPrefix,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  static final Relation<AppStorageLink, App> app =
+      BelongsToRelation<AppStorageLink, App>(
+        parentTable: 'app_storage_links',
+        childTable: 'apps',
+        name: 'app',
+        parentForeignKey: 'app_id',
+        childMeta: AppTable.metadata,
+      );
+
+  static final Relation<AppStorageLink, StorageBucket> bucket =
+      BelongsToRelation<AppStorageLink, StorageBucket>(
+        parentTable: 'app_storage_links',
+        childTable: 'storage_buckets',
+        name: 'bucket',
+        parentForeignKey: 'bucket_id',
+        childMeta: StorageBucketTable.metadata,
+      );
+
+  /// Preloaded app; null when not preloaded or absent.
+  App? get appLoaded => preloaded<App>('app');
+
+  /// Preloaded bucket; null when not preloaded or absent.
+  StorageBucket? get bucketLoaded => preloaded<StorageBucket>('bucket');
+}
+
+class AppStorageLinkTable {
+  AppStorageLinkTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'app_storage_links',
+    column: 'id',
+  );
+  static const ColumnRef<int> appId = ColumnRef<int>(
+    table: 'app_storage_links',
+    column: 'app_id',
+  );
+  static const ColumnRef<int> bucketId = ColumnRef<int>(
+    table: 'app_storage_links',
+    column: 'bucket_id',
+  );
+  static const ColumnRef<String?> envPrefix = ColumnRef<String?>(
+    table: 'app_storage_links',
+    column: 'env_prefix',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'app_storage_links',
+    column: 'created_at',
+  );
+
+  static const TableMeta<AppStorageLink> metadata = TableMeta<AppStorageLink>(
+    tableName: 'app_storage_links',
+    primaryKey: 'id',
+    columnNames: ['id', 'app_id', 'bucket_id', 'env_prefix', 'created_at'],
+    fromRow: AppStorageLink.fromRow,
+  );
+}
+
+Query<AppStorageLink> appStorageLinks() =>
+    Query<AppStorageLink>(AppStorageLinkTable.metadata);
 
 class MailDomain with Preloadable {
   final int? id;
