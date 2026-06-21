@@ -20,6 +20,7 @@ import {
   Table2,
   HardDriveDownload,
   ServerCog,
+  Globe,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +117,111 @@ function ConnRow({ label, value, secret }: { label: string; value: string; secre
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+
+function PublicAccessCard({
+  instance,
+  instKey,
+}: {
+  instance: PostgresInstance;
+  instKey: string;
+}) {
+  const [domain, setDomain] = useState(instance.publicDomain ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const pending = instance.isPublic && !instance.publicDomain;
+
+  async function save(isPublic: boolean) {
+    setError("");
+    if (isPublic && !domain.trim()) {
+      setError("Enter a domain, e.g. db.example.com");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/databases/${instance.id}/expose`, {
+        method: "POST",
+        body: JSON.stringify({ isPublic, domain: domain.trim() }),
+      });
+      mutate(instKey);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update exposure.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="border-violet-500/30 bg-violet-500/5">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Globe className="h-4 w-4 text-violet-500" />
+          Public access
+          {instance.isPublic ? (
+            <Badge variant="outline" className="ml-1 text-[10px]">Public</Badge>
+          ) : (
+            <Badge variant="secondary" className="ml-1 text-[10px]">Private</Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {instance.isPublic ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Reachable over TLS at{" "}
+              <code className="font-mono">
+                {instance.publicDomain}:{instance.port}
+              </code>{" "}
+              (connect with <code className="font-mono">sslmode=verify-full</code>).
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={busy}
+              onClick={() => save(false)}
+            >
+              Make private
+            </Button>
+          </>
+        ) : (
+          <>
+            <div>
+              <Label htmlFor="pg-domain">Domain</Label>
+              <Input
+                id="pg-domain"
+                className="mt-1 font-mono text-sm max-w-sm"
+                placeholder="db.example.com"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+              />
+            </div>
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
+              <p>
+                Opens the cluster to the internet over TLS: obtains a Let&apos;s
+                Encrypt certificate for the domain, enables SSL, and allows
+                SSL-only connections to <code className="font-mono">{instance.port}</code>.
+              </p>
+              <p>
+                Point a DNS <code className="font-mono">A</code> record at this
+                server and open port{" "}
+                <code className="font-mono">{instance.port}</code> first. The cert
+                needs port 80 reachable.
+              </p>
+            </div>
+            <Button size="sm" disabled={busy} onClick={() => save(true)}>
+              {busy ? "Enabling…" : "Make public"}
+            </Button>
+          </>
+        )}
+        {pending && (
+          <p className="text-xs text-amber-500">Exposure in progress…</p>
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function InstancePage() {
   const { id } = useParams<{ id: string }>();
@@ -317,6 +423,11 @@ export default function InstancePage() {
       {/* Metrics */}
       <MetricsPanel id={String(id)} running={isRunning} />
 
+      {/* Public access (not for the panel's own system cluster) */}
+      {isSuperuser && isRunning && !instance.isSystem && (
+        <PublicAccessCard instance={instance} instKey={instKey} />
+      )}
+
       {/* Databases section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -501,7 +612,9 @@ export default function InstancePage() {
                 </CardContent>
               </Card>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Connection URL</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Connection URL{justCreated.connection.publicUrl ? " (local)" : ""}
+                </Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
                     {justCreated.connection.url}
@@ -509,6 +622,19 @@ export default function InstancePage() {
                   <CopyButton text={justCreated.connection.url} />
                 </div>
               </div>
+              {justCreated.connection.publicUrl && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Public URL (TLS)
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
+                      {justCreated.connection.publicUrl}
+                    </code>
+                    <CopyButton text={justCreated.connection.publicUrl} />
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <p className="py-4 text-sm text-muted-foreground">

@@ -176,6 +176,44 @@ class PostgresService extends Service {
     return findInstance(id);
   }
 
+  /// Make a Postgres instance publicly reachable over TLS (or revert to
+  /// localhost-only). When [isPublic] the agent obtains a Let's Encrypt cert for
+  /// [domain], enables ssl + an SSL-only hostssl rule, opens the firewall, and
+  /// the cluster becomes reachable at domain:port with sslmode=verify-full.
+  Future<PostgresInstance> setPublicExposure(
+    int id, {
+    required bool isPublic,
+    String? domain,
+  }) async {
+    final inst = await findInstance(id);
+    if (inst.status != 'running') {
+      throw HttpException(422, 'Instance must be running to change exposure.');
+    }
+    if (isSystemInstance(inst)) {
+      // The panel's own cluster must never be exposed to the internet.
+      throw HttpException(422, 'The system database cannot be made public.');
+    }
+    if (isPublic) {
+      final host = (domain ?? '').trim().toLowerCase();
+      if (host.isEmpty) {
+        throw HttpException(422, 'A domain is required to make the database public.');
+      }
+      if (!RegExp(r'^[a-z0-9.-]+\.[a-z]{2,}$').hasMatch(host)) {
+        throw HttpException(422, 'Enter a valid domain, e.g. db.example.com');
+      }
+      await _patchInstance(id, {
+        'isPublic': true,
+        'publicDomain': host,
+        'errorMessage': null,
+      });
+      await _enqueue('expose_instance', {'instanceId': id});
+    } else {
+      await _patchInstance(id, {'isPublic': false});
+      await _enqueue('unexpose_instance', {'instanceId': id});
+    }
+    return findInstance(id);
+  }
+
   Future<PostgresInstance> startInstance(int id) async {
     final instance = await findInstance(id);
     if (instance.status == 'running') return instance;
@@ -300,7 +338,7 @@ class PostgresService extends Service {
     final port = instance.port;
     final url =
         'postgresql://${db.roleName}:${db.password}@$host:$port/${db.dbName}';
-    return {
+    final info = <String, Object?>{
       'host': host,
       'port': port,
       'database': db.dbName,
@@ -308,6 +346,16 @@ class PostgresService extends Service {
       'password': db.password,
       'url': url,
     };
+    // When the instance is publicly exposed, also surface the external,
+    // TLS-verified connection string clients should use over the internet.
+    if (instance.isPublic == true &&
+        (instance.publicDomain ?? '').isNotEmpty) {
+      final pubHost = instance.publicDomain!;
+      info['publicHost'] = pubHost;
+      info['publicUrl'] =
+          'postgresql://${db.roleName}:${db.password}@$pubHost:$port/${db.dbName}?sslmode=verify-full';
+    }
+    return info;
   }
 
   // ── Metrics ───────────────────────────────────────────────────────────────

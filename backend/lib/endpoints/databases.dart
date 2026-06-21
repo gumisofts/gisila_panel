@@ -80,6 +80,22 @@ class DatabasesApi {
     return _serializeInstance(instance);
   }
 
+  @Post('/{id}/expose', summary: 'Toggle public TLS exposure for an instance')
+  Future<Map<String, Object?>> exposeInstance(
+    int id,
+    ExposeInstanceForm form,
+    PostgresService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final instance = await svc.setPublicExposure(
+      id,
+      isPublic: form.isPublic.value ?? false,
+      domain: form.domain.value,
+    );
+    return _serializeInstance(instance);
+  }
+
   @Delete('/{id}', summary: 'Uninstall a Postgres instance')
   Future<Map<String, Object?>> uninstallInstance(
     int id,
@@ -327,6 +343,8 @@ Map<String, Object?> _serializeInstance(PostgresInstance i) => {
       'port': i.port,
       'status': i.status,
       'isDefault': i.isDefault,
+      'isPublic': i.isPublic ?? false,
+      'publicDomain': i.publicDomain,
       // The system cluster backs the panel itself: its port is fixed and it
       // can be neither stopped nor uninstalled.
       'isSystem': i.port == systemPgPort,

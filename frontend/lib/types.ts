@@ -268,6 +268,9 @@ export interface PostgresInstance {
   port: number;
   status: PgInstanceStatus;
   isDefault: boolean;
+  /** Publicly reachable over TLS at publicDomain:port (sslmode=verify-full). */
+  isPublic?: boolean;
+  publicDomain?: string | null;
   /** The always-available cluster that backs the panel itself. Its port is
    *  fixed and it cannot be stopped or uninstalled. */
   isSystem?: boolean;
@@ -285,6 +288,9 @@ export interface PgConnectionInfo {
   username: string;
   password: string;
   url: string;
+  /** Present when the instance is publicly exposed over TLS. */
+  publicHost?: string | null;
+  publicUrl?: string | null;
 }
 
 export interface PostgresDatabase {

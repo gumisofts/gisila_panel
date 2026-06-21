@@ -33,6 +33,13 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
         'port': <String, Object?>{'type': 'integer', 'format': 'int64'}
       }
     });
+    spec.putSchema('ExposeInstanceForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'isPublic': <String, Object?>{'type': 'boolean'},
+        'domain': <String, Object?>{'type': 'string'}
+      }
+    });
     spec.putSchema('UpdateConfigForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -354,6 +361,63 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
               )
             ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/expose';
+      final openApiPath = '$prefix/databases/{id}/expose';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, ExposeInstanceForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.exposeInstance(id, form, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Toggle public TLS exposure for an instance',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/ExposeInstanceForm'
+              })
+            }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
                 'application/json': MediaType(schema: <String, Object?>{

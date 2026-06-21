@@ -11,6 +11,16 @@ class CreateInstanceForm extends Form {
   List<FormField<Object?>> collectFields() => [version, displayName, port];
 }
 
+/// `POST /databases/{id}/expose` — toggle public TLS exposure for an instance.
+class ExposeInstanceForm extends Form {
+  final isPublic = BoolField(name: 'isPublic', required: true);
+  // Required when isPublic is true; ignored otherwise.
+  final domain = StringField(name: 'domain', maxLength: 255);
+
+  @override
+  List<FormField<Object?>> collectFields() => [isPublic, domain];
+}
+
 /// `PUT /databases/{id}/config` — update tunable Postgres settings.
 class UpdateConfigForm extends Form {
   // JSON object of { settingName: "value", … }.

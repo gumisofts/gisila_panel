@@ -2841,7 +2841,8 @@ Future<void> _postgres(List<String> args) async {
         help: 'JSON object of postgresql.conf settings to ALTER SYSTEM SET')
     ..addOption('output', help: 'Backup destination path (.sql.gz)')
     ..addOption('input', help: 'Backup source path to restore (.sql or .sql.gz)')
-    ..addOption('scope', help: 'Backup scope: full | schema | data');
+    ..addOption('scope', help: 'Backup scope: full | schema | data')
+    ..addOption('domain', help: 'Public domain for TLS exposure');
 
   final opts = parser.parse(args.sublist(1));
   final version = int.tryParse(opts['version'] as String? ?? '');
@@ -2902,6 +2903,18 @@ Future<void> _postgres(List<String> args) async {
       if (version == null) throw ArgumentError('--version required');
       final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
       await _pgConfigure(version, port, opts['settings'] as String? ?? '{}');
+
+    case 'expose':
+      if (version == null) throw ArgumentError('--version required');
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      final domain = opts['domain'] as String? ?? '';
+      if (domain.isEmpty) throw ArgumentError('--domain required');
+      await _pgExpose(version, port, domain);
+
+    case 'unexpose':
+      if (version == null) throw ArgumentError('--version required');
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgUnexpose(version, port);
 
     case 'backup':
       if (version == null) throw ArgumentError('--version required');
@@ -3113,6 +3126,137 @@ Future<void> _pgConfigure(int version, int port, String settingsJson) async {
   }
 
   await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
+}
+
+/// Expose a Postgres cluster to the public internet over TLS.
+///
+/// Obtains a Let's Encrypt cert for [domain] FIRST — if that fails (DNS not
+/// pointing here / port 80 blocked) nothing else changes, so we never expose an
+/// unencrypted database. Then: installs the cert where postgres can read it
+/// (+ a renewal deploy hook), enables `ssl` and `listen_addresses='*'` via
+/// ALTER SYSTEM, adds an SSL-only `hostssl` pg_hba rule, opens the firewall, and
+/// restarts the cluster.
+Future<void> _pgExpose(int version, int port, String domain) async {
+  final host = AgentValidators.requireHostname(domain);
+
+  // 1. Certificate (mandatory — a public DB must be TLS-protected).
+  await Applier().issueCert(host);
+
+  // 2. Make the cert readable by the postgres user + keep it fresh on renewal.
+  final dest = '/etc/gisila/pg-tls/$version';
+  await _pgInstallCert(version, host, dest);
+
+  // 3. Enable TLS + listen on all interfaces.
+  final pgBin = '/usr/lib/postgresql/$version/bin/psql';
+  Future<void> sql(String s) =>
+      _runAs('postgres', [pgBin, '-p', '$port', '-c', s]);
+  await sql("ALTER SYSTEM SET listen_addresses = '*';");
+  await sql("ALTER SYSTEM SET ssl = 'on';");
+  await sql("ALTER SYSTEM SET ssl_cert_file = '$dest/fullchain.pem';");
+  await sql("ALTER SYSTEM SET ssl_key_file = '$dest/privkey.pem';");
+
+  // 4. SSL-only external access in pg_hba.
+  await _pgHbaSetPublic(version, true);
+
+  // 5. Firewall + restart (listen_addresses/ssl require a restart).
+  await _ufwAllow(port);
+  await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
+  stdout.writeln('[agent] Postgres $version exposed at $host:$port (sslmode=verify-full)');
+}
+
+/// Revert a cluster to localhost-only (private). Keeps `ssl=on` (harmless for
+/// local connections) but removes the public listener, hba rule, firewall hole
+/// and renewal hook.
+Future<void> _pgUnexpose(int version, int port) async {
+  final pgBin = '/usr/lib/postgresql/$version/bin/psql';
+  await _runAs('postgres',
+      [pgBin, '-p', '$port', '-c', "ALTER SYSTEM SET listen_addresses = 'localhost';"]);
+  await _pgHbaSetPublic(version, false);
+  await _ufwDeny(port);
+  await _sudo(
+      'rm',
+      ['-f', '/etc/letsencrypt/renewal-hooks/deploy/gisila-pg-$version.sh'],
+      failOk: true);
+  await _sudo('systemctl', ['restart', 'postgresql@$version-main']);
+  stdout.writeln('[agent] Postgres $version is private again (localhost only)');
+}
+
+/// Copy the live LE cert for [domain] into [dest] (postgres-owned, key 0600)
+/// and install a certbot renewal deploy hook that re-copies + reloads on renew.
+Future<void> _pgInstallCert(int version, String domain, String dest) async {
+  await _sudo('mkdir', ['-p', dest]);
+  final live = '/etc/letsencrypt/live/$domain';
+  await _sudo('cp', ['$live/fullchain.pem', '$dest/fullchain.pem']);
+  await _sudo('cp', ['$live/privkey.pem', '$dest/privkey.pem']);
+  await _sudo('chown', ['-R', 'postgres:postgres', dest]);
+  await _sudo('chmod', ['600', '$dest/privkey.pem']);
+  await _sudo('chmod', ['644', '$dest/fullchain.pem']);
+
+  await _sudo('mkdir', ['-p', '/etc/letsencrypt/renewal-hooks/deploy']);
+  final hook = '/etc/letsencrypt/renewal-hooks/deploy/gisila-pg-$version.sh';
+  // Dart interpolates $domain/$version/$dest; \$ stays literal for the shell.
+  await _writeFileSudo(hook, '''#!/bin/sh
+set -e
+D="$domain"
+DEST="$dest"
+mkdir -p "\$DEST"
+cp "/etc/letsencrypt/live/\$D/fullchain.pem" "\$DEST/fullchain.pem"
+cp "/etc/letsencrypt/live/\$D/privkey.pem" "\$DEST/privkey.pem"
+chown -R postgres:postgres "\$DEST"
+chmod 600 "\$DEST/privkey.pem"
+chmod 644 "\$DEST/fullchain.pem"
+systemctl reload postgresql@$version-main || true
+''');
+  await _sudo('chmod', ['755', hook]);
+}
+
+/// Add or remove the gisila-managed SSL-only access block in pg_hba.conf.
+Future<void> _pgHbaSetPublic(int version, bool enable) async {
+  final path = '/etc/postgresql/$version/main/pg_hba.conf';
+  final content = await _readPrivFile(path) ?? '';
+  const begin = '# BEGIN gisila-public';
+  const end = '# END gisila-public';
+
+  // Strip any existing managed block first (idempotent).
+  final out = <String>[];
+  var skip = false;
+  for (final l in content.split('\n')) {
+    if (l.trim() == begin) {
+      skip = true;
+      continue;
+    }
+    if (l.trim() == end) {
+      skip = false;
+      continue;
+    }
+    if (!skip) out.add(l);
+  }
+  var newContent = out.join('\n');
+  if (enable) {
+    if (!newContent.endsWith('\n')) newContent += '\n';
+    newContent += '$begin\n'
+        '# Managed by gisila-agent — public, SSL-only (do not edit by hand).\n'
+        'hostssl all all 0.0.0.0/0 scram-sha-256\n'
+        'hostssl all all ::/0 scram-sha-256\n'
+        '$end\n';
+  }
+  await _writeFileSudo(path, newContent);
+  await _sudo('chown', ['postgres:postgres', path], failOk: true);
+  await _sudo('chmod', ['640', path], failOk: true);
+}
+
+/// Open a TCP port on the host firewall (no-op when ufw is absent).
+Future<void> _ufwAllow(int port) async {
+  final has = await Process.run('sh', ['-c', 'command -v ufw']);
+  if (has.exitCode != 0) return;
+  await _sudo('ufw', ['allow', '$port/tcp'], failOk: true);
+}
+
+/// Close a previously-opened TCP port on the host firewall.
+Future<void> _ufwDeny(int port) async {
+  final has = await Process.run('sh', ['-c', 'command -v ufw']);
+  if (has.exitCode != 0) return;
+  await _sudo('ufw', ['delete', 'allow', '$port/tcp'], failOk: true);
 }
 
 Future<void> _pgDropDatabase(

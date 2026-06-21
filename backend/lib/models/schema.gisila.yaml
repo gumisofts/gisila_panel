@@ -568,6 +568,15 @@ PostgresInstance:
     is_default:
       type: boolean
       default: false
+    # Public exposure: when true the cluster listens on all interfaces with TLS
+    # (Let's Encrypt cert for public_domain) and a hostssl pg_hba rule, so it is
+    # reachable at public_domain:port with sslmode=verify-full.
+    is_public:
+      type: boolean
+      default: false
+    public_domain:
+      type: varchar
+      is_null: true
     # Password for the read-only `gisila_monitor` role the panel uses to query
     # pg_stat_* metrics. Created on install; null on legacy instances until the
     # first metrics request provisions it.

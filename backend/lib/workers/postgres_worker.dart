@@ -58,6 +58,10 @@ class PostgresWorker {
           payload['databaseId'] as int,
           payload['inputPath'] as String,
         );
+      case 'expose_instance':
+        await _exposeInstance(payload['instanceId'] as int);
+      case 'unexpose_instance':
+        await _unexposeInstance(payload['instanceId'] as int);
       default:
         logger.w('postgres_worker: unknown action $action — skipping');
     }
@@ -174,6 +178,46 @@ class PostgresWorker {
         'errorMessage': e.toString(),
       });
       rethrow;
+    }
+  }
+
+  Future<void> _exposeInstance(int instanceId) async {
+    final instance = await _findInstance(instanceId);
+    if (instance == null) return;
+    final domain = (instance.publicDomain ?? '').trim();
+    if (domain.isEmpty) return;
+    try {
+      await _runAgent([
+        'postgres',
+        'expose',
+        '--version', '${instance.version}',
+        '--port', '${instance.port}',
+        '--domain', domain,
+      ]);
+      await _patchInstance(instanceId, {'errorMessage': null});
+    } catch (e) {
+      // Exposure failed (almost always DNS / cert) — revert the flag so the UI
+      // reflects reality, and surface why.
+      await _patchInstance(instanceId, {
+        'isPublic': false,
+        'errorMessage': 'Public exposure failed: $e',
+      });
+    }
+  }
+
+  Future<void> _unexposeInstance(int instanceId) async {
+    final instance = await _findInstance(instanceId);
+    if (instance == null) return;
+    try {
+      await _runAgent([
+        'postgres',
+        'unexpose',
+        '--version', '${instance.version}',
+        '--port', '${instance.port}',
+      ]);
+      await _patchInstance(instanceId, {'errorMessage': null});
+    } catch (e) {
+      await _patchInstance(instanceId, {'errorMessage': 'Unexpose failed: $e'});
     }
   }
 

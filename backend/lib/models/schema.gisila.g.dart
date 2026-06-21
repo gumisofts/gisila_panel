@@ -2695,6 +2695,8 @@ class PostgresInstance with Preloadable {
   final int port;
   final String? status;
   final bool? isDefault;
+  final bool? isPublic;
+  final String? publicDomain;
   final String? monitorPassword;
   final String? dataDirectory;
   final String? errorMessage;
@@ -2709,6 +2711,8 @@ class PostgresInstance with Preloadable {
     required this.port,
     this.status,
     this.isDefault,
+    this.isPublic,
+    this.publicDomain,
     this.monitorPassword,
     this.dataDirectory,
     this.errorMessage,
@@ -2725,6 +2729,8 @@ class PostgresInstance with Preloadable {
         port: row['port'] as int,
         status: row['status'] as String?,
         isDefault: row['is_default'] as bool?,
+        isPublic: row['is_public'] as bool?,
+        publicDomain: row['public_domain'] as String?,
         monitorPassword: row['monitor_password'] as String?,
         dataDirectory: row['data_directory'] as String?,
         errorMessage: row['error_message'] as String?,
@@ -2750,6 +2756,8 @@ class PostgresInstance with Preloadable {
     'port': port,
     'status': status,
     'is_default': isDefault,
+    'is_public': isPublic,
+    'public_domain': publicDomain,
     'monitor_password': monitorPassword,
     'data_directory': dataDirectory,
     'error_message': errorMessage,
@@ -2778,6 +2786,8 @@ class PostgresInstance with Preloadable {
     int? port,
     String? status,
     bool? isDefault,
+    bool? isPublic,
+    String? publicDomain,
     String? monitorPassword,
     String? dataDirectory,
     String? errorMessage,
@@ -2791,6 +2801,8 @@ class PostgresInstance with Preloadable {
     port: port ?? this.port,
     status: status ?? this.status,
     isDefault: isDefault ?? this.isDefault,
+    isPublic: isPublic ?? this.isPublic,
+    publicDomain: publicDomain ?? this.publicDomain,
     monitorPassword: monitorPassword ?? this.monitorPassword,
     dataDirectory: dataDirectory ?? this.dataDirectory,
     errorMessage: errorMessage ?? this.errorMessage,
@@ -2839,6 +2851,14 @@ class PostgresInstanceTable {
     table: 'postgres_instances',
     column: 'is_default',
   );
+  static const ColumnRef<bool?> isPublic = ColumnRef<bool?>(
+    table: 'postgres_instances',
+    column: 'is_public',
+  );
+  static const ColumnRef<String?> publicDomain = ColumnRef<String?>(
+    table: 'postgres_instances',
+    column: 'public_domain',
+  );
   static const ColumnRef<String?> monitorPassword = ColumnRef<String?>(
     table: 'postgres_instances',
     column: 'monitor_password',
@@ -2875,6 +2895,8 @@ class PostgresInstanceTable {
           'port',
           'status',
           'is_default',
+          'is_public',
+          'public_domain',
           'monitor_password',
           'data_directory',
           'error_message',

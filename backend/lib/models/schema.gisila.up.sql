@@ -213,6 +213,8 @@ CREATE TABLE "postgres_instances" (
   "port" INTEGER NOT NULL UNIQUE,
   "status" VARCHAR(255) DEFAULT 'pending',
   "is_default" BOOLEAN DEFAULT FALSE,
+  "is_public" BOOLEAN DEFAULT FALSE,
+  "public_domain" VARCHAR(255),
   "monitor_password" VARCHAR(255),
   "data_directory" VARCHAR(255),
   "error_message" TEXT,
