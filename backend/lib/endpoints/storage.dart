@@ -96,6 +96,8 @@ class StorageApi {
       form.publicUrl.value,
       consoleUrl: form.consoleUrl.value,
       updateConsole: true,
+      // Default to issuing a cert unless the operator explicitly opts out.
+      issueCert: form.issueCert.value ?? true,
     );
     return _serializeProvider(p);
   }

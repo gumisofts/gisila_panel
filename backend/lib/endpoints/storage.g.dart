@@ -50,7 +50,8 @@ extension StorageApiGisilaDoc on StorageApi {
       'type': 'object',
       'properties': <String, Object?>{
         'publicUrl': <String, Object?>{'type': 'string'},
-        'consoleUrl': <String, Object?>{'type': 'string'}
+        'consoleUrl': <String, Object?>{'type': 'string'},
+        'issueCert': <String, Object?>{'type': 'boolean'}
       }
     });
     spec.putSchema('CreateBucketForm', <String, Object?>{

@@ -123,6 +123,7 @@ class StorageService extends Service {
     String? publicUrl, {
     String? consoleUrl,
     bool updateConsole = false,
+    bool issueCert = true,
   }) async {
     final p = await findProvider(id);
     final clean = (publicUrl ?? '').trim();
@@ -146,7 +147,7 @@ class StorageService extends Service {
     // Only MinIO needs an nginx front; external providers' public URL is just a
     // CDN/base metadata value with nothing to expose.
     if (p.kind == 'minio') {
-      await _enqueue('expose_minio', {'providerId': id});
+      await _enqueue('expose_minio', {'providerId': id, 'issueCert': issueCert});
     }
     return findProvider(id);
   }

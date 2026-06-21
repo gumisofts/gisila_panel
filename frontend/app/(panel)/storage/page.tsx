@@ -280,7 +280,13 @@ function ExposeDialog({
 }) {
   const [publicUrl, setPublicUrl] = useState(p.publicUrl ?? "");
   const [consoleUrl, setConsoleUrl] = useState(p.consoleUrl ?? "");
+  const [issueCert, setIssueCert] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Certbot only applies to https URLs; http (or upstream-terminated TLS) skips it.
+  const anyHttps =
+    publicUrl.trim().startsWith("https://") ||
+    consoleUrl.trim().startsWith("https://");
 
   async function submit() {
     setSaving(true);
@@ -290,6 +296,7 @@ function ExposeDialog({
         body: JSON.stringify({
           publicUrl: publicUrl.trim(),
           consoleUrl: consoleUrl.trim(),
+          issueCert,
         }),
       });
       toast.success(
@@ -334,12 +341,32 @@ function ExposeDialog({
               onChange={(e) => setConsoleUrl(e.target.value)}
             />
           </div>
+          <label
+            className={cn(
+              "flex items-center gap-2 text-sm",
+              !anyHttps && "opacity-50",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border"
+              checked={issueCert}
+              disabled={!anyHttps}
+              onChange={(e) => setIssueCert(e.target.checked)}
+            />
+            Obtain a Let&apos;s Encrypt certificate
+          </label>
           <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
             <p>
               MinIO listens on <code className="font-mono">127.0.0.1</code> only.
               Each URL creates an nginx reverse-proxy vhost — the S3 API (unlimited
               upload size) and the web console (websockets) get their own
               hostnames, since they can&apos;t share one.
+            </p>
+            <p>
+              Leave the certificate box unchecked if TLS is terminated upstream
+              (e.g. a Cloudflare proxy or external load balancer) — nginx then
+              serves plain HTTP on port 80 and no certbot runs.
             </p>
             <p>
               Point a DNS <code className="font-mono">A</code> record at this

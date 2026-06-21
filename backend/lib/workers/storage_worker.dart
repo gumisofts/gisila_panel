@@ -28,7 +28,10 @@ class StorageWorker {
         await _lifecycleMinio(payload['providerId'] as int, 'stop-minio',
             okStatus: 'stopped');
       case 'expose_minio':
-        await _exposeMinio(payload['providerId'] as int);
+        await _exposeMinio(
+          payload['providerId'] as int,
+          issueCert: payload['issueCert'] as bool?,
+        );
       case 'create_bucket':
         await _createBucket(
           payload['providerId'] as int,
@@ -114,7 +117,12 @@ class StorageWorker {
   }
 
   /// (Re)create or remove the nginx reverse-proxy vhost for MinIO's public URL.
-  Future<void> _exposeMinio(int providerId) async {
+  ///
+  /// [issueCert] controls whether certbot is run: when null it defaults to
+  /// "yes, if the URL is https" (e.g. the post-install auto-expose). Callers can
+  /// pass false to skip issuance entirely — useful when TLS is terminated
+  /// upstream (Cloudflare proxy, an external load balancer).
+  Future<void> _exposeMinio(int providerId, {bool? issueCert}) async {
     final p = await _findProvider(providerId);
     if (p == null || p.kind != 'minio') return;
     final url = (p.publicUrl ?? '').trim();
@@ -127,6 +135,8 @@ class StorageWorker {
         final uri = Uri.parse(url);
         final consoleHost =
             consoleUrl.isNotEmpty ? Uri.parse(consoleUrl).host : null;
+        // Only request a cert when the operator opted in AND the URL is https.
+        final wantCert = (issueCert ?? true) && uri.scheme == 'https';
         await _runAgent([
           'storage',
           'expose-minio',
@@ -134,7 +144,7 @@ class StorageWorker {
           '--port', '$apiPort',
           '--console-port', '${p.consolePort ?? 9001}',
           if (consoleHost != null) ...['--console-hostname', consoleHost],
-          if (uri.scheme == 'https') '--tls',
+          if (wantCert) '--tls',
         ]);
       }
     } catch (e) {

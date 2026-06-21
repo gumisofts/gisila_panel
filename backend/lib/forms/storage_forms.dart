@@ -44,9 +44,12 @@ class ExposeProviderForm extends Form {
   final publicUrl = StringField(name: 'publicUrl', maxLength: 255);
   // Optional public URL for the MinIO web console (own hostname).
   final consoleUrl = StringField(name: 'consoleUrl', maxLength: 255);
+  // Whether to obtain a Let's Encrypt certificate (skip when TLS is terminated
+  // upstream, e.g. Cloudflare). Only applies to https URLs.
+  final issueCert = BoolField(name: 'issueCert');
 
   @override
-  List<FormField<Object?>> collectFields() => [publicUrl, consoleUrl];
+  List<FormField<Object?>> collectFields() => [publicUrl, consoleUrl, issueCert];
 }
 
 /// `POST /storage/providers/{id}/buckets` — create a bucket + scoped key.

@@ -2640,14 +2640,33 @@ Future<void> _minioExpose({
     consolePort: consoleHost != null ? consolePort : null,
   );
 
+  // TLS is best-effort: the HTTP (port 80) vhost is already serving, so a failed
+  // certificate (almost always a missing DNS A record or a blocked port 80)
+  // must NOT undo the exposure. Report it clearly and let the operator fix DNS
+  // and re-run expose to upgrade to HTTPS.
+  final tlsFailures = <String>[];
   if (tls) {
-    await Applier().issueCertInstaller(host);
-    if (consoleHost != null) {
-      await Applier().issueCertInstaller(consoleHost);
+    for (final h in [host, if (consoleHost != null) consoleHost]) {
+      try {
+        await Applier().issueCertInstaller(h);
+      } catch (e) {
+        tlsFailures.add(h);
+        stderr.writeln('[agent] WARNING: could not obtain a TLS certificate for '
+            '"$h". The HTTP vhost is live, but HTTPS is not. This is almost '
+            'always because "$h" has no DNS A record pointing at this server, '
+            'or port 80 is not reachable from the internet. Fix DNS, then save '
+            'the Public URL again to retry. (certbot: $e)');
+      }
     }
   }
-  stdout.writeln('[agent] MinIO exposed at $scheme://$host'
-      '${consoleHost != null ? ' (console: $scheme://$consoleHost)' : ''}');
+
+  if (tlsFailures.isEmpty) {
+    stdout.writeln('[agent] MinIO exposed at $scheme://$host'
+        '${consoleHost != null ? ' (console: $scheme://$consoleHost)' : ''}');
+  } else {
+    stdout.writeln('[agent] MinIO exposed over HTTP; TLS pending for: '
+        '${tlsFailures.join(', ')} (DNS / port 80 not ready).');
+  }
 }
 
 /// Set MINIO_BROWSER_REDIRECT_URL in the MinIO env file and restart the server.
