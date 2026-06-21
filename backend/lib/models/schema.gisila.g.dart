@@ -3497,6 +3497,7 @@ class StorageProvider with Preloadable {
   final String endpoint;
   final String? region;
   final String? publicUrl;
+  final String? consoleUrl;
   final String accessKey;
   final String secretKey;
   final bool? forcePathStyle;
@@ -3514,6 +3515,7 @@ class StorageProvider with Preloadable {
     required this.endpoint,
     this.region,
     this.publicUrl,
+    this.consoleUrl,
     required this.accessKey,
     required this.secretKey,
     this.forcePathStyle,
@@ -3532,6 +3534,7 @@ class StorageProvider with Preloadable {
     endpoint: row['endpoint'] as String,
     region: row['region'] as String?,
     publicUrl: row['public_url'] as String?,
+    consoleUrl: row['console_url'] as String?,
     accessKey: row['access_key'] as String,
     secretKey: row['secret_key'] as String,
     forcePathStyle: row['force_path_style'] as bool?,
@@ -3560,6 +3563,7 @@ class StorageProvider with Preloadable {
     'endpoint': endpoint,
     'region': region,
     'public_url': publicUrl,
+    'console_url': consoleUrl,
     'access_key': accessKey,
     'secret_key': secretKey,
     'force_path_style': forcePathStyle,
@@ -3591,6 +3595,7 @@ class StorageProvider with Preloadable {
     String? endpoint,
     String? region,
     String? publicUrl,
+    String? consoleUrl,
     String? accessKey,
     String? secretKey,
     bool? forcePathStyle,
@@ -3607,6 +3612,7 @@ class StorageProvider with Preloadable {
     endpoint: endpoint ?? this.endpoint,
     region: region ?? this.region,
     publicUrl: publicUrl ?? this.publicUrl,
+    consoleUrl: consoleUrl ?? this.consoleUrl,
     accessKey: accessKey ?? this.accessKey,
     secretKey: secretKey ?? this.secretKey,
     forcePathStyle: forcePathStyle ?? this.forcePathStyle,
@@ -3658,6 +3664,10 @@ class StorageProviderTable {
     table: 'storage_providers',
     column: 'public_url',
   );
+  static const ColumnRef<String?> consoleUrl = ColumnRef<String?>(
+    table: 'storage_providers',
+    column: 'console_url',
+  );
   static const ColumnRef<String> accessKey = ColumnRef<String>(
     table: 'storage_providers',
     column: 'access_key',
@@ -3705,6 +3715,7 @@ class StorageProviderTable {
       'endpoint',
       'region',
       'public_url',
+      'console_url',
       'access_key',
       'secret_key',
       'force_path_style',

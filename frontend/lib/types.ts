@@ -426,6 +426,7 @@ export interface StorageProvider {
   endpoint: string;
   region?: string | null;
   publicUrl?: string | null;
+  consoleUrl?: string | null;
   forcePathStyle: boolean;
   consolePort?: number | null;
   status: StorageProviderStatus;

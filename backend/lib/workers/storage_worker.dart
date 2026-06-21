@@ -118,17 +118,22 @@ class StorageWorker {
     final p = await _findProvider(providerId);
     if (p == null || p.kind != 'minio') return;
     final url = (p.publicUrl ?? '').trim();
+    final consoleUrl = (p.consoleUrl ?? '').trim();
     final apiPort = Uri.parse(p.endpoint).port;
     try {
       if (url.isEmpty) {
         await _runAgent(['storage', 'unexpose-minio']);
       } else {
         final uri = Uri.parse(url);
+        final consoleHost =
+            consoleUrl.isNotEmpty ? Uri.parse(consoleUrl).host : null;
         await _runAgent([
           'storage',
           'expose-minio',
           '--hostname', uri.host,
           '--port', '$apiPort',
+          '--console-port', '${p.consolePort ?? 9001}',
+          if (consoleHost != null) ...['--console-hostname', consoleHost],
           if (uri.scheme == 'https') '--tls',
         ]);
       }

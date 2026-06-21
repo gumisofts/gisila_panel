@@ -275,6 +275,7 @@ CREATE TABLE "storage_providers" (
   "endpoint" VARCHAR(255) NOT NULL,
   "region" VARCHAR(255) DEFAULT 'us-east-1',
   "public_url" VARCHAR(255),
+  "console_url" VARCHAR(255),
   "access_key" VARCHAR(255) NOT NULL,
   "secret_key" VARCHAR(255) NOT NULL,
   "force_path_style" BOOLEAN DEFAULT TRUE,

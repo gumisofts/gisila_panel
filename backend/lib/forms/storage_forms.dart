@@ -42,9 +42,11 @@ class AddConnectorForm extends Form {
 class ExposeProviderForm extends Form {
   // Empty string clears the public URL (and removes the MinIO vhost).
   final publicUrl = StringField(name: 'publicUrl', maxLength: 255);
+  // Optional public URL for the MinIO web console (own hostname).
+  final consoleUrl = StringField(name: 'consoleUrl', maxLength: 255);
 
   @override
-  List<FormField<Object?>> collectFields() => [publicUrl];
+  List<FormField<Object?>> collectFields() => [publicUrl, consoleUrl];
 }
 
 /// `POST /storage/providers/{id}/buckets` — create a bucket + scoped key.

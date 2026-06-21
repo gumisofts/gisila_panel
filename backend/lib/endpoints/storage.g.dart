@@ -49,7 +49,8 @@ extension StorageApiGisilaDoc on StorageApi {
     spec.putSchema('ExposeProviderForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
-        'publicUrl': <String, Object?>{'type': 'string'}
+        'publicUrl': <String, Object?>{'type': 'string'},
+        'consoleUrl': <String, Object?>{'type': 'string'}
       }
     });
     spec.putSchema('CreateBucketForm', <String, Object?>{

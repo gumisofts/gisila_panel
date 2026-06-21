@@ -736,6 +736,12 @@ StorageProvider:
     public_url:
       type: varchar
       is_null: true
+    # Public URL for the MinIO web console (kind=minio only). Served by its own
+    # nginx vhost on a dedicated hostname (the console can't share the S3 API
+    # host — bucket paths would collide).
+    console_url:
+      type: varchar
+      is_null: true
     # Admin / root credentials used to provision buckets + scoped keys. Stored
     # as-is (encrypt at the DB layer in production, like SshKey.private_key).
     access_key:

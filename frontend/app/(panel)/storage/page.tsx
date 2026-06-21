@@ -183,6 +183,19 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
               </p>
             )
           )}
+          {p.consoleUrl && (
+            <p className="font-mono text-xs text-muted-foreground">
+              console:{" "}
+              <a
+                href={p.consoleUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-violet-500 hover:underline"
+              >
+                {p.consoleUrl}
+              </a>
+            </p>
+          )}
           {p.errorMessage && (
             <p className="text-xs text-red-500">{p.errorMessage}</p>
           )}
@@ -266,6 +279,7 @@ function ExposeDialog({
   provider: StorageProvider;
 }) {
   const [publicUrl, setPublicUrl] = useState(p.publicUrl ?? "");
+  const [consoleUrl, setConsoleUrl] = useState(p.consoleUrl ?? "");
   const [saving, setSaving] = useState(false);
 
   async function submit() {
@@ -273,7 +287,10 @@ function ExposeDialog({
     try {
       await api(`/storage/providers/${p.id}/expose`, {
         method: "POST",
-        body: JSON.stringify({ publicUrl: publicUrl.trim() }),
+        body: JSON.stringify({
+          publicUrl: publicUrl.trim(),
+          consoleUrl: consoleUrl.trim(),
+        }),
       });
       toast.success(
         publicUrl.trim()
@@ -297,7 +314,7 @@ function ExposeDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>Public URL</Label>
+            <Label>S3 API URL</Label>
             <Input
               className="mt-1 font-mono text-sm"
               placeholder="https://s3.example.com"
@@ -305,18 +322,32 @@ function ExposeDialog({
               onChange={(e) => setPublicUrl(e.target.value)}
             />
           </div>
+          <div>
+            <Label>
+              Console URL
+              <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              className="mt-1 font-mono text-sm"
+              placeholder="https://minio.example.com"
+              value={consoleUrl}
+              onChange={(e) => setConsoleUrl(e.target.value)}
+            />
+          </div>
           <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
             <p>
               MinIO listens on <code className="font-mono">127.0.0.1</code> only.
-              Setting a URL creates an nginx reverse-proxy vhost for that hostname
-              → the S3 API, with unlimited upload size.
+              Each URL creates an nginx reverse-proxy vhost — the S3 API (unlimited
+              upload size) and the web console (websockets) get their own
+              hostnames, since they can&apos;t share one.
             </p>
             <p>
               Point a DNS <code className="font-mono">A</code> record at this
-              server first. An <code className="font-mono">https://</code> URL
-              triggers a Let&apos;s Encrypt certificate automatically.
+              server for each hostname first. An{" "}
+              <code className="font-mono">https://</code> URL triggers a
+              Let&apos;s Encrypt certificate automatically.
             </p>
-            <p>Leave blank to remove the public vhost.</p>
+            <p>Leave a field blank to remove its vhost.</p>
           </div>
         </div>
         <DialogFooter>

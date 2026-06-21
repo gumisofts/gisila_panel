@@ -606,8 +606,15 @@ class Applier {
   Future<void> applyMinioVhost({
     required String hostname,
     required int apiPort,
+    String? consoleHostname,
+    int? consolePort,
   }) async {
-    final vhost = MinioNginxVhost(hostname: hostname, apiPort: apiPort).render();
+    final vhost = MinioNginxVhost(
+      hostname: hostname,
+      apiPort: apiPort,
+      consoleHostname: consoleHostname,
+      consolePort: consolePort,
+    ).render();
     Directory(nginxDir).createSync(recursive: true);
     File('$nginxDir/gisila-minio.conf').writeAsStringSync(vhost);
     await ShellExec.run('nginx', ['-t'], requireSuccess: false);

@@ -2400,6 +2400,7 @@ Future<void> _storage(List<String> args) async {
     p.addFlag('purge', defaultsTo: false); // uninstall: also delete data dir
     // Public exposure (reverse-proxy MinIO at a hostname).
     p.addOption('hostname');
+    p.addOption('console-hostname');
     p.addFlag('tls', defaultsTo: false);
     // Bucket provisioning (any S3 endpoint).
     p.addOption('kind', defaultsTo: 'minio'); // minio | external
@@ -2434,6 +2435,8 @@ Future<void> _storage(List<String> args) async {
       await _minioExpose(
         hostname: _req(r['hostname'] as String?, 'hostname'),
         apiPort: int.tryParse(r['port'] as String? ?? '9000') ?? 9000,
+        consoleHostname: r['console-hostname'] as String?,
+        consolePort: int.tryParse(r['console-port'] as String? ?? '9001') ?? 9001,
         tls: r['tls'] as bool,
       );
     case 'unexpose-minio':
@@ -2605,19 +2608,61 @@ Future<void> _minioUninstall({
 }
 
 /// Reverse-proxy MinIO at [hostname] so its S3 API is reachable at a public URL
-/// (MinIO itself only binds 127.0.0.1). With [tls], certbot obtains a cert and
-/// rewrites the vhost for HTTPS. Idempotent.
+/// (MinIO itself only binds 127.0.0.1). When [consoleHostname] is set, a second
+/// vhost fronts the web console on [consolePort] and MinIO's
+/// MINIO_BROWSER_REDIRECT_URL is updated so console logins/redirects use that
+/// host. With [tls], certbot obtains certs and rewrites the vhosts for HTTPS.
+/// Idempotent.
 Future<void> _minioExpose({
   required String hostname,
   required int apiPort,
+  String? consoleHostname,
+  int? consolePort,
   required bool tls,
 }) async {
   final host = AgentValidators.requireHostname(hostname);
-  await Applier().applyMinioVhost(hostname: host, apiPort: apiPort);
+  final consoleHost =
+      (consoleHostname != null && consoleHostname.trim().isNotEmpty)
+          ? AgentValidators.requireHostname(consoleHostname)
+          : null;
+  final scheme = tls ? 'https' : 'http';
+
+  // Point the console at its public URL so its post-login redirect and asset
+  // base are correct behind the proxy. Changing this requires a MinIO restart.
+  if (consoleHost != null) {
+    await _minioSetBrowserRedirect('$scheme://$consoleHost');
+  }
+
+  await Applier().applyMinioVhost(
+    hostname: host,
+    apiPort: apiPort,
+    consoleHostname: consoleHost,
+    consolePort: consoleHost != null ? consolePort : null,
+  );
+
   if (tls) {
     await Applier().issueCertInstaller(host);
+    if (consoleHost != null) {
+      await Applier().issueCertInstaller(consoleHost);
+    }
   }
-  stdout.writeln('[agent] MinIO exposed at http${tls ? 's' : ''}://$host');
+  stdout.writeln('[agent] MinIO exposed at $scheme://$host'
+      '${consoleHost != null ? ' (console: $scheme://$consoleHost)' : ''}');
+}
+
+/// Set MINIO_BROWSER_REDIRECT_URL in the MinIO env file and restart the server.
+/// Reads the existing file, replaces/inserts the key, writes it back.
+Future<void> _minioSetBrowserRedirect(String url) async {
+  final existing = await _readPrivFile(_minioEnvFile) ?? '';
+  final lines = existing
+      .split('\n')
+      .where((l) => l.trim().isNotEmpty &&
+          !l.startsWith('MINIO_BROWSER_REDIRECT_URL='))
+      .toList()
+    ..add('MINIO_BROWSER_REDIRECT_URL=$url');
+  await _writeFileSudo(_minioEnvFile, '${lines.join('\n')}\n');
+  await _sudo('chmod', ['0640', _minioEnvFile], failOk: true);
+  await _serviceCtl('restart', 'gisila-minio');
 }
 
 /// Build a `MC_HOST_<alias>` URL embedding credentials, e.g.

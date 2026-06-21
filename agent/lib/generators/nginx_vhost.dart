@@ -13,13 +13,21 @@ class MinioNginxVhost {
   MinioNginxVhost({
     required this.hostname,
     required this.apiPort,
+    this.consoleHostname,
+    this.consolePort,
   });
 
   final String hostname;
   final int apiPort;
 
-  String render() => '''
-# Managed by gisila-agent (minio) — do not edit by hand.
+  /// When set, a second `server` block proxies this hostname to the MinIO web
+  /// console on [consolePort] (with websocket upgrade). The console needs its
+  /// own hostname — it lives at the root path, which would collide with S3
+  /// bucket paths on the API host.
+  final String? consoleHostname;
+  final int? consolePort;
+
+  String _apiServer() => '''
 server {
     listen 80;
     listen [::]:80;
@@ -55,6 +63,55 @@ server {
     error_log  /var/log/nginx/gisila-minio.error.log;
 }
 ''';
+
+  String _consoleServer() => '''
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $consoleHostname;
+
+    # ACME HTTP-01 challenges
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    ignore_invalid_headers off;
+    client_max_body_size 0;
+    proxy_buffering off;
+
+    location / {
+        proxy_pass http://127.0.0.1:$consolePort;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # The console uses websockets for live stats / the object browser.
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 300;
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+        chunked_transfer_encoding off;
+    }
+
+    access_log /var/log/nginx/gisila-minio-console.access.log;
+    error_log  /var/log/nginx/gisila-minio-console.error.log;
+}
+''';
+
+  String render() {
+    final console = (consoleHostname != null &&
+            consoleHostname!.isNotEmpty &&
+            consolePort != null)
+        ? _consoleServer()
+        : '';
+    return '# Managed by gisila-agent (minio) — do not edit by hand.\n'
+        '${_apiServer()}$console';
+  }
 }
 
 /// Render a Nginx vhost that serves static files directly from the filesystem.

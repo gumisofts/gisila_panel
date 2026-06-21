@@ -113,11 +113,17 @@ class StorageService extends Service {
     return findProvider(provider.id!);
   }
 
-  /// Set (or clear) a provider's public URL. For MinIO this also (re)creates the
-  /// nginx reverse-proxy vhost so the S3 API is reachable at that hostname —
-  /// MinIO itself only binds 127.0.0.1, so without this the URL 404s. The URL is
-  /// re-injected into every linked app's `<prefix>_PUBLIC_URL` env var.
-  Future<StorageProvider> setPublicUrl(int id, String? publicUrl) async {
+  /// Set (or clear) a provider's public URL (and, for MinIO, its console URL).
+  /// For MinIO this also (re)creates the nginx reverse-proxy vhost(s) so the S3
+  /// API + console are reachable at those hostnames — MinIO only binds
+  /// 127.0.0.1, so without this the URLs 404. The public URL is re-injected into
+  /// every linked app's `<prefix>_PUBLIC_URL` env var.
+  Future<StorageProvider> setPublicUrl(
+    int id,
+    String? publicUrl, {
+    String? consoleUrl,
+    bool updateConsole = false,
+  }) async {
     final p = await findProvider(id);
     final clean = (publicUrl ?? '').trim();
     if (clean.isNotEmpty &&
@@ -125,7 +131,17 @@ class StorageService extends Service {
         !clean.startsWith('https://')) {
       throw HttpException(422, 'Public URL must start with http:// or https://');
     }
-    await _patchProvider(id, {'publicUrl': clean.isEmpty ? null : clean});
+    final cleanConsole = (consoleUrl ?? '').trim();
+    if (updateConsole &&
+        cleanConsole.isNotEmpty &&
+        !cleanConsole.startsWith('http://') &&
+        !cleanConsole.startsWith('https://')) {
+      throw HttpException(422, 'Console URL must start with http:// or https://');
+    }
+    await _patchProvider(id, {
+      'publicUrl': clean.isEmpty ? null : clean,
+      if (updateConsole) 'consoleUrl': cleanConsole.isEmpty ? null : cleanConsole,
+    });
     await _reinjectProviderLinks(id);
     // Only MinIO needs an nginx front; external providers' public URL is just a
     // CDN/base metadata value with nothing to expose.

@@ -91,7 +91,12 @@ class StorageApi {
     RequestContext ctx,
   ) async {
     requireSuperuser(ctx);
-    final p = await svc.setPublicUrl(id, form.publicUrl.value);
+    final p = await svc.setPublicUrl(
+      id,
+      form.publicUrl.value,
+      consoleUrl: form.consoleUrl.value,
+      updateConsole: true,
+    );
     return _serializeProvider(p);
   }
 
@@ -236,6 +241,7 @@ Map<String, Object?> _serializeProvider(StorageProvider p) => {
       'endpoint': p.endpoint,
       'region': p.region,
       'publicUrl': p.publicUrl,
+      'consoleUrl': p.consoleUrl,
       'forcePathStyle': p.forcePathStyle ?? true,
       'consolePort': p.consolePort,
       'status': p.status,
