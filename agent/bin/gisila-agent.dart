@@ -1694,7 +1694,14 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
     'pgbouncer': 'pgbouncer',
   };
   final pkg = packages[type];
-  const handledTypes = {'mailpit', 'postfix', 'dovecot', 'redis', 'memcached'};
+  const handledTypes = {
+    'mailpit',
+    'postfix',
+    'dovecot',
+    'redis',
+    'memcached',
+    'pgadmin'
+  };
   if (pkg == null && !handledTypes.contains(type)) {
     // smtp and other config-only services — nothing to install on the host.
     stdout.writeln('Service $type is config-only — nothing to install.');
@@ -1715,6 +1722,11 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
 
   if (type == 'mailpit') {
     await _installMailpit(config);
+    return;
+  }
+
+  if (type == 'pgadmin') {
+    await _installPgadmin(config);
     return;
   }
 
@@ -1840,6 +1852,9 @@ WantedBy=multi-user.target
 
 Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
   switch (type) {
+    case 'pgadmin':
+      await _configurePgadmin(config);
+      return;
     case 'redis':
       // Writes the *managed* instance config — NOT /etc/redis/redis.conf, which
       // belongs to the panel's own queue. `supervised systemd` + an explicit
@@ -2251,6 +2266,15 @@ Future<void> _serviceUninstall(String type) async {
             failOk: true);
         await _serviceCtl('daemon-reload', 'mailpit');
       }
+    case 'pgadmin':
+      await _sudo('rm', ['-f', _pgadminUnit], failOk: true);
+      await _serviceCtl('daemon-reload', 'pgadmin');
+      await _sudo('rm', ['-rf', '/opt/gisila/pgadmin'], failOk: true);
+      await _sudo('rm', ['-rf', _pgadminData], failOk: true);
+      await _sudo('rm', ['-f', '${_nginxSitesDir()}/gisila-pgadmin.conf'],
+          failOk: true);
+      await _nginxReload();
+      await _sudo('userdel', ['pgadmin'], failOk: true);
     case 'smtp':
       // Nothing to remove for config-only services.
       break;
@@ -2268,11 +2292,219 @@ Future<void> _installMailpit(Map<String, dynamic> config) async {
   await _serviceCtl('start', 'mailpit');
 }
 
+// ── pgAdmin 4 (web Postgres admin UI) ────────────────────────────────────────
+
+const _pgadminVenv = '/opt/gisila/pgadmin/venv';
+const _pgadminData = '/var/lib/gisila/pgadmin';
+const _pgadminPkgFile = '/opt/gisila/pgadmin/pkgdir';
+const _pgadminUnit = '/etc/systemd/system/gisila-pgadmin.service';
+
+void _pgadminValidate(String email, String password) {
+  if (email.isEmpty || !email.contains('@')) {
+    throw ArgumentError('A valid admin email is required.');
+  }
+  if (password.length < 6) {
+    throw ArgumentError('Admin password must be at least 6 characters.');
+  }
+  // These chars would break the single-quoted shell env assignments below.
+  if (RegExp("['\"\\\\\\r\\n]").hasMatch(email) ||
+      RegExp("['\"\\\\\\r\\n]").hasMatch(password)) {
+    throw ArgumentError(
+        'Email/password must not contain quotes, backslashes or newlines.');
+  }
+}
+
+String _nginxSitesDir() => Platform.environment['DOCKER_DEPLOY'] == 'true'
+    ? '/etc/nginx/conf.d'
+    : '/etc/nginx/sites-enabled';
+
+Future<void> _nginxReload() async {
+  if (Platform.environment['DOCKER_DEPLOY'] == 'true') {
+    await _sudo('nginx', ['-s', 'reload'], failOk: true);
+  } else {
+    await _sudo('systemctl', ['reload', 'nginx'], failOk: true);
+  }
+}
+
+/// Install pgAdmin 4 into a Python venv and run it under gunicorn as the
+/// `gisila-pgadmin` systemd service on 127.0.0.1:<port>. Optionally exposes it
+/// at a domain via nginx (+ Let's Encrypt).
+Future<void> _installPgadmin(Map<String, dynamic> config) async {
+  if (Platform.environment['DOCKER_DEPLOY'] == 'true') {
+    throw Exception('pgAdmin install is only supported on systemd hosts.');
+  }
+  final email = (config['email'] as String? ?? '').trim();
+  final password = (config['password'] ?? '').toString();
+  final port = _intField(config['port'], '5050');
+  _pgadminValidate(email, password);
+
+  // Build deps for the venv (psycopg/cffi may compile if no wheel is available).
+  await _aptInstall([
+    'python3-venv',
+    'python3-dev',
+    'libpq-dev',
+    'libffi-dev',
+    'build-essential',
+  ]);
+
+  // One privileged script: create the venv, install pgAdmin + gunicorn, write
+  // config_local.py, create the admin account, and record the install path
+  // (which embeds the python version, so it is resolved at runtime).
+  final script = '''
+set -e
+VENV=$_pgadminVenv
+DATA=$_pgadminData
+mkdir -p "\$DATA/sessions" "\$DATA/storage"
+python3 -m venv "\$VENV"
+"\$VENV/bin/pip" install --upgrade pip wheel >/dev/null
+"\$VENV/bin/pip" install --prefer-binary pgadmin4 gunicorn
+PKG=\$(ls -d "\$VENV"/lib/python*/site-packages/pgadmin4 | head -1)
+cat > "\$PKG/config_local.py" <<'PYEOF'
+import os
+DATA_DIR = '$_pgadminData'
+LOG_FILE = os.path.join(DATA_DIR, 'pgadmin4.log')
+SQLITE_PATH = os.path.join(DATA_DIR, 'pgadmin4.db')
+SESSION_DB_PATH = os.path.join(DATA_DIR, 'sessions')
+STORAGE_DIR = os.path.join(DATA_DIR, 'storage')
+SERVER_MODE = True
+DEFAULT_SERVER = '127.0.0.1'
+PYEOF
+id pgadmin >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin pgadmin
+export PGADMIN_SETUP_EMAIL='$email'
+export PGADMIN_SETUP_PASSWORD='$password'
+"\$VENV/bin/python" "\$PKG/setup.py" setup-db || "\$VENV/bin/python" "\$PKG/setup.py"
+chown -R pgadmin:pgadmin "\$DATA"
+printf '%s' "\$PKG" > $_pgadminPkgFile
+''';
+  await _sudo('bash', ['-c', script]);
+
+  final pkgDir = (await _readPrivFile(_pgadminPkgFile))?.trim() ?? '';
+  await _pgadminWriteUnit(port, pkgDir);
+  await _serviceCtl('daemon-reload', 'pgadmin');
+  await _serviceCtl('enable', 'pgadmin');
+  await _serviceCtl('restart', 'pgadmin');
+
+  await _pgadminExpose(config, port);
+}
+
+/// Reconfigure an installed pgAdmin: rewrite the unit (port) and re-apply the
+/// nginx exposure. Credential changes are not re-applied (pgAdmin manages its
+/// own users after install).
+Future<void> _configurePgadmin(Map<String, dynamic> config) async {
+  final port = _intField(config['port'], '5050');
+  final pkgDir = (await _readPrivFile(_pgadminPkgFile))?.trim() ?? '';
+  if (pkgDir.isEmpty) {
+    throw Exception('pgAdmin is not installed (package dir unknown).');
+  }
+  await _pgadminWriteUnit(port, pkgDir);
+  await _serviceCtl('daemon-reload', 'pgadmin');
+  await _serviceCtl('restart', 'pgadmin');
+  await _pgadminExpose(config, port);
+}
+
+Future<void> _pgadminWriteUnit(String port, String pkgDir) async {
+  if (pkgDir.isEmpty) {
+    throw Exception('Could not resolve the pgAdmin package directory.');
+  }
+  final unit = '''
+[Unit]
+Description=Gisila pgAdmin 4
+After=network.target
+
+[Service]
+Type=simple
+User=pgadmin
+Group=pgadmin
+WorkingDirectory=$pkgDir
+ExecStart=$_pgadminVenv/bin/gunicorn --bind 127.0.0.1:$port --workers 1 --threads 25 --chdir $pkgDir pgAdmin4:app
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=$_pgadminData
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+MemoryMax=512M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
+''';
+  await _writeFileSudo(_pgadminUnit, unit);
+}
+
+/// Reverse-proxy pgAdmin at config['domain'] (when set), optionally with TLS.
+Future<void> _pgadminExpose(Map<String, dynamic> config, String port) async {
+  final domain = (config['domain'] as String? ?? '').trim();
+  final confPath = '${_nginxSitesDir()}/gisila-pgadmin.conf';
+  if (domain.isEmpty) {
+    // No domain → ensure no stale vhost lingers.
+    if (await _privFileExists(confPath)) {
+      await _sudo('rm', ['-f', confPath], failOk: true);
+      await _nginxReload();
+    }
+    return;
+  }
+  final host = AgentValidators.requireHostname(domain);
+  final tls = config['tls'] == true || config['tls'] == 'true';
+
+  // nginx vars are escaped (\$) so Dart leaves them for nginx; $host/$port are
+  // Dart interpolations (the domain + bind port).
+  final vhost = '''
+# Managed by gisila-agent (pgadmin) — do not edit by hand.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $host;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    client_max_body_size 256m;
+
+    location / {
+        proxy_pass http://127.0.0.1:$port;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+    }
+
+    access_log /var/log/nginx/gisila-pgadmin.access.log;
+    error_log  /var/log/nginx/gisila-pgadmin.error.log;
+}
+''';
+  await _writeFileSudo(confPath, vhost);
+  await _sudo('nginx', ['-t'], failOk: true);
+  await _nginxReload();
+  if (tls) {
+    try {
+      await Applier().issueCertInstaller(host);
+    } catch (e) {
+      stderr.writeln('[agent] WARNING: pgAdmin TLS cert for "$host" failed — '
+          'the HTTP vhost is live. Fix DNS / port 80 and reconfigure to retry. '
+          '($e)');
+    }
+  }
+}
+
 String _unitName(String type) => switch (type) {
       // Managed Redis/Memcached run as dedicated gisila-* units, never the
       // distro redis-server.service / memcached.service.
       'redis' => 'gisila-redis',
       'memcached' => 'gisila-memcached',
+      'pgadmin' => 'gisila-pgadmin',
       _ => type,
     };
 

@@ -316,6 +316,50 @@ const List<ServiceDef> kServiceCatalog = [
     ],
   ),
 
+  ServiceDef(
+    type: 'pgadmin',
+    name: 'pgAdmin 4',
+    description: 'Web-based PostgreSQL administration UI. Installed in a Python '
+        'venv and run via gunicorn on a local port; optionally exposed at a '
+        'domain with a Let\'s Encrypt certificate. Add your instances inside '
+        'pgAdmin using the connection details from the Databases page.',
+    category: 'database',
+    docsUrl: 'https://www.pgadmin.org/docs/',
+    configSchema: [
+      ConfigField('email',
+          label: 'Admin email',
+          type: FieldType.string,
+          required: true,
+          placeholder: 'admin@example.com',
+          hint: 'Login for the pgAdmin web UI (created on install).'),
+      ConfigField('password',
+          label: 'Admin password',
+          type: FieldType.password,
+          required: true,
+          secret: true,
+          hint: 'At least 6 characters. No quotes or backslashes.'),
+      ConfigField('port',
+          label: 'Local port',
+          type: FieldType.number,
+          defaultValue: '5050',
+          hint: 'Bound to 127.0.0.1. Reached via the domain below or an SSH tunnel.',
+          min: 1024,
+          max: 65535),
+      ConfigField('domain',
+          label: 'Public domain',
+          type: FieldType.string,
+          placeholder: 'pgadmin.example.com',
+          hint: 'Optional — nginx reverse-proxies this hostname to pgAdmin. '
+              'Point a DNS A record here first.'),
+      ConfigField('tls',
+          label: 'HTTPS certificate (Let\'s Encrypt)',
+          type: FieldType.boolean,
+          defaultValue: 'true',
+          hint: 'Obtain a certificate for the domain. Uncheck if TLS is '
+              'terminated upstream (e.g. Cloudflare).'),
+    ],
+  ),
+
   // Note: the self-hosted Postfix + Dovecot mail stack is no longer an
   // installable catalog entry. It is provisioned and managed automatically by
   // the Mail feature (see MailService / the `mail` agent command).
