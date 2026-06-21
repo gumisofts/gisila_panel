@@ -1,3 +1,62 @@
+/// Render a Nginx vhost that reverse-proxies a hostname to the local MinIO
+/// S3 API so the object store is reachable at a public URL.
+///
+/// MinIO binds 127.0.0.1 only, so without this the public hostname matches no
+/// server block and nginx returns 404. The settings here are the ones MinIO/S3
+/// require behind a proxy:
+///   - `client_max_body_size 0` — never cap object uploads.
+///   - `ignore_invalid_headers off` — S3 signatures use headers with underscores.
+///   - `proxy_request_buffering off` + `chunked_transfer_encoding off` — stream
+///     large PUTs straight through instead of buffering them to disk first.
+///   - `Host $host` — preserve the host so S3 signature-v4 validation passes.
+class MinioNginxVhost {
+  MinioNginxVhost({
+    required this.hostname,
+    required this.apiPort,
+  });
+
+  final String hostname;
+  final int apiPort;
+
+  String render() => '''
+# Managed by gisila-agent (minio) — do not edit by hand.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    # ACME HTTP-01 challenges
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    # Allow arbitrarily large object uploads and pass S3 requests through
+    # untouched (header names with underscores, streamed request bodies).
+    ignore_invalid_headers off;
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    location / {
+        proxy_pass http://127.0.0.1:$apiPort;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection "";
+        chunked_transfer_encoding off;
+        proxy_connect_timeout 300;
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+    }
+
+    access_log /var/log/nginx/gisila-minio.access.log;
+    error_log  /var/log/nginx/gisila-minio.error.log;
+}
+''';
+}
+
 /// Render a Nginx vhost that serves static files directly from the filesystem.
 ///
 /// When [isSpa] is true every request that does not match a real file falls

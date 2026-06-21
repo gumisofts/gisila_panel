@@ -16,6 +16,7 @@ import {
   Server,
   Copy,
   Eye,
+  Globe,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
     refreshInterval: p.status === "running" || p.kind === "external" ? 0 : 4000,
   });
   const [createOpen, setCreateOpen] = useState(false);
+  const [exposeOpen, setExposeOpen] = useState(false);
   const buckets = data?.results ?? [];
 
   async function lifecycle(action: "start" | "stop") {
@@ -162,11 +164,41 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
             </Badge>
           </CardTitle>
           <p className="font-mono text-xs text-muted-foreground">{p.endpoint}</p>
+          {p.publicUrl ? (
+            <p className="font-mono text-xs text-muted-foreground">
+              public:{" "}
+              <a
+                href={p.publicUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-violet-500 hover:underline"
+              >
+                {p.publicUrl}
+              </a>
+            </p>
+          ) : (
+            p.kind === "minio" && (
+              <p className="text-xs text-amber-500">
+                Not publicly exposed — only reachable from apps on this host.
+              </p>
+            )
+          )}
           {p.errorMessage && (
             <p className="text-xs text-red-500">{p.errorMessage}</p>
           )}
         </div>
         <div className="flex gap-1">
+          {p.kind === "minio" && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              title="Public URL"
+              onClick={() => setExposeOpen(true)}
+            >
+              <Globe className="h-4 w-4" />
+            </Button>
+          )}
           {p.kind === "minio" && p.status === "stopped" && (
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => lifecycle("start")}>
               <Play className="h-4 w-4" />
@@ -215,7 +247,88 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
         providerId={p.id}
         bucketsKey={bucketsKey}
       />
+      <ExposeDialog
+        open={exposeOpen}
+        onOpenChange={setExposeOpen}
+        provider={p}
+      />
     </Card>
+  );
+}
+
+function ExposeDialog({
+  open,
+  onOpenChange,
+  provider: p,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  provider: StorageProvider;
+}) {
+  const [publicUrl, setPublicUrl] = useState(p.publicUrl ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    setSaving(true);
+    try {
+      await api(`/storage/providers/${p.id}/expose`, {
+        method: "POST",
+        body: JSON.stringify({ publicUrl: publicUrl.trim() }),
+      });
+      toast.success(
+        publicUrl.trim()
+          ? "Public URL set — nginx vhost is being configured."
+          : "Public URL cleared.",
+      );
+      onOpenChange(false);
+      mutate("/storage/providers");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Public URL for {p.displayName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Public URL</Label>
+            <Input
+              className="mt-1 font-mono text-sm"
+              placeholder="https://s3.example.com"
+              value={publicUrl}
+              onChange={(e) => setPublicUrl(e.target.value)}
+            />
+          </div>
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
+            <p>
+              MinIO listens on <code className="font-mono">127.0.0.1</code> only.
+              Setting a URL creates an nginx reverse-proxy vhost for that hostname
+              → the S3 API, with unlimited upload size.
+            </p>
+            <p>
+              Point a DNS <code className="font-mono">A</code> record at this
+              server first. An <code className="font-mono">https://</code> URL
+              triggers a Let&apos;s Encrypt certificate automatically.
+            </p>
+            <p>Leave blank to remove the public vhost.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -357,7 +470,7 @@ function InstallMinioDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Install MinIO</DialogTitle>
         </DialogHeader>
@@ -463,7 +576,7 @@ function AddConnectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add external S3 connector</DialogTitle>
         </DialogHeader>
@@ -591,7 +704,7 @@ function CreateBucketDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : close())}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{created ? "Bucket created" : "New bucket"}</DialogTitle>
         </DialogHeader>

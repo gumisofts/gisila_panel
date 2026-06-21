@@ -27,6 +27,8 @@ class StorageWorker {
       case 'stop_minio':
         await _lifecycleMinio(payload['providerId'] as int, 'stop-minio',
             okStatus: 'stopped');
+      case 'expose_minio':
+        await _exposeMinio(payload['providerId'] as int);
       case 'create_bucket':
         await _createBucket(
           payload['providerId'] as int,
@@ -64,6 +66,11 @@ class StorageWorker {
         'installedAt': DateTime.now().toUtc().toIso8601String(),
         'errorMessage': null,
       });
+      // If a public URL was configured at install time, front MinIO with nginx
+      // so that URL actually serves (MinIO binds 127.0.0.1 only).
+      if ((p.publicUrl ?? '').isNotEmpty) {
+        await _exposeMinio(providerId);
+      }
     } catch (e) {
       logger.e('storage_worker: minio install failed', error: e);
       await _patchProvider(providerId, {
@@ -103,6 +110,31 @@ class StorageWorker {
         'status': 'failed',
         'errorMessage': e.toString(),
       });
+    }
+  }
+
+  /// (Re)create or remove the nginx reverse-proxy vhost for MinIO's public URL.
+  Future<void> _exposeMinio(int providerId) async {
+    final p = await _findProvider(providerId);
+    if (p == null || p.kind != 'minio') return;
+    final url = (p.publicUrl ?? '').trim();
+    final apiPort = Uri.parse(p.endpoint).port;
+    try {
+      if (url.isEmpty) {
+        await _runAgent(['storage', 'unexpose-minio']);
+      } else {
+        final uri = Uri.parse(url);
+        await _runAgent([
+          'storage',
+          'expose-minio',
+          '--hostname', uri.host,
+          '--port', '$apiPort',
+          if (uri.scheme == 'https') '--tls',
+        ]);
+      }
+    } catch (e) {
+      logger.w('storage_worker: minio expose error (continuing): $e');
+      await _patchProvider(providerId, {'errorMessage': 'Expose failed: $e'});
     }
   }
 

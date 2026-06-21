@@ -164,7 +164,7 @@ export function StorageTab({ appId }: { appId: number }) {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Link a bucket</DialogTitle>
           </DialogHeader>

@@ -113,6 +113,43 @@ class StorageService extends Service {
     return findProvider(provider.id!);
   }
 
+  /// Set (or clear) a provider's public URL. For MinIO this also (re)creates the
+  /// nginx reverse-proxy vhost so the S3 API is reachable at that hostname —
+  /// MinIO itself only binds 127.0.0.1, so without this the URL 404s. The URL is
+  /// re-injected into every linked app's `<prefix>_PUBLIC_URL` env var.
+  Future<StorageProvider> setPublicUrl(int id, String? publicUrl) async {
+    final p = await findProvider(id);
+    final clean = (publicUrl ?? '').trim();
+    if (clean.isNotEmpty &&
+        !clean.startsWith('http://') &&
+        !clean.startsWith('https://')) {
+      throw HttpException(422, 'Public URL must start with http:// or https://');
+    }
+    await _patchProvider(id, {'publicUrl': clean.isEmpty ? null : clean});
+    await _reinjectProviderLinks(id);
+    // Only MinIO needs an nginx front; external providers' public URL is just a
+    // CDN/base metadata value with nothing to expose.
+    if (p.kind == 'minio') {
+      await _enqueue('expose_minio', {'providerId': id});
+    }
+    return findProvider(id);
+  }
+
+  /// Re-write `<prefix>_*` env vars for every app linked to any bucket under
+  /// [providerId] (used when the public URL or other provider settings change).
+  Future<void> _reinjectProviderLinks(int providerId) async {
+    final provider = await findProvider(providerId);
+    final buckets = await listBuckets(providerId);
+    for (final b in buckets) {
+      final links = await Query<AppStorageLink>(AppStorageLinkTable.metadata)
+          .where(AppStorageLinkTable.bucketId.eq(b.id!))
+          .all(_db.context());
+      for (final link in links) {
+        await _injectEnv(link.appId, link.envPrefix ?? 'S3', provider, b);
+      }
+    }
+  }
+
   Future<StorageProvider> startProvider(int id) async {
     final p = await findProvider(id);
     if (p.kind != 'minio') return p; // external is always "on"
@@ -358,6 +395,15 @@ class StorageService extends Service {
           'updatedAt': now,
         }).run(_db.context());
       }
+    }
+    // If the provider has no public URL, make sure a previously-injected
+    // `<prefix>_PUBLIC_URL` doesn't linger after it was cleared.
+    if (provider.publicUrl == null || provider.publicUrl!.isEmpty) {
+      await Query<EnvVar>(EnvVarTable.metadata)
+          .where(EnvVarTable.appId.eq(appId))
+          .where(EnvVarTable.name.eq('${prefix}_PUBLIC_URL'))
+          .delete()
+          .run(_db.context());
     }
   }
 

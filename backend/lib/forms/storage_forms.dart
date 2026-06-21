@@ -37,6 +37,16 @@ class AddConnectorForm extends Form {
       ];
 }
 
+/// `POST /storage/providers/{id}/expose` — set/clear the public URL (and, for
+/// MinIO, the nginx reverse-proxy that serves it).
+class ExposeProviderForm extends Form {
+  // Empty string clears the public URL (and removes the MinIO vhost).
+  final publicUrl = StringField(name: 'publicUrl', maxLength: 255);
+
+  @override
+  List<FormField<Object?>> collectFields() => [publicUrl];
+}
+
 /// `POST /storage/providers/{id}/buckets` — create a bucket + scoped key.
 class CreateBucketForm extends Form {
   final bucketName =

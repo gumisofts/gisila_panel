@@ -601,12 +601,65 @@ class Applier {
     return (await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0;
   }
 
+  /// Write (or rewrite) the nginx vhost that reverse-proxies [hostname] to the
+  /// local MinIO S3 API on [apiPort], then test + reload nginx. Idempotent.
+  Future<void> applyMinioVhost({
+    required String hostname,
+    required int apiPort,
+  }) async {
+    final vhost = MinioNginxVhost(hostname: hostname, apiPort: apiPort).render();
+    Directory(nginxDir).createSync(recursive: true);
+    File('$nginxDir/gisila-minio.conf').writeAsStringSync(vhost);
+    await ShellExec.run('nginx', ['-t'], requireSuccess: false);
+    if (isDocker) {
+      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
+    } else {
+      await ShellExec.run('systemctl', ['reload', 'nginx'],
+          requireSuccess: false);
+    }
+  }
+
+  /// Remove the MinIO nginx vhost (e.g. when the public URL is cleared or the
+  /// provider is uninstalled) and reload nginx. Best-effort.
+  Future<void> removeMinioVhost() async {
+    final path = '$nginxDir/gisila-minio.conf';
+    if (File(path).existsSync()) File(path).deleteSync();
+    if (isDocker) {
+      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
+    } else {
+      await ShellExec.run('systemctl', ['reload', 'nginx'],
+          requireSuccess: false);
+    }
+  }
+
   Future<void> issueCert(String hostname) async {
     await ShellExec.run('certbot', [
       'certonly',
       '--nginx',
       '--non-interactive',
       '--agree-tos',
+      '-m',
+      'admin@$hostname',
+      '-d',
+      hostname,
+    ]);
+    if (isDocker) {
+      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
+    } else {
+      await ShellExec.run('systemctl', ['reload', 'nginx'],
+          requireSuccess: false);
+    }
+  }
+
+  /// Obtain a cert AND let certbot rewrite the vhost to add the `listen 443 ssl`
+  /// server block + HTTP→HTTPS redirect (installer mode, unlike [issueCert]
+  /// which only fetches the cert). Used for the standalone MinIO vhost.
+  Future<void> issueCertInstaller(String hostname) async {
+    await ShellExec.run('certbot', [
+      '--nginx',
+      '--non-interactive',
+      '--agree-tos',
+      '--redirect',
       '-m',
       'admin@$hostname',
       '-d',

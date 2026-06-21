@@ -83,6 +83,18 @@ class StorageApi {
     return _serializeProvider(await svc.stopProvider(id));
   }
 
+  @Post('/providers/{id}/expose', summary: 'Set the public URL (+ MinIO vhost)')
+  Future<Map<String, Object?>> exposeProvider(
+    int id,
+    ExposeProviderForm form,
+    StorageService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final p = await svc.setPublicUrl(id, form.publicUrl.value);
+    return _serializeProvider(p);
+  }
+
   @Delete('/providers/{id}', summary: 'Remove a storage provider')
   Future<Map<String, Object?>> deleteProvider(
     int id,

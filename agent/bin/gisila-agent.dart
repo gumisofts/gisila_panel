@@ -2398,6 +2398,9 @@ Future<void> _storage(List<String> args) async {
     p.addOption('root-user');
     p.addOption('root-secret');
     p.addFlag('purge', defaultsTo: false); // uninstall: also delete data dir
+    // Public exposure (reverse-proxy MinIO at a hostname).
+    p.addOption('hostname');
+    p.addFlag('tls', defaultsTo: false);
     // Bucket provisioning (any S3 endpoint).
     p.addOption('kind', defaultsTo: 'minio'); // minio | external
     p.addOption('endpoint'); // S3 API endpoint of the admin connection
@@ -2427,6 +2430,14 @@ Future<void> _storage(List<String> args) async {
       await _serviceCtl('start', 'gisila-minio');
     case 'stop-minio':
       await _serviceCtl('stop', 'gisila-minio');
+    case 'expose-minio':
+      await _minioExpose(
+        hostname: _req(r['hostname'] as String?, 'hostname'),
+        apiPort: int.tryParse(r['port'] as String? ?? '9000') ?? 9000,
+        tls: r['tls'] as bool,
+      );
+    case 'unexpose-minio':
+      await Applier().removeMinioVhost();
     case 'create-bucket':
       await _bucketCreate(
         kind: r['kind'] as String,
@@ -2589,6 +2600,24 @@ Future<void> _minioUninstall({
     await _sudo('rm', ['-rf', dataDir], failOk: true);
   }
   // Binaries (minio, mc) are left in place — they are shared and harmless.
+  // Drop the public reverse-proxy vhost too.
+  await Applier().removeMinioVhost();
+}
+
+/// Reverse-proxy MinIO at [hostname] so its S3 API is reachable at a public URL
+/// (MinIO itself only binds 127.0.0.1). With [tls], certbot obtains a cert and
+/// rewrites the vhost for HTTPS. Idempotent.
+Future<void> _minioExpose({
+  required String hostname,
+  required int apiPort,
+  required bool tls,
+}) async {
+  final host = AgentValidators.requireHostname(hostname);
+  await Applier().applyMinioVhost(hostname: host, apiPort: apiPort);
+  if (tls) {
+    await Applier().issueCertInstaller(host);
+  }
+  stdout.writeln('[agent] MinIO exposed at http${tls ? 's' : ''}://$host');
 }
 
 /// Build a `MC_HOST_<alias>` URL embedding credentials, e.g.
