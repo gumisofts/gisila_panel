@@ -2918,6 +2918,7 @@ class PostgresDatabase with Preloadable {
   final String roleName;
   final String password;
   final String? extensions;
+  final String? roleAttributes;
   final String? status;
   final String? errorMessage;
   final DateTime createdAt;
@@ -2930,6 +2931,7 @@ class PostgresDatabase with Preloadable {
     required this.roleName,
     required this.password,
     this.extensions,
+    this.roleAttributes,
     this.status,
     this.errorMessage,
     required this.createdAt,
@@ -2944,6 +2946,7 @@ class PostgresDatabase with Preloadable {
         roleName: row['role_name'] as String,
         password: row['password'] as String,
         extensions: row['extensions'] as String?,
+        roleAttributes: row['role_attributes'] as String?,
         status: row['status'] as String?,
         errorMessage: row['error_message'] as String?,
         createdAt: row['created_at'] is DateTime
@@ -2963,6 +2966,7 @@ class PostgresDatabase with Preloadable {
     'role_name': roleName,
     'password': password,
     'extensions': extensions,
+    'role_attributes': roleAttributes,
     'status': status,
     'error_message': errorMessage,
     'created_at': createdAt,
@@ -2989,6 +2993,7 @@ class PostgresDatabase with Preloadable {
     String? roleName,
     String? password,
     String? extensions,
+    String? roleAttributes,
     String? status,
     String? errorMessage,
     DateTime? createdAt,
@@ -3000,6 +3005,7 @@ class PostgresDatabase with Preloadable {
     roleName: roleName ?? this.roleName,
     password: password ?? this.password,
     extensions: extensions ?? this.extensions,
+    roleAttributes: roleAttributes ?? this.roleAttributes,
     status: status ?? this.status,
     errorMessage: errorMessage ?? this.errorMessage,
     createdAt: createdAt ?? this.createdAt,
@@ -3072,6 +3078,10 @@ class PostgresDatabaseTable {
     table: 'postgres_databases',
     column: 'extensions',
   );
+  static const ColumnRef<String?> roleAttributes = ColumnRef<String?>(
+    table: 'postgres_databases',
+    column: 'role_attributes',
+  );
   static const ColumnRef<String?> status = ColumnRef<String?>(
     table: 'postgres_databases',
     column: 'status',
@@ -3100,6 +3110,7 @@ class PostgresDatabaseTable {
           'role_name',
           'password',
           'extensions',
+          'role_attributes',
           'status',
           'error_message',
           'created_at',

@@ -52,7 +52,14 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
         'dbName': <String, Object?>{'type': 'string'},
         'roleName': <String, Object?>{'type': 'string'},
         'password': <String, Object?>{'type': 'string'},
-        'extensions': <String, Object?>{'type': 'object'}
+        'extensions': <String, Object?>{'type': 'object'},
+        'roleAttributes': <String, Object?>{'type': 'object'}
+      }
+    });
+    spec.putSchema('UpdateRoleForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'roleAttributes': <String, Object?>{'type': 'object'}
       }
     });
     spec.putSchema('BackupForm', <String, Object?>{
@@ -738,6 +745,72 @@ extension DatabasesApiGisilaDoc on DatabasesApi {
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/databases/<id>/dbs/<dbId>/role';
+      final openApiPath = '$prefix/databases/{id}/dbs/{dbId}/role';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.put(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final dbId =
+                    coerce<int>(request.params['dbId'], 'dbId', required: true);
+                final form = await bindForm(request, UpdateRoleForm.new);
+                final svc = ctx.service<PostgresService>();
+                final result = await this.updateRole(id, dbId, form, svc, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'put',
+          Operation(
+            summary: 'Update a database role\'s attributes (permissions)',
+            tags: <String>['Databases'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              ),
+              Parameter(
+                name: 'dbId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/UpdateRoleForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

@@ -174,10 +174,30 @@ class DatabasesApi {
       roleName: form.roleName.value!,
       password: password,
       extensions: extList,
+      roleAttributes: _toStringList(form.roleAttributes.value),
     );
     // On creation we return the plain-text password once.
     return _serializeDatabase(db,
         instance: instance, includeConnectionInfo: true);
+  }
+
+  @Put('/{id}/dbs/{dbId}/role',
+      summary: 'Update a database role\'s attributes (permissions)')
+  Future<Map<String, Object?>> updateRole(
+    int id,
+    int dbId,
+    UpdateRoleForm form,
+    PostgresService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final instance = await svc.findInstance(id);
+    final db = await svc.updateRoleAttributes(
+      dbId,
+      _toStringList(form.roleAttributes.value),
+    );
+    return _serializeDatabase(db,
+        instance: instance, includeConnectionInfo: false);
   }
 
   @Get('/{id}/dbs/{dbId}', summary: 'Get a database')
@@ -366,6 +386,7 @@ Map<String, Object?> _serializeDatabase(
     'dbName': d.dbName,
     'roleName': d.roleName,
     'extensions': jsonDecode(d.extensions ?? '[]'),
+    'roleAttributes': jsonDecode(d.roleAttributes ?? '[]'),
     'status': d.status,
     'errorMessage': d.errorMessage,
     'createdAt': d.createdAt.toIso8601String(),

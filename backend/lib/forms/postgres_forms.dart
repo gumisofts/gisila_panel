@@ -70,8 +70,23 @@ class CreateDatabaseForm extends Form {
   final password = StringField(name: 'password', maxLength: 128);
   // JSON array of extension names to create, e.g. ["uuid-ossp","pg_trgm"].
   final extensions = JsonField(name: 'extensions');
+  // JSON array of role attributes to grant the new role, e.g.
+  // ["CREATEDB","CREATEROLE"]. Validated against a whitelist by the service.
+  final roleAttributes = JsonField(name: 'roleAttributes');
 
   @override
   List<FormField<Object?>> collectFields() =>
-      [dbName, roleName, password, extensions];
+      [dbName, roleName, password, extensions, roleAttributes];
+}
+
+/// `PUT /databases/{id}/dbs/{dbId}/role` — change a database role's attributes
+/// (permissions) after creation. The full desired set is sent each time; the
+/// service reconciles via `ALTER ROLE` (granting and revoking as needed).
+class UpdateRoleForm extends Form {
+  // JSON array of the attributes the role should have, e.g. ["CREATEDB"].
+  // An empty array strips every optional attribute (role keeps only LOGIN).
+  final roleAttributes = JsonField(name: 'roleAttributes', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() => [roleAttributes];
 }

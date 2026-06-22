@@ -619,6 +619,10 @@ PostgresDatabase:
     extensions:
       type: text
       default: '[]'             # JSON array of extension names
+    role_attributes:
+      type: text
+      default: '[]'             # JSON array of granted role attributes
+                                # (CREATEDB, CREATEROLE, REPLICATION, …)
     status:
       type: varchar
       default: pending           # pending | active | failed | dropped

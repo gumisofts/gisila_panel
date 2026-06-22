@@ -3054,7 +3054,7 @@ Future<void> _postgres(List<String> args) async {
   if (args.isEmpty) {
     stderr.writeln('Usage: gisila-agent postgres <subcommand> [options]\n'
         'Subcommands: install-instance | uninstall-instance | '
-        'start-instance | stop-instance | create-db | drop-db | '
+        'start-instance | stop-instance | create-db | alter-role | drop-db | '
         'backup | restore');
     exitCode = 64;
     return;
@@ -3069,6 +3069,9 @@ Future<void> _postgres(List<String> args) async {
     ..addOption('password', help: 'Role password')
     ..addOption('extensions',
         help: 'Comma-separated extension names to CREATE EXTENSION')
+    ..addOption('role-attrs',
+        help: 'Comma-separated role attributes to grant (CREATEDB, '
+            'CREATEROLE, REPLICATION, SUPERUSER, BYPASSRLS)')
     ..addOption('settings',
         help: 'JSON object of postgresql.conf settings to ALTER SYSTEM SET')
     ..addOption('output', help: 'Backup destination path (.sql.gz)')
@@ -3111,8 +3114,25 @@ Future<void> _postgres(List<String> args) async {
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
           .toList();
+      final attrs = (opts['role-attrs'] as String? ?? '')
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
       final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
-      await _pgCreateDatabase(version, port, db, role, pass, exts);
+      await _pgCreateDatabase(version, port, db, role, pass, exts, attrs);
+
+    case 'alter-role':
+      if (version == null) throw ArgumentError('--version required');
+      final role = opts['role'] as String? ?? '';
+      if (role.isEmpty) throw ArgumentError('--role required');
+      final attrs = (opts['role-attrs'] as String? ?? '')
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
+      await _pgAlterRole(version, port, role, attrs);
 
     case 'drop-db':
       if (version == null) throw ArgumentError('--version required');
@@ -3262,6 +3282,35 @@ Future<void> _pgUninstallInstance(int version) async {
 }
 
 /// Create a Postgres role + database and optionally install extensions.
+/// The role attributes the panel allows an operator to toggle on a database
+/// user. LOGIN is always granted separately (these roles must be able to
+/// connect). Order is fixed so the generated clause is deterministic.
+const _pgRoleAttributes = <String>[
+  'CREATEDB',
+  'CREATEROLE',
+  'REPLICATION',
+  'SUPERUSER',
+  'BYPASSRLS',
+];
+
+/// Build a fully-explicit role-attribute clause from [requested]. Every
+/// whitelisted attribute is emitted as either its positive (`CREATEDB`) or
+/// negative (`NOCREATEDB`) form, so applying the clause via `ALTER ROLE` also
+/// REVOKES anything no longer requested — letting the panel toggle attributes
+/// freely. Unknown attributes are rejected (these names are interpolated into
+/// SQL, so the whitelist is also the injection guard).
+String _pgRoleAttrClause(Iterable<String> requested) {
+  final want = requested.map((e) => e.trim().toUpperCase()).toSet();
+  final unknown = want.difference(_pgRoleAttributes.toSet());
+  if (unknown.isNotEmpty) {
+    throw ArgumentError('Unknown role attribute(s): ${unknown.join(', ')}. '
+        'Allowed: ${_pgRoleAttributes.join(', ')}');
+  }
+  return _pgRoleAttributes
+      .map((a) => want.contains(a) ? a : 'NO$a')
+      .join(' ');
+}
+
 Future<void> _pgCreateDatabase(
   int version,
   int port,
@@ -3269,6 +3318,7 @@ Future<void> _pgCreateDatabase(
   String role,
   String password,
   List<String> extensions,
+  List<String> roleAttributes,
 ) async {
   // Use `psql -p <port>` for the correct instance.
   final pgBin = '/usr/lib/postgresql/$version/bin/psql';
@@ -3276,10 +3326,14 @@ Future<void> _pgCreateDatabase(
   Future<void> sql(String statement) =>
       _runAs('postgres', [pgBin, '-p', '$port', '-c', statement]);
 
-  // Idempotent role creation.
+  // Idempotent role creation. Apply the requested attributes on both branches
+  // so a pre-existing role is reconciled to the desired permissions too.
+  final attrClause = _pgRoleAttrClause(roleAttributes);
   await sql("DO \$\$ BEGIN "
       "IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN "
-      "CREATE ROLE $role WITH LOGIN PASSWORD '$password'; "
+      "CREATE ROLE $role WITH LOGIN $attrClause PASSWORD '$password'; "
+      "ELSE "
+      "ALTER ROLE $role WITH LOGIN $attrClause; "
       "END IF; END \$\$;");
   // Idempotent database creation. CREATE DATABASE can't run inside a DO block,
   // and `\gexec` is a psql meta-command that psql only honors from a script or
@@ -3311,6 +3365,22 @@ Future<void> _pgCreateDatabase(
       'CREATE EXTENSION IF NOT EXISTS "$ext";',
     ]);
   }
+}
+
+/// Apply role attributes to an existing database role via `ALTER ROLE`.
+/// [_pgRoleAttrClause] emits every whitelisted attribute explicitly, so this
+/// both grants newly-requested attributes and revokes ones that were dropped.
+/// LOGIN is re-asserted so the app user always keeps the ability to connect.
+Future<void> _pgAlterRole(
+  int version,
+  int port,
+  String role,
+  List<String> roleAttributes,
+) async {
+  final pgBin = '/usr/lib/postgresql/$version/bin/psql';
+  final attrClause = _pgRoleAttrClause(roleAttributes);
+  await _runAs('postgres',
+      [pgBin, '-p', '$port', '-c', 'ALTER ROLE $role WITH LOGIN $attrClause;']);
 }
 
 /// Create or update the read-only `gisila_monitor` role used by the panel to
@@ -3803,7 +3873,9 @@ Subcommands:
                 uninstall-instance --version VER
                 start-instance|stop-instance --version VER
                 create-db --version VER --db DB --role ROLE --password PASS
-                          [--extensions ext1,ext2,…]
+                          [--extensions ext1,ext2,…] [--role-attrs CREATEDB,…]
+                alter-role --version VER --port PORT --role ROLE
+                          [--role-attrs CREATEDB,CREATEROLE,…]
                 drop-db   --version VER --db DB --role ROLE
                 ensure-monitor --version VER --port PORT --password PASS
                 configure --version VER --port PORT --settings JSON

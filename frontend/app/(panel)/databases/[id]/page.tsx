@@ -21,6 +21,7 @@ import {
   HardDriveDownload,
   ServerCog,
   Globe,
+  KeyRound,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,74 @@ const DB_STATUS_BADGE: Record<PgDatabaseStatus, { label: string; variant: "defau
   failed:  { label: "Failed",  variant: "destructive" },
   dropped: { label: "Dropped", variant: "secondary" },
 };
+
+// ── Role attributes (database-user permissions) ──────────────────────────────
+// Mirrors the backend whitelist (kRoleAttributes). LOGIN is always granted and
+// is not shown here. `danger` flags privileges that are risky on a shared host.
+const ROLE_ATTRS: { key: string; label: string; hint: string; danger?: boolean }[] = [
+  { key: "CREATEDB",    label: "Create databases", hint: "Required by Prisma migrate (shadow database)." },
+  { key: "CREATEROLE",  label: "Create roles",     hint: "Create and manage other roles." },
+  { key: "REPLICATION", label: "Replication",      hint: "Start replication / use replication slots." },
+  { key: "BYPASSRLS",   label: "Bypass RLS",       hint: "Skip row-level security policies." },
+  { key: "SUPERUSER",   label: "Superuser",        hint: "Full control of the entire instance.", danger: true },
+];
+
+/// Toggle-button grid for selecting role attributes. `value`/`onChange` work on
+/// an uppercase attribute-key array.
+function RoleAttrToggles({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+}) {
+  const toggle = (key: string) =>
+    onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
+  return (
+    <div className="grid gap-1.5">
+      {ROLE_ATTRS.map((a) => {
+        const on = value.includes(a.key);
+        return (
+          <button
+            key={a.key}
+            type="button"
+            disabled={disabled}
+            onClick={() => toggle(a.key)}
+            className={cn(
+              "flex items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors disabled:opacity-50",
+              on
+                ? a.danger
+                  ? "border-destructive/50 bg-destructive/10"
+                  : "border-primary/50 bg-primary/10"
+                : "border-input hover:bg-muted/50",
+            )}
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]",
+                on ? (a.danger ? "border-destructive bg-destructive text-white" : "border-primary bg-primary text-white") : "border-input",
+              )}
+            >
+              {on ? "✓" : ""}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium leading-tight">
+                <span className="font-mono">{a.key}</span>
+                <span className="ml-1.5 font-normal text-muted-foreground">{a.label}</span>
+                {a.danger && (
+                  <span className="ml-1.5 text-xs font-semibold text-destructive">danger</span>
+                )}
+              </span>
+              <span className="block text-xs text-muted-foreground">{a.hint}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── Copy helper ────────────────────────────────────────────────────────────────
 
@@ -243,10 +312,16 @@ export default function InstancePage() {
   const [newRole, setNewRole]         = useState("");
   const [newPass, setNewPass]         = useState("");
   const [newExts, setNewExts]         = useState("");
+  const [newAttrs, setNewAttrs]       = useState<string[]>([]);
   const [creating, setCreating]       = useState(false);
   const [createError, setCreateError] = useState("");
   const [justCreated, setJustCreated] = useState<PostgresDatabase | null>(null);
   const [backupsDb, setBackupsDb] = useState<PostgresDatabase | null>(null);
+  // Edit-permissions dialog state.
+  const [permsDb, setPermsDb]       = useState<PostgresDatabase | null>(null);
+  const [permsAttrs, setPermsAttrs] = useState<string[]>([]);
+  const [permsBusy, setPermsBusy]   = useState(false);
+  const [permsError, setPermsError] = useState("");
 
   async function action(path: string, method = "POST", key?: string) {
     setBusy(path);
@@ -272,11 +347,12 @@ export default function InstancePage() {
           extensions: newExts
             ? newExts.split(",").map((e) => e.trim()).filter(Boolean)
             : [],
+          roleAttributes: newAttrs,
         }),
       });
       mutate(dbsKey);
       setShowCreate(false);
-      setNewDb(""); setNewRole(""); setNewPass(""); setNewExts("");
+      setNewDb(""); setNewRole(""); setNewPass(""); setNewExts(""); setNewAttrs([]);
       setJustCreated(result);
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : "Failed to create database.");
@@ -301,6 +377,30 @@ export default function InstancePage() {
     if (!confirm("Drop this database and its role? This cannot be undone.")) return;
     await action(`/databases/${id}/dbs/${dbId}`, "DELETE", dbsKey);
     mutate(dbsKey);
+  }
+
+  function openPerms(db: PostgresDatabase) {
+    setPermsError("");
+    setPermsAttrs(db.roleAttributes ?? []);
+    setPermsDb(db);
+  }
+
+  async function handleUpdatePerms() {
+    if (!permsDb) return;
+    setPermsError("");
+    setPermsBusy(true);
+    try {
+      await api(`/databases/${id}/dbs/${permsDb.id}/role`, {
+        method: "PUT",
+        body: JSON.stringify({ roleAttributes: permsAttrs }),
+      });
+      mutate(dbsKey);
+      setPermsDb(null);
+    } catch (e: unknown) {
+      setPermsError(e instanceof Error ? e.message : "Failed to update permissions.");
+    } finally {
+      setPermsBusy(false);
+    }
   }
 
   if (instLoading || !instance) {
@@ -484,6 +584,19 @@ export default function InstancePage() {
                             <> · Extensions: {db.extensions.join(", ")}</>
                           )}
                         </p>
+                        {db.roleAttributes?.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {db.roleAttributes.map((a) => (
+                              <Badge
+                                key={a}
+                                variant={a === "SUPERUSER" ? "destructive" : "secondary"}
+                                className="py-0 font-mono text-[10px]"
+                              >
+                                {a}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                         {db.errorMessage && (
                           <p className="mt-1 text-xs text-destructive">{db.errorMessage}</p>
                         )}
@@ -497,6 +610,17 @@ export default function InstancePage() {
                         >
                           Connection info
                         </Button>
+                        {db.status === "active" && isSuperuser && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openPerms(db)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <KeyRound className="mr-1 h-3.5 w-3.5" />
+                            Permissions
+                          </Button>
+                        )}
                         {db.status === "active" && isSuperuser && (
                           <Button
                             size="sm"
@@ -575,6 +699,15 @@ export default function InstancePage() {
                 Comma-separated extension names. Optional.
               </p>
             </div>
+            <div className="space-y-1.5">
+              <Label>Role permissions</Label>
+              <RoleAttrToggles value={newAttrs} onChange={setNewAttrs} disabled={creating} />
+              <p className="text-xs text-muted-foreground">
+                The role can always log in and owns its database. Grant extra
+                attributes only as needed — e.g. <span className="font-mono">CREATEDB</span> for
+                Prisma migrations.
+              </p>
+            </div>
             {createError && (
               <p className="text-sm text-destructive">{createError}</p>
             )}
@@ -584,6 +717,40 @@ export default function InstancePage() {
             <Button onClick={handleCreate} disabled={creating || !newDb || !newRole}>
               {creating && <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit role permissions dialog */}
+      <Dialog open={!!permsDb} onOpenChange={(o) => !o && setPermsDb(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Role permissions
+              {permsDb && (
+                <span className="ml-1.5 font-mono text-sm font-normal text-muted-foreground">
+                  {permsDb.roleName}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <RoleAttrToggles value={permsAttrs} onChange={setPermsAttrs} disabled={permsBusy} />
+            <p className="text-xs text-muted-foreground">
+              Changes are applied with <span className="font-mono">ALTER ROLE</span>; attributes
+              you turn off are revoked. The role keeps <span className="font-mono">LOGIN</span> and
+              ownership of its database.
+            </p>
+            {permsError && <p className="text-sm text-destructive">{permsError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermsDb(null)} disabled={permsBusy}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdatePerms} disabled={permsBusy}>
+              {permsBusy && <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Save permissions
             </Button>
           </DialogFooter>
         </DialogContent>

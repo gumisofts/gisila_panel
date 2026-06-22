@@ -231,6 +231,7 @@ CREATE TABLE "postgres_databases" (
   "role_name" VARCHAR(255) NOT NULL,
   "password" VARCHAR(255) NOT NULL,
   "extensions" TEXT DEFAULT '[]',
+  "role_attributes" TEXT DEFAULT '[]',
   "status" VARCHAR(255) DEFAULT 'pending',
   "error_message" TEXT,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,

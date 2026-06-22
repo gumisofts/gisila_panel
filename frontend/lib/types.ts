@@ -299,6 +299,7 @@ export interface PostgresDatabase {
   dbName: string;
   roleName: string;
   extensions: string[];
+  roleAttributes: string[]; // granted Postgres role attributes (CREATEDB, …)
   status: PgDatabaseStatus;
   errorMessage?: string | null;
   createdAt: string;

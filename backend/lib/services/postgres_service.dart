@@ -37,6 +37,17 @@ const kSupportedVersions = [14, 15, 16, 17, 18];
 const kBackupScopes = {'full', 'schema', 'data'};
 const kBackupFrequencies = {'hourly', 'daily', 'weekly'};
 
+// Postgres role attributes an operator may toggle on a database user. LOGIN is
+// always granted by the agent; these are the optional, escalating privileges.
+// CREATEDB is what Prisma's shadow database / `prisma migrate` requires.
+const kRoleAttributes = {
+  'CREATEDB',
+  'CREATEROLE',
+  'REPLICATION',
+  'SUPERUSER',
+  'BYPASSRLS',
+};
+
 /// Root directory for on-disk backup artifacts. Overridable via env for dev.
 /// Owned by the `gisila` user so the API can stream downloads and stage uploads
 /// while the root agent writes the dumps.
@@ -274,6 +285,7 @@ class PostgresService extends Service {
     required String roleName,
     required String password,
     List<String>? extensions,
+    List<String>? roleAttributes,
   }) async {
     final instance = await findInstance(instanceId);
     if (instance.status != 'running') {
@@ -283,6 +295,7 @@ class PostgresService extends Service {
 
     _validateIdentifier('database name', dbName);
     _validateIdentifier('role name', roleName);
+    final attrs = _normalizeRoleAttributes(roleAttributes);
 
     final db = await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
         .insert(<String, Object?>{
@@ -291,6 +304,7 @@ class PostgresService extends Service {
       'roleName': roleName,
       'password': password,
       'extensions': jsonEncode(extensions ?? []),
+      'roleAttributes': jsonEncode(attrs),
       'status': 'pending',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).one(_db.context());
@@ -300,6 +314,54 @@ class PostgresService extends Service {
       'databaseId': db.id,
     });
     return findDatabase(db.id!);
+  }
+
+  /// Change the role attributes (permissions) of an existing database user.
+  /// The full desired set is supplied; the agent reconciles via `ALTER ROLE`,
+  /// granting newly-requested attributes and revoking dropped ones.
+  Future<PostgresDatabase> updateRoleAttributes(
+    int id,
+    List<String>? roleAttributes,
+  ) async {
+    final db = await findDatabase(id);
+    if (db.status != 'active') {
+      throw HttpException(
+          422, 'Database role must be active to change its permissions.');
+    }
+    final instance = await findInstance(db.instanceId);
+    if (instance.status != 'running') {
+      throw HttpException(
+          422, 'Instance must be running to change role permissions.');
+    }
+    final attrs = _normalizeRoleAttributes(roleAttributes);
+    await _patchDatabase(id, {
+      'roleAttributes': jsonEncode(attrs),
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    await _enqueue('alter_role', {
+      'instanceId': db.instanceId,
+      'databaseId': id,
+    });
+    return findDatabase(id);
+  }
+
+  /// Validate, de-duplicate and upper-case a requested role-attribute list
+  /// against [kRoleAttributes]. Unknown attributes are rejected (these names
+  /// are interpolated into SQL on the agent, so the whitelist is the guard).
+  List<String> _normalizeRoleAttributes(List<String>? requested) {
+    final out = <String>[];
+    for (final raw in requested ?? const <String>[]) {
+      final a = raw.trim().toUpperCase();
+      if (a.isEmpty) continue;
+      if (!kRoleAttributes.contains(a)) {
+        throw HttpException(
+            422,
+            'Unknown role attribute "$raw". '
+            'Allowed: ${kRoleAttributes.join(', ')}.');
+      }
+      if (!out.contains(a)) out.add(a);
+    }
+    return out;
   }
 
   Future<void> dropDatabase(int id) async {

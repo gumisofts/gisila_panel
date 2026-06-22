@@ -10,7 +10,7 @@ import 'package:gisila_panel/services/postgres_service.dart'
 /// Handles async PostgreSQL jobs from the [gisila:queue:postgres] queue.
 ///
 /// Actions: install_instance | uninstall_instance | start_instance |
-///          stop_instance | create_database | drop_database
+///          stop_instance | create_database | alter_role | drop_database
 class PostgresWorker {
   PostgresWorker(this.database);
 
@@ -36,6 +36,11 @@ class PostgresWorker {
         );
       case 'drop_database':
         await _dropDatabase(
+          payload['instanceId'] as int,
+          payload['databaseId'] as int,
+        );
+      case 'alter_role':
+        await _alterRole(
           payload['instanceId'] as int,
           payload['databaseId'] as int,
         );
@@ -309,6 +314,8 @@ class PostgresWorker {
         if (decoded is List) extensions.addAll(decoded.cast<String>());
       } catch (_) {}
 
+      final roleAttributes = _decodeRoleAttributes(db.roleAttributes);
+
       await _runAgent([
         'postgres',
         'create-db',
@@ -326,6 +333,10 @@ class PostgresWorker {
           '--extensions',
           extensions.join(','),
         ],
+        if (roleAttributes.isNotEmpty) ...[
+          '--role-attrs',
+          roleAttributes.join(','),
+        ],
       ]);
 
       await _patchDatabase(databaseId, {
@@ -340,6 +351,50 @@ class PostgresWorker {
       });
       rethrow;
     }
+  }
+
+  /// Apply the database role's stored attributes to the live cluster via the
+  /// agent's `alter-role` (ALTER ROLE …). On failure the database stays active
+  /// but its errorMessage records why the permission change did not apply.
+  Future<void> _alterRole(int instanceId, int databaseId) async {
+    final instance = await _findInstance(instanceId);
+    final db = await _findDatabase(databaseId);
+    if (instance == null || db == null) return;
+
+    try {
+      final roleAttributes = _decodeRoleAttributes(db.roleAttributes);
+      await _runAgent([
+        'postgres',
+        'alter-role',
+        '--version',
+        '${instance.version}',
+        '--port',
+        '${instance.port}',
+        '--role',
+        db.roleName,
+        if (roleAttributes.isNotEmpty) ...[
+          '--role-attrs',
+          roleAttributes.join(','),
+        ],
+      ]);
+      await _patchDatabase(databaseId, {
+        'errorMessage': null,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+    } catch (e) {
+      await _patchDatabase(databaseId, {'errorMessage': e.toString()});
+      rethrow;
+    }
+  }
+
+  /// Decode the JSON role-attributes array stored on a database record. Returns
+  /// an empty list for null/malformed values so a bad record never aborts a job.
+  List<String> _decodeRoleAttributes(String? raw) {
+    try {
+      final decoded = jsonDecode(raw ?? '[]');
+      if (decoded is List) return decoded.cast<String>();
+    } catch (_) {}
+    return const <String>[];
   }
 
   Future<void> _dropDatabase(int instanceId, int databaseId) async {
