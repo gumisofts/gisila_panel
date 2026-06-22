@@ -420,6 +420,12 @@ class Builders {
       // Put the real pnpm first on PATH for the install + build steps below.
       final basePath = installEnv['PATH'] ?? '/usr/local/bin:/usr/bin:/bin';
       installEnv['PATH'] = '$pnpmBinDir:$basePath';
+      // depInstallEnv was snapshotted from installEnv ABOVE, before this PATH
+      // update, so it still lacks the pinned pnpm dir. It is the env used for
+      // the install and prisma-generate steps, so mirror the new PATH into it —
+      // otherwise those steps fall back to a bare `pnpm` (the corepack shim,
+      // which fetches the latest pnpm) instead of this pinned version.
+      depInstallEnv['PATH'] = installEnv['PATH']!;
       // Hand the resolved bin dir to apply-unit (separate agent invocation) so
       // the runtime PATH points at the same pnpm. Read back in _applyUnit.
       File('$workDir/.pnpm-bin').writeAsStringSync('$pnpmBinDir\n');
@@ -1449,11 +1455,25 @@ class Builders {
     String cwd,
     String command,
     Map<String, String> env,
-  ) =>
-      ShellExec.run(
-        'runuser',
-        ['-u', user, '--', 'bash', '-lc', command],
-        cwd: cwd,
-        env: env,
-      );
+  ) {
+    // `bash -lc` is a LOGIN shell: sourcing /etc/profile (and the PAM session)
+    // can reset PATH to the system default, discarding the version-pinned
+    // toolchain dirs the agent placed in env['PATH'] — e.g. the standalone pnpm
+    // at /opt/pnpm-versions/<v>/bin or the fnm-pinned Node bin. When that
+    // happens a bare `pnpm`/`node` resolves to a system binary or the corepack
+    // shim instead of the pinned one; corepack then downloads the LATEST pnpm,
+    // which can fail where the pinned version succeeds (notably
+    // ERR_PNPM_IGNORED_BUILDS on a repo whose pnpm-workspace.yaml policy the
+    // newer pnpm no longer honours the same way). Re-export PATH inside the
+    // command — it runs AFTER the profile, so the agent's intended toolchain
+    // always wins. PATH holds only directory paths, so single-quoting is safe.
+    final path = env['PATH'];
+    final wrapped = path != null ? "export PATH='$path'; $command" : command;
+    return ShellExec.run(
+      'runuser',
+      ['-u', user, '--', 'bash', '-lc', wrapped],
+      cwd: cwd,
+      env: env,
+    );
+  }
 }
