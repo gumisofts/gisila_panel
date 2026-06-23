@@ -47,18 +47,32 @@ class BackupScheduler {
 
   Future<void> _tick() async {
     final now = DateTime.now().toUtc();
-    final schedules =
+
+    final pgSchedules =
         await Query<PostgresBackupSchedule>(PostgresBackupScheduleTable.metadata)
             .where(PostgresBackupScheduleTable.enabled.eq(true))
             .all(database.context());
-
-    for (final s in schedules) {
+    for (final s in pgSchedules) {
       final due = s.nextRunAt;
       if (due == null || due.toUtc().isAfter(now)) continue;
       try {
         await _fire(s, now);
       } catch (e) {
-        logger.w('backup_scheduler: firing schedule #${s.id} failed: $e');
+        logger.w('backup_scheduler: firing pg schedule #${s.id} failed: $e');
+      }
+    }
+
+    final mongoSchedules =
+        await Query<MongoBackupSchedule>(MongoBackupScheduleTable.metadata)
+            .where(MongoBackupScheduleTable.enabled.eq(true))
+            .all(database.context());
+    for (final s in mongoSchedules) {
+      final due = s.nextRunAt;
+      if (due == null || due.toUtc().isAfter(now)) continue;
+      try {
+        await _fireMongo(s, now);
+      } catch (e) {
+        logger.w('backup_scheduler: firing mongo schedule #${s.id} failed: $e');
       }
     }
   }
@@ -107,5 +121,51 @@ class BackupScheduler {
       }),
     );
     logger.i('backup_scheduler: queued $scope backup for db #${s.databaseId}');
+  }
+
+  Future<void> _fireMongo(MongoBackupSchedule s, DateTime now) async {
+    final db = await Query<MongoDatabase>(MongoDatabaseTable.metadata)
+        .where(MongoDatabaseTable.id.eq(s.databaseId))
+        .first(database.context());
+
+    // Advance next_run_at first so a transient skip doesn't wedge the schedule.
+    final next = computeNextRun(
+      s.frequency ?? 'daily',
+      s.hour ?? 2,
+      s.minute ?? 0,
+      s.weekday,
+      now,
+    );
+    await Query<MongoBackupSchedule>(MongoBackupScheduleTable.metadata)
+        .where(MongoBackupScheduleTable.id.eq(s.id))
+        .update({'nextRunAt': next.toIso8601String()}).run(database.context());
+
+    if (db == null || db.status != 'active') {
+      logger.i(
+          'backup_scheduler: mongo db #${s.databaseId} not active — skipping run');
+      return;
+    }
+
+    final scope = s.scope ?? 'full';
+    final backup = await Query<MongoBackup>(MongoBackupTable.metadata)
+        .insert(<String, Object?>{
+      'databaseId': s.databaseId,
+      'scope': scope,
+      'status': 'pending',
+      'trigger': 'scheduled',
+      'createdAt': now.toIso8601String(),
+    }).one(database.context());
+
+    await RedisClient.instance.rpush(
+      'gisila:queue:mongo',
+      jsonEncode({
+        'action': 'backup_database',
+        'instanceId': db.instanceId,
+        'databaseId': s.databaseId,
+        'backupId': backup.id,
+      }),
+    );
+    logger.i(
+        'backup_scheduler: queued mongo backup for db #${s.databaseId}');
   }
 }

@@ -229,6 +229,8 @@ export interface ServiceDef {
   category: "cache" | "email" | "queue" | "database";
   requiresInstall: boolean;
   docsUrl?: string;
+  /** Config keys to surface on the installed-service card. */
+  summaryKeys?: string[];
   configSchema: ConfigField[];
 }
 
@@ -305,6 +307,73 @@ export interface PostgresDatabase {
   createdAt: string;
   updatedAt?: string | null;
   connection?: PgConnectionInfo; // present on create + retrieve
+}
+
+// ── MongoDB ───────────────────────────────────────────────────────────────────
+
+export type MongoInstanceStatus = PgInstanceStatus;
+export type MongoDatabaseStatus = PgDatabaseStatus;
+
+export interface MongoInstance {
+  id: ID;
+  engine?: "mongodb";
+  version: string; // "6.0" | "7.0" | "8.0"
+  displayName: string;
+  port: number;
+  status: MongoInstanceStatus;
+  isDefault: boolean;
+  isPublic?: boolean;
+  publicDomain?: string | null;
+  dataDirectory?: string | null;
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface MongoConnectionInfo {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  authSource: string;
+  url: string;
+  publicHost?: string | null;
+  publicUrl?: string | null;
+}
+
+export interface MongoDatabase {
+  id: ID;
+  instanceId: ID;
+  dbName: string;
+  userName: string;
+  roles: string[]; // granted built-in roles (readWrite, dbAdmin, …)
+  status: MongoDatabaseStatus;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  connection?: MongoConnectionInfo; // present on create + retrieve
+}
+
+// Mongo backups/schedules are structurally identical to the Postgres ones.
+export type MongoBackup = PgBackup;
+export type MongoBackupSchedule = PgBackupSchedule;
+
+/** Descriptor served by GET /db-engines, used to render the Databases UI
+ *  generically across engines. */
+export interface DatabaseEngineDescriptor {
+  key: string; // 'postgres' | 'mongodb'
+  label: string;
+  kind: "sql" | "nosql";
+  apiBase: string; // '/databases' | '/mongo'
+  versions: string[];
+  defaultVersion: string;
+  capabilities: Record<string, boolean>;
+  userRoleOptions: string[];
+  backupScopes: string[];
+  terms: Record<string, string>;
+  docsUrl?: string;
 }
 
 export interface ManagedService {

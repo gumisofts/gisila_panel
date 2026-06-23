@@ -23,8 +23,18 @@ interface ConfigResponse {
   settings: PgSetting[];
 }
 
-export function ConfigPanel({ id, running }: { id: string; running: boolean }) {
-  const key = running ? `/databases/${id}/config` : null;
+export function ConfigPanel({
+  id,
+  running,
+  apiBase = "/databases",
+  note = "Changing these runs ALTER SYSTEM and restarts the cluster. Leave a field blank to reset it to the Postgres default.",
+}: {
+  id: string;
+  running: boolean;
+  apiBase?: string;
+  note?: string;
+}) {
+  const key = running ? `${apiBase}/${id}/config` : null;
   const { data } = useSWR<ConfigResponse>(key, fetcher, { refreshInterval: 0 });
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -56,13 +66,13 @@ export function ConfigPanel({ id, running }: { id: string; running: boolean }) {
   async function save() {
     setSaving(true);
     try {
-      await api(`/databases/${id}/config`, {
+      await api(`${apiBase}/${id}/config`, {
         method: "PUT",
         body: JSON.stringify({ settings: edits }),
       });
       toast.success("Settings applied — the instance is restarting.");
       setEdits({});
-      mutate(`/databases/${id}`);
+      mutate(`${apiBase}/${id}`);
       // Give the restart a moment, then refresh the config view.
       setTimeout(() => mutate(key), 4000);
     } catch (e: unknown) {
@@ -91,10 +101,7 @@ export function ConfigPanel({ id, running }: { id: string; running: boolean }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Changing these runs <code>ALTER SYSTEM</code> and restarts the cluster.
-          Leave a field blank to reset it to the Postgres default.
-        </p>
+        <p className="text-xs text-muted-foreground">{note}</p>
         <div className="divide-y divide-border/60">
           {data.settings.map((s) => {
             const current = edits[s.name] ?? s.value ?? "";

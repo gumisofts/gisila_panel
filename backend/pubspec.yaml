@@ -17,6 +17,7 @@ dependencies:
   http_parser: ^4.0.2
   logger: ^2.2.0
   mime: ^1.0.4
+  mongo_dart: ^0.10.3
   postgres: any
   redis: ^4.0.0
   shelf: ^1.4.1

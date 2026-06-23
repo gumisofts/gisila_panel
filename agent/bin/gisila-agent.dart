@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:gisila_agent/databases/mongodb.dart';
 import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
 import 'package:gisila_agent/runtime/validators.dart';
+import 'package:gisila_agent/services/handler.dart';
 
 /// gisila-agent — the privileged host-side CLI invoked by the worker.
 Future<void> main(List<String> args) async {
@@ -63,6 +65,9 @@ Future<void> main(List<String> args) async {
         break;
       case 'postgres':
         await _postgres(rest);
+        break;
+      case 'mongo':
+        await runMongo(rest);
         break;
       case 'storage':
         await _storage(rest);
@@ -1689,6 +1694,13 @@ Future<void> _service(List<String> args) async {
 }
 
 Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
+  // Modular handlers take precedence; legacy inline services fall through.
+  final handler = findServiceHandler(type);
+  if (handler != null) {
+    await handler.install(config);
+    return;
+  }
+
   // Map service type to apt package name (or download URL for binary services).
   final packages = {
     'pgbouncer': 'pgbouncer',
@@ -1851,6 +1863,11 @@ WantedBy=multi-user.target
 }
 
 Future<void> _serviceConfigure(String type, Map<String, dynamic> config) async {
+  final handler = findServiceHandler(type);
+  if (handler != null) {
+    await handler.configure(config);
+    return;
+  }
   switch (type) {
     case 'pgadmin':
       await _configurePgadmin(config);
@@ -2239,6 +2256,12 @@ Future<void> _serviceUninstall(String type) async {
     await _serviceCtl('disable', type);
   } catch (_) {}
 
+  final handler = findServiceHandler(type);
+  if (handler != null) {
+    await handler.uninstall();
+    return;
+  }
+
   switch (type) {
     case 'redis':
       // Remove ONLY the managed instance — never the redis-server package,
@@ -2499,7 +2522,11 @@ server {
   }
 }
 
-String _unitName(String type) => switch (type) {
+String _unitName(String type) {
+  // Registry handlers declare their own unit name.
+  final handler = findServiceHandler(type);
+  if (handler != null) return handler.unitName;
+  return switch (type) {
       // Managed Redis/Memcached run as dedicated gisila-* units, never the
       // distro redis-server.service / memcached.service.
       'redis' => 'gisila-redis',
@@ -2507,6 +2534,7 @@ String _unitName(String type) => switch (type) {
       'pgadmin' => 'gisila-pgadmin',
       _ => type,
     };
+}
 
 Future<void> _run(String exe, List<String> args, {bool failOk = false}) async {
   final result = await Process.run(exe, args);

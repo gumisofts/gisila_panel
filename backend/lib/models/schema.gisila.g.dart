@@ -3523,6 +3523,834 @@ class PostgresBackupTable {
 Query<PostgresBackup> postgresBackups() =>
     Query<PostgresBackup>(PostgresBackupTable.metadata);
 
+class MongoInstance with Preloadable {
+  final int? id;
+  final String version;
+  final String displayName;
+  final int port;
+  final String? status;
+  final bool? isDefault;
+  final bool? isPublic;
+  final String? publicDomain;
+  final String? rootPassword;
+  final String? monitorPassword;
+  final String? dataDirectory;
+  final String? errorMessage;
+  final DateTime? installedAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  MongoInstance({
+    this.id,
+    required this.version,
+    required this.displayName,
+    required this.port,
+    this.status,
+    this.isDefault,
+    this.isPublic,
+    this.publicDomain,
+    this.rootPassword,
+    this.monitorPassword,
+    this.dataDirectory,
+    this.errorMessage,
+    this.installedAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MongoInstance.fromRow(Map<String, dynamic> row) => MongoInstance(
+    id: row['id'] as int?,
+    version: row['version'] as String,
+    displayName: row['display_name'] as String,
+    port: row['port'] as int,
+    status: row['status'] as String?,
+    isDefault: row['is_default'] as bool?,
+    isPublic: row['is_public'] as bool?,
+    publicDomain: row['public_domain'] as String?,
+    rootPassword: row['root_password'] as String?,
+    monitorPassword: row['monitor_password'] as String?,
+    dataDirectory: row['data_directory'] as String?,
+    errorMessage: row['error_message'] as String?,
+    installedAt: row['installed_at'] == null
+        ? null
+        : (row['installed_at'] is DateTime
+              ? row['installed_at'] as DateTime
+              : DateTime.parse(row['installed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'version': version,
+    'display_name': displayName,
+    'port': port,
+    'status': status,
+    'is_default': isDefault,
+    'is_public': isPublic,
+    'public_domain': publicDomain,
+    'root_password': rootPassword,
+    'monitor_password': monitorPassword,
+    'data_directory': dataDirectory,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory MongoInstance.fromJson(Map<String, dynamic> json) =>
+      MongoInstance.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MongoInstance copyWith({
+    int? id,
+    String? version,
+    String? displayName,
+    int? port,
+    String? status,
+    bool? isDefault,
+    bool? isPublic,
+    String? publicDomain,
+    String? rootPassword,
+    String? monitorPassword,
+    String? dataDirectory,
+    String? errorMessage,
+    DateTime? installedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => MongoInstance(
+    id: id ?? this.id,
+    version: version ?? this.version,
+    displayName: displayName ?? this.displayName,
+    port: port ?? this.port,
+    status: status ?? this.status,
+    isDefault: isDefault ?? this.isDefault,
+    isPublic: isPublic ?? this.isPublic,
+    publicDomain: publicDomain ?? this.publicDomain,
+    rootPassword: rootPassword ?? this.rootPassword,
+    monitorPassword: monitorPassword ?? this.monitorPassword,
+    dataDirectory: dataDirectory ?? this.dataDirectory,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<MongoInstance, MongoDatabase> databases =
+      HasManyRelation<MongoInstance, MongoDatabase>(
+        parentTable: 'mongo_instances',
+        childTable: 'mongo_databases',
+        name: 'databases',
+        childForeignKey: 'instance_id',
+        childMeta: MongoDatabaseTable.metadata,
+      );
+
+  /// Preloaded databases; empty list when not preloaded.
+  List<MongoDatabase> get databasesList =>
+      preloaded<List<MongoDatabase>>('databases') ?? const [];
+}
+
+class MongoInstanceTable {
+  MongoInstanceTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mongo_instances',
+    column: 'id',
+  );
+  static const ColumnRef<String> version = ColumnRef<String>(
+    table: 'mongo_instances',
+    column: 'version',
+  );
+  static const ColumnRef<String> displayName = ColumnRef<String>(
+    table: 'mongo_instances',
+    column: 'display_name',
+  );
+  static const ColumnRef<int> port = ColumnRef<int>(
+    table: 'mongo_instances',
+    column: 'port',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'status',
+  );
+  static const ColumnRef<bool?> isDefault = ColumnRef<bool?>(
+    table: 'mongo_instances',
+    column: 'is_default',
+  );
+  static const ColumnRef<bool?> isPublic = ColumnRef<bool?>(
+    table: 'mongo_instances',
+    column: 'is_public',
+  );
+  static const ColumnRef<String?> publicDomain = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'public_domain',
+  );
+  static const ColumnRef<String?> rootPassword = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'root_password',
+  );
+  static const ColumnRef<String?> monitorPassword = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'monitor_password',
+  );
+  static const ColumnRef<String?> dataDirectory = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'data_directory',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'mongo_instances',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> installedAt = ColumnRef<DateTime?>(
+    table: 'mongo_instances',
+    column: 'installed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mongo_instances',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'mongo_instances',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<MongoInstance> metadata = TableMeta<MongoInstance>(
+    tableName: 'mongo_instances',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'version',
+      'display_name',
+      'port',
+      'status',
+      'is_default',
+      'is_public',
+      'public_domain',
+      'root_password',
+      'monitor_password',
+      'data_directory',
+      'error_message',
+      'installed_at',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: MongoInstance.fromRow,
+  );
+}
+
+Query<MongoInstance> mongoInstances() =>
+    Query<MongoInstance>(MongoInstanceTable.metadata);
+
+class MongoDatabase with Preloadable {
+  final int? id;
+  final int instanceId;
+  final String dbName;
+  final String userName;
+  final String password;
+  final String? roles;
+  final String? status;
+  final String? errorMessage;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  MongoDatabase({
+    this.id,
+    required this.instanceId,
+    required this.dbName,
+    required this.userName,
+    required this.password,
+    this.roles,
+    this.status,
+    this.errorMessage,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MongoDatabase.fromRow(Map<String, dynamic> row) => MongoDatabase(
+    id: row['id'] as int?,
+    instanceId: row['instance_id'] as int,
+    dbName: row['db_name'] as String,
+    userName: row['user_name'] as String,
+    password: row['password'] as String,
+    roles: row['roles'] as String?,
+    status: row['status'] as String?,
+    errorMessage: row['error_message'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'instance_id': instanceId,
+    'db_name': dbName,
+    'user_name': userName,
+    'password': password,
+    'roles': roles,
+    'status': status,
+    'error_message': errorMessage,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory MongoDatabase.fromJson(Map<String, dynamic> json) =>
+      MongoDatabase.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MongoDatabase copyWith({
+    int? id,
+    int? instanceId,
+    String? dbName,
+    String? userName,
+    String? password,
+    String? roles,
+    String? status,
+    String? errorMessage,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => MongoDatabase(
+    id: id ?? this.id,
+    instanceId: instanceId ?? this.instanceId,
+    dbName: dbName ?? this.dbName,
+    userName: userName ?? this.userName,
+    password: password ?? this.password,
+    roles: roles ?? this.roles,
+    status: status ?? this.status,
+    errorMessage: errorMessage ?? this.errorMessage,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<MongoDatabase, MongoInstance> instance =
+      BelongsToRelation<MongoDatabase, MongoInstance>(
+        parentTable: 'mongo_databases',
+        childTable: 'mongo_instances',
+        name: 'instance',
+        parentForeignKey: 'instance_id',
+        childMeta: MongoInstanceTable.metadata,
+      );
+
+  static final Relation<MongoDatabase, MongoBackupSchedule> backupSchedule =
+      HasManyRelation<MongoDatabase, MongoBackupSchedule>(
+        parentTable: 'mongo_databases',
+        childTable: 'mongo_backup_schedules',
+        name: 'backupSchedule',
+        childForeignKey: 'database_id',
+        childMeta: MongoBackupScheduleTable.metadata,
+      );
+
+  static final Relation<MongoDatabase, MongoBackup> backups =
+      HasManyRelation<MongoDatabase, MongoBackup>(
+        parentTable: 'mongo_databases',
+        childTable: 'mongo_backups',
+        name: 'backups',
+        childForeignKey: 'database_id',
+        childMeta: MongoBackupTable.metadata,
+      );
+
+  /// Preloaded instance; null when not preloaded or absent.
+  MongoInstance? get instanceLoaded => preloaded<MongoInstance>('instance');
+
+  /// Preloaded backupSchedule; empty list when not preloaded.
+  List<MongoBackupSchedule> get backupScheduleList =>
+      preloaded<List<MongoBackupSchedule>>('backupSchedule') ?? const [];
+
+  /// Preloaded backups; empty list when not preloaded.
+  List<MongoBackup> get backupsList =>
+      preloaded<List<MongoBackup>>('backups') ?? const [];
+}
+
+class MongoDatabaseTable {
+  MongoDatabaseTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mongo_databases',
+    column: 'id',
+  );
+  static const ColumnRef<int> instanceId = ColumnRef<int>(
+    table: 'mongo_databases',
+    column: 'instance_id',
+  );
+  static const ColumnRef<String> dbName = ColumnRef<String>(
+    table: 'mongo_databases',
+    column: 'db_name',
+  );
+  static const ColumnRef<String> userName = ColumnRef<String>(
+    table: 'mongo_databases',
+    column: 'user_name',
+  );
+  static const ColumnRef<String> password = ColumnRef<String>(
+    table: 'mongo_databases',
+    column: 'password',
+  );
+  static const ColumnRef<String?> roles = ColumnRef<String?>(
+    table: 'mongo_databases',
+    column: 'roles',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'mongo_databases',
+    column: 'status',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'mongo_databases',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mongo_databases',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'mongo_databases',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<MongoDatabase> metadata = TableMeta<MongoDatabase>(
+    tableName: 'mongo_databases',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'instance_id',
+      'db_name',
+      'user_name',
+      'password',
+      'roles',
+      'status',
+      'error_message',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: MongoDatabase.fromRow,
+  );
+}
+
+Query<MongoDatabase> mongoDatabases() =>
+    Query<MongoDatabase>(MongoDatabaseTable.metadata);
+
+class MongoBackupSchedule with Preloadable {
+  final int? id;
+  final int databaseId;
+  final bool? enabled;
+  final String? frequency;
+  final int? hour;
+  final int? minute;
+  final int? weekday;
+  final String? scope;
+  final int? keepCount;
+  final DateTime? nextRunAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  MongoBackupSchedule({
+    this.id,
+    required this.databaseId,
+    this.enabled,
+    this.frequency,
+    this.hour,
+    this.minute,
+    this.weekday,
+    this.scope,
+    this.keepCount,
+    this.nextRunAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MongoBackupSchedule.fromRow(Map<String, dynamic> row) =>
+      MongoBackupSchedule(
+        id: row['id'] as int?,
+        databaseId: row['database_id'] as int,
+        enabled: row['enabled'] as bool?,
+        frequency: row['frequency'] as String?,
+        hour: row['hour'] as int?,
+        minute: row['minute'] as int?,
+        weekday: row['weekday'] as int?,
+        scope: row['scope'] as String?,
+        keepCount: row['keep_count'] as int?,
+        nextRunAt: row['next_run_at'] == null
+            ? null
+            : (row['next_run_at'] is DateTime
+                  ? row['next_run_at'] as DateTime
+                  : DateTime.parse(row['next_run_at'].toString())),
+        createdAt: row['created_at'] is DateTime
+            ? row['created_at'] as DateTime
+            : DateTime.parse(row['created_at'].toString()),
+        updatedAt: row['updated_at'] == null
+            ? null
+            : (row['updated_at'] is DateTime
+                  ? row['updated_at'] as DateTime
+                  : DateTime.parse(row['updated_at'].toString())),
+      );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'database_id': databaseId,
+    'enabled': enabled,
+    'frequency': frequency,
+    'hour': hour,
+    'minute': minute,
+    'weekday': weekday,
+    'scope': scope,
+    'keep_count': keepCount,
+    'next_run_at': nextRunAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory MongoBackupSchedule.fromJson(Map<String, dynamic> json) =>
+      MongoBackupSchedule.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MongoBackupSchedule copyWith({
+    int? id,
+    int? databaseId,
+    bool? enabled,
+    String? frequency,
+    int? hour,
+    int? minute,
+    int? weekday,
+    String? scope,
+    int? keepCount,
+    DateTime? nextRunAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => MongoBackupSchedule(
+    id: id ?? this.id,
+    databaseId: databaseId ?? this.databaseId,
+    enabled: enabled ?? this.enabled,
+    frequency: frequency ?? this.frequency,
+    hour: hour ?? this.hour,
+    minute: minute ?? this.minute,
+    weekday: weekday ?? this.weekday,
+    scope: scope ?? this.scope,
+    keepCount: keepCount ?? this.keepCount,
+    nextRunAt: nextRunAt ?? this.nextRunAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<MongoBackupSchedule, MongoDatabase> database =
+      BelongsToRelation<MongoBackupSchedule, MongoDatabase>(
+        parentTable: 'mongo_backup_schedules',
+        childTable: 'mongo_databases',
+        name: 'database',
+        parentForeignKey: 'database_id',
+        childMeta: MongoDatabaseTable.metadata,
+      );
+
+  /// Preloaded database; null when not preloaded or absent.
+  MongoDatabase? get databaseLoaded => preloaded<MongoDatabase>('database');
+}
+
+class MongoBackupScheduleTable {
+  MongoBackupScheduleTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mongo_backup_schedules',
+    column: 'id',
+  );
+  static const ColumnRef<int> databaseId = ColumnRef<int>(
+    table: 'mongo_backup_schedules',
+    column: 'database_id',
+  );
+  static const ColumnRef<bool?> enabled = ColumnRef<bool?>(
+    table: 'mongo_backup_schedules',
+    column: 'enabled',
+  );
+  static const ColumnRef<String?> frequency = ColumnRef<String?>(
+    table: 'mongo_backup_schedules',
+    column: 'frequency',
+  );
+  static const ColumnRef<int?> hour = ColumnRef<int?>(
+    table: 'mongo_backup_schedules',
+    column: 'hour',
+  );
+  static const ColumnRef<int?> minute = ColumnRef<int?>(
+    table: 'mongo_backup_schedules',
+    column: 'minute',
+  );
+  static const ColumnRef<int?> weekday = ColumnRef<int?>(
+    table: 'mongo_backup_schedules',
+    column: 'weekday',
+  );
+  static const ColumnRef<String?> scope = ColumnRef<String?>(
+    table: 'mongo_backup_schedules',
+    column: 'scope',
+  );
+  static const ColumnRef<int?> keepCount = ColumnRef<int?>(
+    table: 'mongo_backup_schedules',
+    column: 'keep_count',
+  );
+  static const ColumnRef<DateTime?> nextRunAt = ColumnRef<DateTime?>(
+    table: 'mongo_backup_schedules',
+    column: 'next_run_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mongo_backup_schedules',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'mongo_backup_schedules',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<MongoBackupSchedule> metadata =
+      TableMeta<MongoBackupSchedule>(
+        tableName: 'mongo_backup_schedules',
+        primaryKey: 'id',
+        columnNames: [
+          'id',
+          'database_id',
+          'enabled',
+          'frequency',
+          'hour',
+          'minute',
+          'weekday',
+          'scope',
+          'keep_count',
+          'next_run_at',
+          'created_at',
+          'updated_at',
+        ],
+        fromRow: MongoBackupSchedule.fromRow,
+      );
+}
+
+Query<MongoBackupSchedule> mongoBackupSchedules() =>
+    Query<MongoBackupSchedule>(MongoBackupScheduleTable.metadata);
+
+class MongoBackup with Preloadable {
+  final int? id;
+  final int databaseId;
+  final String? filePath;
+  final String? fileName;
+  final int? sizeBytes;
+  final String? scope;
+  final String? status;
+  final String? trigger;
+  final String? errorMessage;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final DateTime createdAt;
+
+  MongoBackup({
+    this.id,
+    required this.databaseId,
+    this.filePath,
+    this.fileName,
+    this.sizeBytes,
+    this.scope,
+    this.status,
+    this.trigger,
+    this.errorMessage,
+    this.startedAt,
+    this.completedAt,
+    required this.createdAt,
+  });
+
+  factory MongoBackup.fromRow(Map<String, dynamic> row) => MongoBackup(
+    id: row['id'] as int?,
+    databaseId: row['database_id'] as int,
+    filePath: row['file_path'] as String?,
+    fileName: row['file_name'] as String?,
+    sizeBytes: row['size_bytes'] as int?,
+    scope: row['scope'] as String?,
+    status: row['status'] as String?,
+    trigger: row['trigger'] as String?,
+    errorMessage: row['error_message'] as String?,
+    startedAt: row['started_at'] == null
+        ? null
+        : (row['started_at'] is DateTime
+              ? row['started_at'] as DateTime
+              : DateTime.parse(row['started_at'].toString())),
+    completedAt: row['completed_at'] == null
+        ? null
+        : (row['completed_at'] is DateTime
+              ? row['completed_at'] as DateTime
+              : DateTime.parse(row['completed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'database_id': databaseId,
+    'file_path': filePath,
+    'file_name': fileName,
+    'size_bytes': sizeBytes,
+    'scope': scope,
+    'status': status,
+    'trigger': trigger,
+    'error_message': errorMessage,
+    'started_at': startedAt,
+    'completed_at': completedAt,
+    'created_at': createdAt,
+  };
+
+  factory MongoBackup.fromJson(Map<String, dynamic> json) =>
+      MongoBackup.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  MongoBackup copyWith({
+    int? id,
+    int? databaseId,
+    String? filePath,
+    String? fileName,
+    int? sizeBytes,
+    String? scope,
+    String? status,
+    String? trigger,
+    String? errorMessage,
+    DateTime? startedAt,
+    DateTime? completedAt,
+    DateTime? createdAt,
+  }) => MongoBackup(
+    id: id ?? this.id,
+    databaseId: databaseId ?? this.databaseId,
+    filePath: filePath ?? this.filePath,
+    fileName: fileName ?? this.fileName,
+    sizeBytes: sizeBytes ?? this.sizeBytes,
+    scope: scope ?? this.scope,
+    status: status ?? this.status,
+    trigger: trigger ?? this.trigger,
+    errorMessage: errorMessage ?? this.errorMessage,
+    startedAt: startedAt ?? this.startedAt,
+    completedAt: completedAt ?? this.completedAt,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  static final Relation<MongoBackup, MongoDatabase> database =
+      BelongsToRelation<MongoBackup, MongoDatabase>(
+        parentTable: 'mongo_backups',
+        childTable: 'mongo_databases',
+        name: 'database',
+        parentForeignKey: 'database_id',
+        childMeta: MongoDatabaseTable.metadata,
+      );
+
+  /// Preloaded database; null when not preloaded or absent.
+  MongoDatabase? get databaseLoaded => preloaded<MongoDatabase>('database');
+}
+
+class MongoBackupTable {
+  MongoBackupTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'mongo_backups',
+    column: 'id',
+  );
+  static const ColumnRef<int> databaseId = ColumnRef<int>(
+    table: 'mongo_backups',
+    column: 'database_id',
+  );
+  static const ColumnRef<String?> filePath = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'file_path',
+  );
+  static const ColumnRef<String?> fileName = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'file_name',
+  );
+  static const ColumnRef<int?> sizeBytes = ColumnRef<int?>(
+    table: 'mongo_backups',
+    column: 'size_bytes',
+  );
+  static const ColumnRef<String?> scope = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'scope',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'status',
+  );
+  static const ColumnRef<String?> trigger = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'trigger',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'mongo_backups',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> startedAt = ColumnRef<DateTime?>(
+    table: 'mongo_backups',
+    column: 'started_at',
+  );
+  static const ColumnRef<DateTime?> completedAt = ColumnRef<DateTime?>(
+    table: 'mongo_backups',
+    column: 'completed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'mongo_backups',
+    column: 'created_at',
+  );
+
+  static const TableMeta<MongoBackup> metadata = TableMeta<MongoBackup>(
+    tableName: 'mongo_backups',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'database_id',
+      'file_path',
+      'file_name',
+      'size_bytes',
+      'scope',
+      'status',
+      'trigger',
+      'error_message',
+      'started_at',
+      'completed_at',
+      'created_at',
+    ],
+    fromRow: MongoBackup.fromRow,
+  );
+}
+
+Query<MongoBackup> mongoBackups() =>
+    Query<MongoBackup>(MongoBackupTable.metadata);
+
 class StorageProvider with Preloadable {
   final int? id;
   final String kind;

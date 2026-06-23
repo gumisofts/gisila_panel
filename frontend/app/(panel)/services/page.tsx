@@ -66,60 +66,30 @@ const SERVICE_CATEGORY: Record<string, string> = {
   pgbouncer: "database",
 };
 
-/** Pull the most useful config key-values to surface on the card. */
+/** Pull the most useful config key-values to surface on the card, driven by the
+ *  catalog [def] (its summaryKeys + field labels). Falls back to the first few
+ *  config values when the def is unavailable. */
 function summaryFields(
-  serviceType: string,
   config: Record<string, string>,
+  def?: ServiceDef,
 ): { label: string; value: string }[] {
   const pairs: { label: string; value: string }[] = [];
 
-  const add = (label: string, key: string, mask = false) => {
-    const v = config[key];
-    if (v) pairs.push({ label, value: mask ? "••••••••" : v });
-  };
-
-  switch (serviceType) {
-    case "redis":
-      add("Port", "port");
-      add("Bind", "bind");
-      add("Max memory", "maxmemory");
-      add("Persistence", "appendonly");
-      break;
-    case "memcached":
-      add("Port", "port");
-      add("Max memory MB", "max_memory_mb");
-      add("Connections", "max_connections");
-      break;
-    case "smtp":
-      add("Host", "host");
-      add("Port", "port");
-      add("Username", "username");
-      add("From", "from_email");
-      break;
-    case "mailpit":
-      add("SMTP port", "smtp_port");
-      add("UI port", "ui_port");
-      add("Max messages", "max_messages");
-      break;
-    case "pgbouncer": {
-      add("Listen port", "listen_port");
-      add("Pool mode", "pool_mode");
-      add("Pool size", "default_pool_size");
-      try {
-        const dbs = JSON.parse(config["databases"] ?? "[]");
-        if (Array.isArray(dbs)) {
-          pairs.push({ label: "Databases", value: String(dbs.length) });
-        }
-      } catch {
-        /* unset */
-      }
-      break;
+  if (def && def.summaryKeys && def.summaryKeys.length > 0) {
+    for (const key of def.summaryKeys) {
+      const v = config[key];
+      if (!v) continue;
+      const field = def.configSchema.find((f) => f.key === key);
+      pairs.push({
+        label: field?.label ?? key,
+        value: field?.secret ? "••••••••" : v,
+      });
     }
-    default:
-      // Show the first 3 non-empty values generically.
-      for (const [k, v] of Object.entries(config).slice(0, 3)) {
-        if (v) pairs.push({ label: k, value: v });
-      }
+  } else {
+    // No summaryKeys declared — show the first few non-empty values generically.
+    for (const [k, v] of Object.entries(config).slice(0, 3)) {
+      if (v) pairs.push({ label: k, value: v });
+    }
   }
 
   return pairs.slice(0, 4);
@@ -141,6 +111,8 @@ export default function ServicesPage() {
 
   // Map service type → installed service (one per type enforced by backend).
   const installedByType = new Map(installed.map((s) => [s.serviceType, s]));
+  // Map service type → catalog def, so installed cards render generically.
+  const defsByType = new Map(catalog.map((d) => [d.type, d]));
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 p-6">
@@ -164,7 +136,7 @@ export default function ServicesPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {installed.map((svc) => (
-              <InstalledCard key={svc.id} svc={svc} />
+              <InstalledCard key={svc.id} svc={svc} def={defsByType.get(svc.serviceType)} />
             ))}
           </div>
         )}
@@ -192,14 +164,15 @@ export default function ServicesPage() {
 
 // ── Installed card ────────────────────────────────────────────────────────────
 
-function InstalledCard({ svc }: { svc: ManagedService }) {
+function InstalledCard({ svc, def }: { svc: ManagedService; def?: ServiceDef }) {
   const config: Record<string, string> = (() => {
     try { return JSON.parse(svc.config) as Record<string, string>; }
     catch { return {}; }
   })();
 
-  const details = summaryFields(svc.serviceType, config);
+  const details = summaryFields(config, def);
   const statusLabel = STATUS_LABEL[svc.status] ?? svc.status;
+  const category = def?.category ?? SERVICE_CATEGORY[svc.serviceType] ?? "";
 
   return (
     <Link
@@ -211,9 +184,9 @@ function InstalledCard({ svc }: { svc: ManagedService }) {
         <div className="flex items-center gap-2.5">
           <div className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-            CATEGORY_COLOR[SERVICE_CATEGORY[svc.serviceType] ?? ""] ?? "bg-muted text-muted-foreground",
+            CATEGORY_COLOR[category] ?? "bg-muted text-muted-foreground",
           )}>
-            {CATEGORY_ICON[SERVICE_CATEGORY[svc.serviceType] ?? ""] ?? <ServerCog className="h-4 w-4" />}
+            {CATEGORY_ICON[category] ?? <ServerCog className="h-4 w-4" />}
           </div>
           <div>
             <p className="text-sm font-medium leading-tight">{svc.displayName}</p>

@@ -37,13 +37,17 @@ import {
   uploadFile,
 } from "@/lib/api";
 import type {
-  PostgresDatabase,
+  ID,
   PgBackup,
   PgBackupSchedule,
   PgBackupScope,
   PgBackupFrequency,
   ListResponse,
 } from "@/lib/types";
+
+// Minimal shape shared by Postgres and Mongo database rows — the backups panel
+// only needs an id + a display name.
+type BackupDb = { id: ID; dbName: string };
 
 const SCOPE_LABEL: Record<PgBackupScope, string> = {
   full: "Full (schema + data)",
@@ -97,10 +101,18 @@ export function BackupsDialog({
   instanceId,
   db,
   onClose,
+  apiBase = "/databases",
+  scopes = ["full", "schema", "data"],
+  uploadAccept = ".sql,.gz,.sql.gz",
+  uploadNote = "Upload a .sql or .sql.gz dump to restore into this database. Restoring may overwrite existing data.",
 }: {
   instanceId: string;
-  db: PostgresDatabase | null;
+  db: BackupDb | null;
   onClose: () => void;
+  apiBase?: string;
+  scopes?: PgBackupScope[];
+  uploadAccept?: string;
+  uploadNote?: string;
 }) {
   const open = !!db;
   return (
@@ -112,7 +124,16 @@ export function BackupsDialog({
             Backups — {db?.dbName}
           </DialogTitle>
         </DialogHeader>
-        {db && <BackupsBody instanceId={instanceId} db={db} />}
+        {db && (
+          <BackupsBody
+            instanceId={instanceId}
+            db={db}
+            apiBase={apiBase}
+            scopes={scopes}
+            uploadAccept={uploadAccept}
+            uploadNote={uploadNote}
+          />
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Close
@@ -126,12 +147,20 @@ export function BackupsDialog({
 function BackupsBody({
   instanceId,
   db,
+  apiBase,
+  scopes,
+  uploadAccept,
+  uploadNote,
 }: {
   instanceId: string;
-  db: PostgresDatabase;
+  db: BackupDb;
+  apiBase: string;
+  scopes: PgBackupScope[];
+  uploadAccept: string;
+  uploadNote: string;
 }) {
-  const listKey = `/databases/${instanceId}/dbs/${db.id}/backups`;
-  const schedKey = `/databases/${instanceId}/dbs/${db.id}/backup-schedule`;
+  const listKey = `${apiBase}/${instanceId}/dbs/${db.id}/backups`;
+  const schedKey = `${apiBase}/${instanceId}/dbs/${db.id}/backup-schedule`;
 
   const { data: listData } = useSWR<ListResponse<PgBackup>>(listKey, fetcher, {
     refreshInterval(d) {
@@ -183,7 +212,7 @@ function BackupsBody({
     )
       return;
     try {
-      await api(`/databases/${instanceId}/dbs/${db.id}/restore`, {
+      await api(`${apiBase}/${instanceId}/dbs/${db.id}/restore`, {
         method: "POST",
         body: JSON.stringify({ backupId: b.id }),
       });
@@ -217,7 +246,7 @@ function BackupsBody({
     setUploading(true);
     try {
       await uploadFile(
-        `/databases/${instanceId}/dbs/${db.id}/restore-upload`,
+        `${apiBase}/${instanceId}/dbs/${db.id}/restore-upload`,
         file,
       );
       alert("Upload received. Restore queued in the background.");
@@ -240,9 +269,9 @@ function BackupsBody({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="full">{SCOPE_LABEL.full}</SelectItem>
-              <SelectItem value="schema">{SCOPE_LABEL.schema}</SelectItem>
-              <SelectItem value="data">{SCOPE_LABEL.data}</SelectItem>
+              {scopes.map((s) => (
+                <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -258,7 +287,7 @@ function BackupsBody({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* Schedule */}
-      <ScheduleEditor schedKey={schedKey} schedule={schedule} />
+      <ScheduleEditor schedKey={schedKey} schedule={schedule} scopes={scopes} />
 
       {/* Restore from file */}
       <div className="space-y-1.5">
@@ -269,15 +298,12 @@ function BackupsBody({
         <input
           ref={fileRef}
           type="file"
-          accept=".sql,.gz,.sql.gz"
+          accept={uploadAccept}
           onChange={handleUpload}
           disabled={uploading}
           className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-accent"
         />
-        <p className="text-[11px] text-muted-foreground">
-          Upload a <code>.sql</code> or <code>.sql.gz</code> dump to restore into
-          this database. Restoring may overwrite existing data.
-        </p>
+        <p className="text-[11px] text-muted-foreground">{uploadNote}</p>
       </div>
 
       {/* Backups list */}
@@ -361,9 +387,11 @@ function BackupsBody({
 function ScheduleEditor({
   schedKey,
   schedule,
+  scopes,
 }: {
   schedKey: string;
   schedule?: PgBackupSchedule;
+  scopes: PgBackupScope[];
 }) {
   const [enabled, setEnabled] = useState(false);
   const [frequency, setFrequency] = useState<PgBackupFrequency>("daily");
@@ -457,9 +485,9 @@ function ScheduleEditor({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="full">{SCOPE_LABEL.full}</SelectItem>
-                    <SelectItem value="schema">{SCOPE_LABEL.schema}</SelectItem>
-                    <SelectItem value="data">{SCOPE_LABEL.data}</SelectItem>
+                    {scopes.map((s) => (
+                      <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

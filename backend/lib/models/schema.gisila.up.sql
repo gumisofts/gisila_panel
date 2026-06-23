@@ -271,6 +271,71 @@ CREATE TABLE "postgres_backups" (
 );
 
 
+CREATE TABLE "mongo_instances" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "version" VARCHAR(255) NOT NULL,
+  "display_name" VARCHAR(255) NOT NULL,
+  "port" INTEGER NOT NULL UNIQUE,
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "is_default" BOOLEAN DEFAULT FALSE,
+  "is_public" BOOLEAN DEFAULT FALSE,
+  "public_domain" VARCHAR(255),
+  "root_password" VARCHAR(255),
+  "monitor_password" VARCHAR(255),
+  "data_directory" VARCHAR(255),
+  "error_message" TEXT,
+  "installed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "mongo_databases" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "instance_id" INTEGER NOT NULL,
+  "db_name" VARCHAR(255) NOT NULL,
+  "user_name" VARCHAR(255) NOT NULL,
+  "password" VARCHAR(255) NOT NULL,
+  "roles" TEXT DEFAULT '[]',
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "error_message" TEXT,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "mongo_backup_schedules" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "database_id" INTEGER NOT NULL,
+  "enabled" BOOLEAN DEFAULT FALSE,
+  "frequency" VARCHAR(255) DEFAULT 'daily',
+  "hour" INTEGER DEFAULT 2,
+  "minute" INTEGER DEFAULT 0,
+  "weekday" INTEGER,
+  "scope" VARCHAR(255) DEFAULT 'full',
+  "keep_count" INTEGER DEFAULT 7,
+  "next_run_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "mongo_backups" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "database_id" INTEGER NOT NULL,
+  "file_path" VARCHAR(255),
+  "file_name" VARCHAR(255),
+  "size_bytes" BIGINT,
+  "scope" VARCHAR(255) DEFAULT 'full',
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "trigger" VARCHAR(255) DEFAULT 'manual',
+  "error_message" TEXT,
+  "started_at" TIMESTAMP WITH TIME ZONE,
+  "completed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+
 CREATE TABLE "storage_providers" (
   "id" BIGSERIAL PRIMARY KEY,
   "kind" VARCHAR(255) NOT NULL,
@@ -386,6 +451,12 @@ ALTER TABLE "postgres_databases" ADD CONSTRAINT "postgres_databases_instance_fke
 ALTER TABLE "postgres_backup_schedules" ADD CONSTRAINT "postgres_backup_schedules_database_fkey" FOREIGN KEY ("database_id") REFERENCES "postgres_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "postgres_backups" ADD CONSTRAINT "postgres_backups_database_fkey" FOREIGN KEY ("database_id") REFERENCES "postgres_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "mongo_databases" ADD CONSTRAINT "mongo_databases_instance_fkey" FOREIGN KEY ("instance_id") REFERENCES "mongo_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "mongo_backup_schedules" ADD CONSTRAINT "mongo_backup_schedules_database_fkey" FOREIGN KEY ("database_id") REFERENCES "mongo_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "mongo_backups" ADD CONSTRAINT "mongo_backups_database_fkey" FOREIGN KEY ("database_id") REFERENCES "mongo_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "storage_buckets" ADD CONSTRAINT "storage_buckets_provider_fkey" FOREIGN KEY ("provider_id") REFERENCES "storage_providers" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

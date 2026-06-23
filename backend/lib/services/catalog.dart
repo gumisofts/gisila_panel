@@ -61,6 +61,7 @@ class ServiceDef {
     this.requiresInstall = true,
     this.icon,
     this.docsUrl,
+    this.summaryKeys = const [],
   });
 
   /// Stable machine identifier — stored in [ManagedService.serviceType].
@@ -79,6 +80,10 @@ class ServiceDef {
   final String? icon;
   final String? docsUrl;
 
+  /// Config keys the UI shows on the installed-service card. Lets the frontend
+  /// render a per-service summary without hardcoding fields per type.
+  final List<String> summaryKeys;
+
   Map<String, Object?> toJson() => <String, Object?>{
         'type': type,
         'name': name,
@@ -87,6 +92,7 @@ class ServiceDef {
         'requiresInstall': requiresInstall,
         if (icon != null) 'icon': icon,
         if (docsUrl != null) 'docsUrl': docsUrl,
+        'summaryKeys': summaryKeys,
         'configSchema': configSchema.map((f) => f.toJson()).toList(),
       };
 }
@@ -104,6 +110,7 @@ const List<ServiceDef> kServiceCatalog = [
         "panel's own Redis (so it defaults to port 6380, not 6379).",
     category: 'cache',
     docsUrl: 'https://redis.io/docs/',
+    summaryKeys: ['port', 'bind', 'maxmemory', 'appendonly'],
     configSchema: [
       ConfigField('port',
           label: 'Port',
@@ -153,6 +160,7 @@ const List<ServiceDef> kServiceCatalog = [
         'Simple key-value store, ideal for session data.',
     category: 'cache',
     docsUrl: 'https://memcached.org/',
+    summaryKeys: ['port', 'memory_mb', 'connections'],
     configSchema: [
       ConfigField('port',
           label: 'Port',
@@ -184,6 +192,7 @@ const List<ServiceDef> kServiceCatalog = [
         'are surfaced as env vars your apps can consume.',
     category: 'email',
     requiresInstall: false,
+    summaryKeys: ['host', 'port', 'username', 'from_email'],
     configSchema: [
       ConfigField('host',
           label: 'SMTP host',
@@ -223,6 +232,7 @@ const List<ServiceDef> kServiceCatalog = [
         'and a web inbox — emails never leave the host.',
     category: 'email',
     docsUrl: 'https://mailpit.axllent.org/',
+    summaryKeys: ['smtp_port', 'ui_port', 'max_messages'],
     configSchema: [
       ConfigField('smtp_port',
           label: 'SMTP port',
@@ -254,6 +264,7 @@ const List<ServiceDef> kServiceCatalog = [
         'databases. Configure pools, sizing and client users below after install.',
     category: 'database',
     docsUrl: 'https://www.pgbouncer.org/',
+    summaryKeys: ['listen_addr', 'listen_port', 'pool_mode', 'max_client_conn'],
     // Only scalar settings live here (rendered by the generic form). The
     // repeating "databases" and "users" structures are edited by a dedicated
     // PgBouncer panel and stored as JSON strings under those config keys.
@@ -325,6 +336,7 @@ const List<ServiceDef> kServiceCatalog = [
         'pgAdmin using the connection details from the Databases page.',
     category: 'database',
     docsUrl: 'https://www.pgadmin.org/docs/',
+    summaryKeys: ['email', 'port', 'domain'],
     configSchema: [
       ConfigField('email',
           label: 'Admin email',
@@ -350,6 +362,74 @@ const List<ServiceDef> kServiceCatalog = [
           type: FieldType.string,
           placeholder: 'pgadmin.example.com',
           hint: 'Optional — nginx reverse-proxies this hostname to pgAdmin. '
+              'Point a DNS A record here first.'),
+      ConfigField('tls',
+          label: 'HTTPS certificate (Let\'s Encrypt)',
+          type: FieldType.boolean,
+          defaultValue: 'true',
+          hint: 'Obtain a certificate for the domain. Uncheck if TLS is '
+              'terminated upstream (e.g. Cloudflare).'),
+    ],
+  ),
+
+  ServiceDef(
+    type: 'mongo-express',
+    name: 'mongo-express',
+    description: 'Web-based MongoDB administration UI. Installed globally via '
+        'npm and run as the gisila-mongo-express systemd service on a local '
+        'port; optionally exposed at a domain with a Let\'s Encrypt certificate. '
+        'Point it at a MongoDB instance from the Databases page using that '
+        'instance\'s root credentials.',
+    category: 'database',
+    docsUrl: 'https://github.com/mongo-express/mongo-express',
+    summaryKeys: ['mongo_host', 'mongo_port', 'port', 'domain'],
+    configSchema: [
+      ConfigField('mongo_host',
+          label: 'MongoDB host',
+          type: FieldType.string,
+          defaultValue: '127.0.0.1',
+          hint: 'Host of the MongoDB instance to administer.'),
+      ConfigField('mongo_port',
+          label: 'MongoDB port',
+          type: FieldType.number,
+          defaultValue: '27017',
+          min: 1,
+          max: 65535,
+          hint: 'Port of the target MongoDB instance (see the Databases page).'),
+      ConfigField('admin_user',
+          label: 'MongoDB admin user',
+          type: FieldType.string,
+          defaultValue: 'root',
+          hint: 'Admin user used to connect (authSource=admin).'),
+      ConfigField('admin_password',
+          label: 'MongoDB admin password',
+          type: FieldType.password,
+          required: true,
+          secret: true,
+          hint: 'The instance\'s root password (from the Databases page).'),
+      ConfigField('web_user',
+          label: 'Web UI username',
+          type: FieldType.string,
+          defaultValue: 'admin',
+          hint: 'Basic-auth username for the mongo-express web UI.'),
+      ConfigField('web_password',
+          label: 'Web UI password',
+          type: FieldType.password,
+          required: true,
+          secret: true,
+          hint: 'Basic-auth password for the web UI.'),
+      ConfigField('port',
+          label: 'Local port',
+          type: FieldType.number,
+          defaultValue: '8081',
+          min: 1024,
+          max: 65535,
+          hint: 'Bound to 127.0.0.1. Reached via the domain below or an SSH tunnel.'),
+      ConfigField('domain',
+          label: 'Public domain',
+          type: FieldType.string,
+          placeholder: 'mongo.example.com',
+          hint: 'Optional — nginx reverse-proxies this hostname to mongo-express. '
               'Point a DNS A record here first.'),
       ConfigField('tls',
           label: 'HTTPS certificate (Let\'s Encrypt)',

@@ -719,6 +719,180 @@ PostgresBackup:
       type: timestamp
       is_null: false
 
+# ─────────────────────────── MongoDB instances ───────────────────────────────
+#
+# MongoDB is a NoSQL engine managed alongside PostgreSQL. Each installed server
+# version is a MongoInstance (versioned, side-by-side on its own port). Databases
+# and their authenticated users are MongoDatabases. Mirrors the Postgres model so
+# the Databases UI and lifecycle behaviour stay consistent across engines.
+
+MongoInstance:
+  columns:
+    version:
+      type: varchar              # "6.0" | "7.0" | "8.0" (Mongo versions are strings)
+      is_null: false
+    display_name:
+      type: varchar
+      is_null: false
+    port:
+      type: integer
+      is_null: false
+      is_unique: true
+      is_index: true
+    status:
+      type: varchar
+      default: pending           # pending | installing | running | stopped | failed | uninstalling
+    is_default:
+      type: boolean
+      default: false
+    # Public exposure: when true the server listens on all interfaces with TLS
+    # (Let's Encrypt cert for public_domain), reachable at public_domain:port.
+    is_public:
+      type: boolean
+      default: false
+    public_domain:
+      type: varchar
+      is_null: true
+    # Password for the root admin user created on install (Mongo has no peer auth,
+    # so an authenticated root is always provisioned). Shown only in connection info.
+    root_password:
+      type: varchar
+      is_null: true
+    # Password for the read-only `gisila_monitor` user (clusterMonitor role) the
+    # panel uses to read serverStatus/dbStats metrics. Provisioned on first use.
+    monitor_password:
+      type: varchar
+      is_null: true
+    data_directory:
+      type: varchar
+      is_null: true              # e.g. /var/lib/mongo/7.0
+    error_message:
+      type: text
+      is_null: true
+    installed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+MongoDatabase:
+  columns:
+    instance:
+      type: foreign_key
+      references: MongoInstance
+      is_null: false
+      reverse_name: databases
+      on_delete: cascade
+    db_name:
+      type: varchar
+      is_null: false
+    user_name:
+      type: varchar
+      is_null: false
+    password:
+      type: varchar
+      is_null: false             # shown once to the user on creation
+    roles:
+      type: text
+      default: '[]'             # JSON array of built-in roles (readWrite, dbAdmin, …)
+    status:
+      type: varchar
+      default: pending           # pending | active | failed | dropped
+    error_message:
+      type: text
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+# Recurring backup configuration for a single Mongo database (one row per db).
+MongoBackupSchedule:
+  columns:
+    database:
+      type: foreign_key
+      references: MongoDatabase
+      is_null: false
+      is_unique: true
+      reverse_name: backup_schedule
+      on_delete: cascade
+    enabled:
+      type: boolean
+      default: false
+    frequency:
+      type: varchar
+      default: daily             # hourly | daily | weekly
+    hour:
+      type: integer
+      default: 2                 # hour of day (UTC) for daily/weekly
+    minute:
+      type: integer
+      default: 0
+    weekday:
+      type: integer
+      is_null: true              # 0=Sunday … 6=Saturday, used when frequency=weekly
+    scope:
+      type: varchar
+      default: full              # mongodump has no schema/data split — always full
+    keep_count:
+      type: integer
+      default: 7                 # retention: keep the N most recent backups
+    next_run_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+# A single backup artifact (a mongodump archive on disk) for a Mongo database.
+MongoBackup:
+  columns:
+    database:
+      type: foreign_key
+      references: MongoDatabase
+      is_null: false
+      reverse_name: backups
+      on_delete: cascade
+    file_path:
+      type: varchar
+      is_null: true              # absolute path on the host, set once completed
+    file_name:
+      type: varchar
+      is_null: true              # display name / download filename
+    size_bytes:
+      type: bigint
+      is_null: true
+    scope:
+      type: varchar
+      default: full
+    status:
+      type: varchar
+      default: pending           # pending | running | completed | failed
+    trigger:
+      type: varchar
+      default: manual            # manual | scheduled
+    error_message:
+      type: text
+      is_null: true
+    started_at:
+      type: timestamp
+      is_null: true
+    completed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+
 # ─────────────────────────── Object storage (S3) ─────────────────────────────
 #
 # S3-compatible object storage (Model B). A StorageProvider is an endpoint:
