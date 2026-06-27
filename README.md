@@ -169,6 +169,44 @@ The whole `gisila_tools/` workspace is bind-mounted, so editing Dart or TypeScri
 - Port 80 and 443 open in your firewall
 - A domain name pointed at the server (for TLS)
 
+### Quick install — prebuilt (recommended)
+
+The fastest way to stand up a node. This installs **prebuilt** binaries and the
+prebuilt panel UI from a GitHub Release — no Dart SDK, Node.js, or pnpm, and
+nothing is compiled on the box. One command, no clone required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh | sudo bash
+```
+
+Or, if you've already cloned the repo:
+
+```bash
+sudo bash infra/install-prebuilt.sh
+```
+
+Useful knobs:
+
+```bash
+sudo VERSION=0.1.0 bash infra/install-prebuilt.sh         # pin a release
+sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \  # install a local artifact
+     bash infra/install-prebuilt.sh
+```
+
+It performs the same system setup as the source installer below (PostgreSQL,
+Redis, Nginx, systemd, config, migrations) but skips the entire build
+toolchain — so it's far faster and never hits the pnpm build-approval failure.
+
+> **Maintainers:** produce the release artifact with `bash infra/build-release.sh`
+> on a machine that has Dart + Node + pnpm, then upload
+> `dist/gisila-release-linux-<arch>.tar.gz` to a GitHub Release
+> (`gh release create v<version> dist/gisila-release-linux-*.tar.gz`). Re-upload
+> the same asset name to the newest release so `VERSION=latest` keeps working.
+
+### Build from source
+
+Prefer this only when you've changed the code and want to compile on the host.
+
 ### 1. Clone the repository
 
 ```bash

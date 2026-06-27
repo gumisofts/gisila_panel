@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-x64:
+    name: Build linux-x64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build release tarball
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          VERSION="$VERSION" bash infra/build-release.sh
+
+      - name: Create GitHub Release and upload asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          TARBALL="dist/gisila-release-linux-x64.tar.gz"
+          VERSION_FILE="dist/VERSION"
+
+          # Create the release (skip if it already exists, e.g. created manually)
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "Gisila Panel $TAG" \
+            --generate-notes \
+            || true
+
+          gh release upload "$TAG" "$TARBALL" "$VERSION_FILE" \
+            --repo "${{ github.repository }}" \
+            --clobber

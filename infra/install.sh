@@ -6,12 +6,14 @@
 #
 # What this does (idempotent — safe to re-run):
 #   1. Installs system packages (postgres, redis, nginx, certbot, apparmor,
-#      git, build-essential, unzip, the Dart SDK, Node.js 22 LTS, pnpm).
+#      git, build-essential, unzip, the Dart SDK). Node.js 22 LTS + pnpm are
+#      installed only when rebuilding the UI from source (BUILD_FRONTEND=1).
 #   2. Creates the `gisila` system user and /srv/gisila/ layout.
 #   3. Initialises the Postgres database and role.
 #   4. Compiles the API, worker, and agent to native binaries and installs
 #      them under /usr/local/bin/.
-#   5. Builds the Vite frontend into backend/web/ (served by the Dart API).
+#   5. Deploys the prebuilt Vite frontend from backend/web/ (served by the Dart
+#      API). Pass BUILD_FRONTEND=1 to rebuild it from source instead.
 #   6. Drops the strict sudoers rule so `gisila` can run `gisila-agent` as root.
 #   7. Installs systemd units for the API and worker.
 #   8. Writes config (/etc/gisila/.env, /etc/gisila/database.yaml).
@@ -29,6 +31,13 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GISILA_USER="gisila"
 GISILA_HOME="/srv/gisila"
 APPS_ROOT="/srv/apps"
+
+# The panel UI ships prebuilt in backend/web/ (committed to the repo), so a
+# normal install neither installs Node/pnpm nor runs a Vite build — that step
+# was both the slowest part of the install and the one that broke whenever pnpm
+# wanted its build scripts approved. Developers who changed the UI can rebuild
+# from source with BUILD_FRONTEND=1.
+BUILD_FRONTEND="${BUILD_FRONTEND:-0}"
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 echo "==> Installing system packages"
@@ -56,16 +65,23 @@ fi
 # Ensure dart is on PATH for this script.
 export PATH="/usr/lib/dart/bin:$PATH"
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "==> Installing Node.js 22 LTS"
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y -qq nodejs
-fi
+# Node.js + pnpm are only needed to build the panel UI from source. The default
+# install deploys the prebuilt backend/web/ assets, so we skip them unless the
+# operator explicitly asked for a source rebuild (BUILD_FRONTEND=1). User apps
+# get their own Node toolchain via fnm at deploy time — they do not depend on a
+# system-wide Node installed here.
+if [[ "$BUILD_FRONTEND" == "1" ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "==> Installing Node.js 22 LTS"
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y -qq nodejs
+  fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "==> Installing pnpm"
-  corepack enable
-  corepack prepare pnpm@latest --activate
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "==> Installing pnpm"
+    corepack enable
+    corepack prepare pnpm@latest --activate
+  fi
 fi
 
 # ── 2. System user + directories ─────────────────────────────────────────────
@@ -144,30 +160,42 @@ mkdir -p "$REPO_DIR/agent/build"
 dart compile exe bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
 install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 
-# ── 5. Frontend — build into backend/web/ ────────────────────────────────────
-# The Dart API serves the panel UI directly from backend/web/.
-# No separate Node.js server or systemd unit is needed.
-echo "==> Building panel UI (Vite → backend/web/)"
-# pnpm / corepack hardening for the UI build.
-#
-# Mirrors the per-app build env in agent/lib/runtime/builders.dart and the
-# runtime env in the generated systemd units. On a fresh, TTY-less host this
-# keeps the build deterministic and non-interactive — without it pnpm can abort
-# the modules-dir purge prompt (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) when
-# its pre-script deps check decides to reinstall, or corepack can try to fetch a
-# pinned pnpm into an unwritable cache. CI=true is pnpm's documented remedy; the
-# verify-deps / confirm-purge keys are set under both the npm_config_ (pnpm
-# 9/10) and pnpm_config_ (pnpm 11) prefixes so the fix is version-agnostic.
-export CI=true
-export COREPACK_ENABLE_STRICT=0
-export COREPACK_ENABLE_AUTO_PIN=0
-export npm_config_verify_deps_before_run=false
-export pnpm_config_verify_deps_before_run=false
-export npm_config_confirm_modules_purge=false
-export pnpm_config_confirm_modules_purge=false
-cd "$REPO_DIR/frontend"
-pnpm install --prefer-frozen-lockfile
-pnpm build
+# ── 5. Frontend — deploy prebuilt assets (optionally rebuild) ────────────────
+# The Dart API serves the panel UI directly from backend/web/. Those assets are
+# committed to the repo, so by default we deploy them as-is — no Node/pnpm, no
+# Vite build. To rebuild from source after changing the UI, run with
+# BUILD_FRONTEND=1.  No separate Node.js server or systemd unit is needed.
+if [[ "$BUILD_FRONTEND" == "1" ]]; then
+  echo "==> Building panel UI from source (Vite → backend/web/)"
+  # pnpm / corepack hardening for the UI build.
+  #
+  # Mirrors the per-app build env in agent/lib/runtime/builders.dart and the
+  # runtime env in the generated systemd units. On a fresh, TTY-less host this
+  # keeps the build deterministic and non-interactive — without it pnpm can abort
+  # the modules-dir purge prompt (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) when
+  # its pre-script deps check decides to reinstall, or corepack can try to fetch a
+  # pinned pnpm into an unwritable cache. CI=true is pnpm's documented remedy; the
+  # verify-deps / confirm-purge keys are set under both the npm_config_ (pnpm
+  # 9/10) and pnpm_config_ (pnpm 11) prefixes so the fix is version-agnostic.
+  export CI=true
+  export COREPACK_ENABLE_STRICT=0
+  export COREPACK_ENABLE_AUTO_PIN=0
+  export npm_config_verify_deps_before_run=false
+  export pnpm_config_verify_deps_before_run=false
+  export npm_config_confirm_modules_purge=false
+  export pnpm_config_confirm_modules_purge=false
+  cd "$REPO_DIR/frontend"
+  pnpm install --prefer-frozen-lockfile
+  pnpm build
+else
+  echo "==> Using prebuilt panel UI in backend/web/ (set BUILD_FRONTEND=1 to rebuild)"
+  if [[ ! -f "$REPO_DIR/backend/web/index.html" ]]; then
+    echo "ERROR: no prebuilt UI found at $REPO_DIR/backend/web/index.html." >&2
+    echo "       Commit the built assets, or re-run with BUILD_FRONTEND=1 to build" >&2
+    echo "       from source (requires Node.js + pnpm)." >&2
+    exit 1
+  fi
+fi
 
 # Deploy the built assets to /srv/gisila/web/ where the API server can find
 # them (WorkingDirectory=/srv/gisila in gisila-panel.service).
