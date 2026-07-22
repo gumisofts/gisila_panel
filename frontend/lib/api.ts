@@ -1,3 +1,5 @@
+import { toast } from "sonner";
+
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 // ── WebSocket base URL ────────────────────────────────────────────────────────
@@ -61,6 +63,29 @@ export class ApiError extends Error {
   }
 }
 
+// ── Session expiry handling ──────────────────────────────────────────────────
+// The backend only issues short-lived access tokens (no refresh-token flow
+// exists yet), so once a token expires every authenticated request starts
+// coming back 401. Without a global handler for that, the stale token stays
+// in localStorage forever, `PanelLayout`'s login guard keeps thinking the user
+// is signed in (it only checks *presence* of a token, not validity), and the
+// whole panel is left stuck making calls that will never succeed again. Any
+// 401 returned for a request that *carried* a token means that token is no
+// longer valid — clear it and bounce to /login so the user can sign in again.
+// A 401 on a request made *without* a token (e.g. a bad login/register
+// attempt) is a normal auth failure and must be left for the caller to handle.
+let loggedOut = false;
+
+function handleUnauthorized() {
+  if (loggedOut) return;
+  loggedOut = true;
+  setToken(null);
+  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    toast.error("Your session has expired. Please sign in again.");
+    window.location.assign("/login");
+  }
+}
+
 export async function api<T>(
   path: string,
   init: RequestInit = {},
@@ -75,6 +100,7 @@ export async function api<T>(
   const raw = text ? JSON.parse(text) : null;
   const data = deepCamelCase(raw) as typeof raw;
   if (!res.ok) {
+    if (res.status === 401 && token) handleUnauthorized();
     const err = data?.error ?? {};
     throw new ApiError(
       res.status,
@@ -102,6 +128,7 @@ export async function downloadFile(
 
   const res = await fetch(`${API_BASE}${path}`, { headers });
   if (!res.ok) {
+    if (res.status === 401 && token) handleUnauthorized();
     const text = await res.text();
     throw new ApiError(res.status, undefined, text || res.statusText);
   }
@@ -136,6 +163,7 @@ export async function uploadFile(path: string, file: File): Promise<void> {
     body: file,
   });
   if (!res.ok) {
+    if (res.status === 401 && token) handleUnauthorized();
     const text = await res.text();
     let msg = res.statusText;
     try {
