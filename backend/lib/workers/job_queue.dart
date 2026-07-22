@@ -41,8 +41,18 @@ class JobQueue {
           await _dispatch(queue, raw);
         }
       } catch (e, st) {
-        logger.e('worker: redis error', error: e, stackTrace: st);
+        // The socket underlying `_cmd` may have died (Redis restarted, network
+        // blip, …). Reconnect before retrying — otherwise every future BLPOP
+        // hits the same dead connection and the worker never processes another
+        // job again without a full process restart.
+        logger.e('worker: redis error — reconnecting', error: e, stackTrace: st);
         await Future<void>.delayed(const Duration(seconds: 2));
+        try {
+          _cmd = await RedisConnection().connect(host, port);
+          logger.i('worker: reconnected to redis $host:$port');
+        } catch (reconnectErr) {
+          logger.e('worker: redis reconnect failed', error: reconnectErr);
+        }
       }
     }
   }

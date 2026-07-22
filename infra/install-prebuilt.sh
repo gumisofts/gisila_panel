@@ -44,6 +44,18 @@ case "$ARCH" in
 esac
 ASSET="gisila-release-linux-${ARCH}.tar.gz"
 
+# CI (.github/workflows/release.yml) currently only builds/publishes linux-x64.
+# Fail early with a clear message on other architectures instead of a bare
+# curl 404 — unless the caller is pointing at their own artifact/URL.
+if [[ "$ARCH" != "x64" && -z "${RELEASE_FILE:-}" && -z "${RELEASE_URL:-}" ]]; then
+  echo "ERROR: no prebuilt release is published for linux-$ARCH yet" >&2
+  echo "       (CI only builds linux-x64 — see .github/workflows/release.yml)." >&2
+  echo "       Build your own with 'bash infra/build-release.sh' on this host, then" >&2
+  echo "       re-run with RELEASE_FILE=/path/to/gisila-release-linux-$ARCH.tar.gz," >&2
+  echo "       or use infra/install.sh to build from source instead." >&2
+  exit 1
+fi
+
 # ── 1. System packages (runtime only — no build toolchain) ────────────────────
 echo "==> Installing system packages"
 apt-get update -qq
@@ -70,7 +82,16 @@ else
     URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION#v}/$ASSET"
   fi
   echo "==> Downloading $URL"
-  curl -fSL "$URL" -o "$STAGE/release.tar.gz"
+  if ! curl -fSL "$URL" -o "$STAGE/release.tar.gz"; then
+    echo >&2
+    echo "ERROR: failed to download the release asset from:" >&2
+    echo "         $URL" >&2
+    echo "       Most likely no GitHub Release has been published for" >&2
+    echo "       $GITHUB_REPO yet, or '$VERSION' doesn't match a published tag." >&2
+    echo "       Publish one with 'bash infra/build-release.sh' + 'gh release create'," >&2
+    echo "       or install from a local artifact with RELEASE_FILE=/path/to/*.tar.gz." >&2
+    exit 1
+  fi
 fi
 
 tar -C "$STAGE" -xzf "$STAGE/release.tar.gz"

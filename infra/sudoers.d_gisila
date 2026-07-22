@@ -1,8 +1,19 @@
-# /etc/sudoers.d/gisila — managed by gisila-panel/infra/install.sh
+# /etc/sudoers.d/gisila
 #
-# The `gisila` system user is allowed to run *only* the deployment agent
-# binary as root, with no password, and no environment passthrough beyond
-# what the agent itself sets. Every other privileged action is denied.
+# NOT currently installed by infra/install.sh or infra/install-prebuilt.sh.
+# gisila-worker.service runs the worker as root directly (see that unit's
+# comment) specifically so it can call `gisila-agent` without sudo — which
+# also sidesteps VPS providers that set the kernel's no_new_privileges flag
+# and would block sudo outright (Hetzner, DigitalOcean, Linode, etc.). That
+# makes this narrower sudoers-based privilege-separation model unnecessary
+# for now; kept here in case a future revision moves the worker back to an
+# unprivileged user. infra/uninstall.sh still removes /etc/sudoers.d/gisila
+# defensively, for hosts that had it from an older install.
+#
+# If reintroduced: the `gisila` system user would be allowed to run *only*
+# the deployment agent binary as root, with no password, and no environment
+# passthrough beyond what the agent itself sets. Every other privileged
+# action stays denied.
 
 Defaults!/usr/local/bin/gisila-agent !env_reset
 Defaults!/usr/local/bin/gisila-agent !requiretty
