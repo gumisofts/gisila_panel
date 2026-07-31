@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "@/compat/link";
 import { useRouter } from "@/compat/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

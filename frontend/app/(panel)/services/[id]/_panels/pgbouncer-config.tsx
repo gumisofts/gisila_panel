@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, fetcher } from "@/lib/api";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type {
   ManagedService,
   ServiceDef,

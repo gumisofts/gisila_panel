@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR from "swr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Play, RotateCw, Square, Rocket, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

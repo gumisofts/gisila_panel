@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 

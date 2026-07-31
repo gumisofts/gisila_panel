@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   HardDrive,
   Plus,

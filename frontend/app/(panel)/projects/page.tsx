@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "@/compat/link";
 import useSWR from "swr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Settings2, Loader, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

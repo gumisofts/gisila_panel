@@ -25,7 +25,7 @@ import type {
   ListResponse,
 } from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

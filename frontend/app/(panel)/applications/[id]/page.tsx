@@ -23,7 +23,7 @@ import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { Application, ApplicationDef, DeployMode } from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const STATUS_META: Record<
   string,

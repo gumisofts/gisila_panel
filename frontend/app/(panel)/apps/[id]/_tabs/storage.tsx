@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { HardDrive, Plus, Trash2, Link2, Loader } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

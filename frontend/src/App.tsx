@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { Toaster } from "sonner";
+import { Toaster } from "@/lib/toast";
 
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
@@ -66,7 +66,7 @@ export default function App() {
             <Route path="/settings/users" element={<UsersPage />} />
           </Route>
         </Routes>
-        <Toaster position="bottom-right" richColors />
+        <Toaster />
       </ThemeProvider>
     </BrowserRouter>
   );

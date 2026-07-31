@@ -30,7 +30,7 @@ import type {
   ServiceDef,
   ConfigField,
 } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PgBouncerConfig } from "./_panels/pgbouncer-config";
 
 // ── Status display ────────────────────────────────────────────────────────────
