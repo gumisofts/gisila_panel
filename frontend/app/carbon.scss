@@ -1,0 +1,63 @@
+// Carbon Design System entrypoint.
+//
+// IBM Plex is served from the Google Fonts CDN (see index.html), so Carbon must
+// not also emit @font-face rules pointing at the bundled @ibm/plex package —
+// those resolve to paths that do not survive the Vite build.
+@use '@carbon/react' with (
+  $css--font-face: false
+);
+
+// ── Brand palette ────────────────────────────────────────────────────────────
+//
+// Stock Carbon everywhere except the accent, which stays the panel's blue
+// rather than IBM's #0f62fe. Carbon compiles every colour token to a
+// `--cds-*` custom property (see @carbon/styles/scss/_zone.scss), scoped to a
+// theme-zone class, so re-pointing the brand means overriding those properties
+// per zone rather than recompiling Carbon's theme maps.
+//
+// The ramp is the same one the old Tailwind token system used, so the panel
+// keeps its identity: blue-600 as the resting accent, stepping down to
+// blue-700/800 for hover and active.
+
+$brand-60: #2563eb; // blue-600 — resting accent, light themes
+$brand-70: #1d4ed8; // blue-700 — hover
+$brand-80: #1e40af; // blue-800 — active
+$brand-40: #5593f7; // lifted accent for dark themes, where blue-600 on a near
+// black background is too low-contrast for text and borders
+
+:root,
+.cds--white,
+.cds--g10 {
+  --cds-interactive: #{$brand-60};
+  --cds-link-primary: #{$brand-60};
+  --cds-link-primary-hover: #{$brand-70};
+  --cds-focus: #{$brand-60};
+  --cds-background-brand: #{$brand-60};
+  --cds-border-interactive: #{$brand-60};
+  --cds-button-primary: #{$brand-60};
+  --cds-button-primary-hover: #{$brand-70};
+  --cds-button-primary-active: #{$brand-80};
+}
+
+.cds--g90,
+.cds--g100 {
+  // Text-like and border tokens lift to the lighter blue so they stay legible
+  // against the dark background; the primary button keeps the saturated brand
+  // colour because its label is white and needs the contrast underneath.
+  --cds-interactive: #{$brand-40};
+  --cds-link-primary: #{$brand-40};
+  --cds-link-primary-hover: #{#3b82f6};
+  --cds-focus: #{$brand-40};
+  --cds-background-brand: #{$brand-60};
+  --cds-border-interactive: #{$brand-40};
+  --cds-button-primary: #{$brand-60};
+  --cds-button-primary-hover: #{$brand-70};
+  --cds-button-primary-active: #{$brand-80};
+}
+
+// The panel is a full-height application shell, not a scrolling document.
+html,
+body,
+#root {
+  block-size: 100%;
+}
