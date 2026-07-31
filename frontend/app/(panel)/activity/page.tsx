@@ -3,18 +3,26 @@
 import useSWR from "swr";
 import {
   Activity,
-  Pencil,
-  Play,
-  Plus,
-  RotateCw,
+  Add,
+  Edit,
+  PlayFilled,
+  Renew,
   Rocket,
-  Square,
+  StopFilled,
   Terminal,
-  Trash2,
-  Undo2,
-  UserPlus,
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+  TrashCan,
+  Undo,
+  UserFollow,
+} from "@carbon/icons-react";
+import {
+  StructuredListBody,
+  StructuredListCell,
+  StructuredListRow,
+  StructuredListSkeleton,
+  StructuredListWrapper,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { AuditLog, ListResponse } from "@/lib/types";
@@ -28,56 +36,50 @@ export default function ActivityPage() {
   const items = data?.results ?? [];
 
   return (
-    <div className="container space-y-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-        <p className="text-sm text-muted-foreground">
-          Every action you&apos;ve performed across the panel, most recent first.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Activity"
+        description="Every action you've performed across the panel, most recent first."
+      />
+
+      {isLoading && <StructuredListSkeleton rowCount={8} />}
 
       {!isLoading && items.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            No activity yet.
-          </CardContent>
-        </Card>
+        <Tile className="gisila-empty">No activity yet.</Tile>
       )}
 
       {items.length > 0 && (
-        <Card>
-          <CardContent className="divide-y divide-border/60 p-0">
+        <StructuredListWrapper aria-label="Activity log" isCondensed>
+          <StructuredListBody>
             {items.map((entry) => (
               <ActivityRow key={entry.id} entry={entry} />
             ))}
-          </CardContent>
-        </Card>
+          </StructuredListBody>
+        </StructuredListWrapper>
       )}
-    </div>
+    </Page>
   );
 }
 
 function ActivityRow({ entry }: { entry: AuditLog }) {
   const { icon: Icon, tone } = iconFor(entry.action);
   return (
-    <div className="flex items-center gap-3 px-5 py-3">
-      <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">{describe(entry)}</p>
+    <StructuredListRow>
+      <StructuredListCell className="gisila-activity__icon-cell">
+        <span className={`gisila-status-icon gisila-status-icon--${tone}`}>
+          <Icon size={16} />
+        </span>
+      </StructuredListCell>
+      <StructuredListCell className="gisila-activity__detail">
+        <span>{describe(entry)}</span>
         {entry.ipAddress && (
-          <p className="font-mono text-[11px] text-muted-foreground">
-            {entry.ipAddress}
-          </p>
+          <span className="gisila-activity__meta">{entry.ipAddress}</span>
         )}
-      </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
+      </StructuredListCell>
+      <StructuredListCell className="gisila-activity__time">
         {formatRelative(entry.createdAt)}
-      </span>
-    </div>
+      </StructuredListCell>
+    </StructuredListRow>
   );
 }
 
@@ -121,28 +123,28 @@ function iconFor(action: string): { icon: typeof Activity; tone: string } {
   const { verb } = splitAction(action);
   switch (verb) {
     case "create":
-      return { icon: Plus, tone: "bg-emerald-500/15 text-emerald-500" };
+      return { icon: Add, tone: "success" };
     case "delete":
-      return { icon: Trash2, tone: "bg-red-500/15 text-red-500" };
+      return { icon: TrashCan, tone: "danger" };
     case "update":
     case "env.set":
     case "env.unset":
-      return { icon: Pencil, tone: "bg-blue-500/15 text-blue-500" };
+      return { icon: Edit, tone: "info" };
     case "start":
-      return { icon: Play, tone: "bg-emerald-500/15 text-emerald-500" };
+      return { icon: PlayFilled, tone: "success" };
     case "stop":
-      return { icon: Square, tone: "bg-zinc-500/15 text-zinc-400" };
+      return { icon: StopFilled, tone: "neutral" };
     case "restart":
-      return { icon: RotateCw, tone: "bg-amber-500/15 text-amber-500" };
+      return { icon: Renew, tone: "warning" };
     case "deploy":
-      return { icon: Rocket, tone: "bg-primary/15 text-primary" };
+      return { icon: Rocket, tone: "brand" };
     case "exec":
-      return { icon: Terminal, tone: "bg-violet-500/15 text-violet-500" };
+      return { icon: Terminal, tone: "info" };
     case "rollback":
-      return { icon: Undo2, tone: "bg-amber-500/15 text-amber-500" };
+      return { icon: Undo, tone: "warning" };
     case "invite":
-      return { icon: UserPlus, tone: "bg-blue-500/15 text-blue-500" };
+      return { icon: UserFollow, tone: "info" };
     default:
-      return { icon: Activity, tone: "bg-muted text-muted-foreground" };
+      return { icon: Activity, tone: "neutral" };
   }
 }

@@ -11,6 +11,7 @@
 @use '@carbon/react/scss/theme';
 @use '@carbon/react/scss/type';
 @use '@carbon/react/scss/spacing';
+@use '@carbon/react/scss/breakpoint';
 
 // ── Brand palette ────────────────────────────────────────────────────────────
 //
@@ -100,4 +101,153 @@ body,
 
 .gisila-header__menu-options {
   inline-size: 12rem;
+}
+
+// ── Page frame ───────────────────────────────────────────────────────────────
+// Backs components/page.tsx. Carbon has no page-chrome component, so width,
+// padding and heading rhythm are decided once here instead of per route.
+
+// Carbon indents the content area past the side nav with a sibling selector
+// (.cds--side-nav ~ .cds--content), but HeaderContainer nests SideNav inside
+// Header, so the two are never siblings and the rule never matches — the page
+// renders underneath the nav. The nav is only persistent from lg up; below that
+// it is an overlay and the content should stay full width.
+@include breakpoint.breakpoint('lg') {
+  .cds--content {
+    margin-inline-start: 16rem;
+  }
+}
+
+// Content already supplies 2rem of padding, so this only caps the measure.
+.gisila-page {
+  max-inline-size: 76rem;
+  padding-block-end: spacing.$spacing-07;
+}
+
+.gisila-page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-05;
+  margin-block-end: spacing.$spacing-06;
+}
+
+.gisila-page__title {
+  @include type.type-style('productive-heading-04');
+
+  color: theme.$text-primary;
+}
+
+.gisila-page__description {
+  @include type.type-style('body-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-page__actions,
+.gisila-section__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-section + .gisila-section {
+  margin-block-start: spacing.$spacing-07;
+}
+
+.gisila-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-04;
+  margin-block-end: spacing.$spacing-04;
+}
+
+.gisila-section__title {
+  @include type.type-style('productive-heading-02');
+
+  color: theme.$text-primary;
+}
+
+.gisila-section__description {
+  @include type.type-style('body-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+// ── Status accents ───────────────────────────────────────────────────────────
+// Carbon's Tag covers labelled statuses, but several screens show a bare icon
+// tinted by outcome. These map that intent onto Carbon's support tokens so the
+// colours stay theme-aware instead of being hard-coded per page.
+
+.gisila-status-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: spacing.$spacing-07;
+  block-size: spacing.$spacing-07;
+  border-radius: 50%;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-secondary;
+
+  &--success {
+    color: theme.$support-success;
+  }
+
+  &--danger {
+    color: theme.$support-error;
+  }
+
+  &--warning {
+    color: theme.$support-warning;
+  }
+
+  &--info {
+    color: theme.$support-info;
+  }
+
+  &--brand {
+    color: theme.$link-primary;
+  }
+}
+
+// Shared empty state for lists that have loaded but have nothing to show.
+.gisila-empty {
+  @include type.type-style('body-01');
+
+  padding-block: spacing.$spacing-09;
+  color: theme.$text-secondary;
+  text-align: center;
+}
+
+// ── Activity feed ────────────────────────────────────────────────────────────
+
+.gisila-activity__icon-cell {
+  inline-size: spacing.$spacing-09;
+}
+
+.gisila-activity__detail {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-01;
+  inline-size: 100%;
+}
+
+.gisila-activity__meta {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-activity__time {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+  text-align: end;
+  white-space: nowrap;
 }
