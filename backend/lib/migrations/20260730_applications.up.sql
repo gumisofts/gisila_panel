@@ -32,7 +32,11 @@ ALTER TABLE "apps" ADD CONSTRAINT "apps_application_fkey"
 
 -- Seed the builtin catalog. Every row starts pre-installed (status =
 -- 'installed') so existing installations keep deploying without any admin
--- action; new installs can still remove/reconfigure them from the panel.
+-- action. New installs can still remove/reconfigure them from the panel.
+-- NOTE: never put a semicolon character inside a comment in a migration.
+-- The published gisila_orm 0.1.1 splits scripts on that character without
+-- stripping comments first, so the rest of the line becomes a bogus
+-- statement and the migration fails with a syntax error.
 INSERT INTO "applications"
   ("key", "display_name", "deploy_modes", "default_deploy_mode",
    "default_build_command", "default_start_command", "status", "is_builtin",
