@@ -12,6 +12,8 @@ import AppsPage from "../app/(panel)/apps/page";
 import NewAppPage from "../app/(panel)/apps/new/page";
 import AppDetailPage from "../app/(panel)/apps/[id]/page";
 import DomainsPage from "../app/(panel)/domains/page";
+import ApplicationsPage from "../app/(panel)/applications/page";
+import ApplicationDetailPage from "../app/(panel)/applications/[id]/page";
 import ServicesPage from "../app/(panel)/services/page";
 import ServiceDetailPage from "../app/(panel)/services/[id]/page";
 import DatabasesPage from "../app/(panel)/databases/page";
@@ -48,6 +50,8 @@ export default function App() {
             <Route path="/apps/new" element={<NewAppPage />} />
             <Route path="/apps/:id" element={<AppDetailPage />} />
             <Route path="/domains" element={<DomainsPage />} />
+            <Route path="/applications" element={<ApplicationsPage />} />
+            <Route path="/applications/:id" element={<ApplicationDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />

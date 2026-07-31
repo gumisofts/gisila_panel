@@ -4,12 +4,23 @@ import 'package:gisila/gisila.dart';
 class CreateAppForm extends Form {
   final projectId = IntField(name: 'projectId', required: true);
   final name = StringField(name: 'name', required: true, maxLength: 60);
-  final runtime = StringField(name: 'runtime', required: true);
+  // Preferred: pick an installed Application by id. `runtime` is kept as a
+  // deprecated free-text alias for backward compatibility — when
+  // `applicationId` is supplied it wins and `runtime` is derived from it.
+  final applicationId = IntField(name: 'applicationId');
+  final runtime = StringField(name: 'runtime');
+  // build_execute | direct_run | static_publish — must be one of the chosen
+  // Application's supported deploy_modes. Defaults to that Application's
+  // defaultDeployMode when omitted.
+  final deploymentMode = StringField(name: 'deploymentMode');
   // binary | git | zip
   final sourceType = StringField(name: 'sourceType', required: true);
 
   final gitUrl = StringField(name: 'gitUrl');
   final gitBranch = StringField(name: 'gitBranch');
+  // Optional subdirectory within the repo to build/run from, so a single
+  // monorepo can be deployed by pointing at just one of its projects.
+  final sourceSubdir = StringField(name: 'sourceSubdir');
   final buildCommand = StringField(name: 'buildCommand');
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');
@@ -64,10 +75,13 @@ class CreateAppForm extends Form {
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[
         projectId,
         name,
+        applicationId,
         runtime,
+        deploymentMode,
         sourceType,
         gitUrl,
         gitBranch,
+        sourceSubdir,
         buildCommand,
         startCommand,
         healthCheckPath,
@@ -106,6 +120,7 @@ class UpdateAppForm extends Form {
   final name = StringField(name: 'name', maxLength: 60);
   final gitUrl = StringField(name: 'gitUrl');
   final gitBranch = StringField(name: 'gitBranch');
+  final sourceSubdir = StringField(name: 'sourceSubdir');
   final buildCommand = StringField(name: 'buildCommand');
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');
@@ -143,6 +158,7 @@ class UpdateAppForm extends Form {
         name,
         gitUrl,
         gitBranch,
+        sourceSubdir,
         buildCommand,
         startCommand,
         healthCheckPath,

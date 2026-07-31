@@ -30,10 +30,16 @@ extension AppsApiGisilaDoc on AppsApi {
       'properties': <String, Object?>{
         'projectId': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'name': <String, Object?>{'type': 'string'},
+        'applicationId': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
         'runtime': <String, Object?>{'type': 'string'},
+        'deploymentMode': <String, Object?>{'type': 'string'},
         'sourceType': <String, Object?>{'type': 'string'},
         'gitUrl': <String, Object?>{'type': 'string'},
         'gitBranch': <String, Object?>{'type': 'string'},
+        'sourceSubdir': <String, Object?>{'type': 'string'},
         'buildCommand': <String, Object?>{'type': 'string'},
         'startCommand': <String, Object?>{'type': 'string'},
         'healthCheckPath': <String, Object?>{'type': 'string'},
@@ -97,6 +103,7 @@ extension AppsApiGisilaDoc on AppsApi {
         'name': <String, Object?>{'type': 'string'},
         'gitUrl': <String, Object?>{'type': 'string'},
         'gitBranch': <String, Object?>{'type': 'string'},
+        'sourceSubdir': <String, Object?>{'type': 'string'},
         'buildCommand': <String, Object?>{'type': 'string'},
         'startCommand': <String, Object?>{'type': 'string'},
         'healthCheckPath': <String, Object?>{'type': 'string'},

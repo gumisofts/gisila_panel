@@ -1011,6 +1011,226 @@ class ProjectTable {
 
 Query<Project> projects() => Query<Project>(ProjectTable.metadata);
 
+class Application with Preloadable {
+  final int? id;
+  final String? key;
+  final String displayName;
+  final String deployModes;
+  final String defaultDeployMode;
+  final String? defaultVersion;
+  final String? defaultBuildCommand;
+  final String? defaultStartCommand;
+  final String? status;
+  final bool? isBuiltin;
+  final String? errorMessage;
+  final DateTime? installedAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  Application({
+    this.id,
+    this.key,
+    required this.displayName,
+    required this.deployModes,
+    required this.defaultDeployMode,
+    this.defaultVersion,
+    this.defaultBuildCommand,
+    this.defaultStartCommand,
+    this.status,
+    this.isBuiltin,
+    this.errorMessage,
+    this.installedAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory Application.fromRow(Map<String, dynamic> row) => Application(
+    id: row['id'] as int?,
+    key: row['key'] as String?,
+    displayName: row['display_name'] as String,
+    deployModes: row['deploy_modes'] as String,
+    defaultDeployMode: row['default_deploy_mode'] as String,
+    defaultVersion: row['default_version'] as String?,
+    defaultBuildCommand: row['default_build_command'] as String?,
+    defaultStartCommand: row['default_start_command'] as String?,
+    status: row['status'] as String?,
+    isBuiltin: row['is_builtin'] as bool?,
+    errorMessage: row['error_message'] as String?,
+    installedAt: row['installed_at'] == null
+        ? null
+        : (row['installed_at'] is DateTime
+              ? row['installed_at'] as DateTime
+              : DateTime.parse(row['installed_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'key': key,
+    'display_name': displayName,
+    'deploy_modes': deployModes,
+    'default_deploy_mode': defaultDeployMode,
+    'default_version': defaultVersion,
+    'default_build_command': defaultBuildCommand,
+    'default_start_command': defaultStartCommand,
+    'status': status,
+    'is_builtin': isBuiltin,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory Application.fromJson(Map<String, dynamic> json) =>
+      Application.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  Application copyWith({
+    int? id,
+    String? key,
+    String? displayName,
+    String? deployModes,
+    String? defaultDeployMode,
+    String? defaultVersion,
+    String? defaultBuildCommand,
+    String? defaultStartCommand,
+    String? status,
+    bool? isBuiltin,
+    String? errorMessage,
+    DateTime? installedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => Application(
+    id: id ?? this.id,
+    key: key ?? this.key,
+    displayName: displayName ?? this.displayName,
+    deployModes: deployModes ?? this.deployModes,
+    defaultDeployMode: defaultDeployMode ?? this.defaultDeployMode,
+    defaultVersion: defaultVersion ?? this.defaultVersion,
+    defaultBuildCommand: defaultBuildCommand ?? this.defaultBuildCommand,
+    defaultStartCommand: defaultStartCommand ?? this.defaultStartCommand,
+    status: status ?? this.status,
+    isBuiltin: isBuiltin ?? this.isBuiltin,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  static final Relation<Application, App> apps =
+      HasManyRelation<Application, App>(
+        parentTable: 'applications',
+        childTable: 'apps',
+        name: 'apps',
+        childForeignKey: 'application_id',
+        childMeta: AppTable.metadata,
+      );
+
+  /// Preloaded apps; empty list when not preloaded.
+  List<App> get appsList => preloaded<List<App>>('apps') ?? const [];
+}
+
+class ApplicationTable {
+  ApplicationTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'applications',
+    column: 'id',
+  );
+  static const ColumnRef<String?> key = ColumnRef<String?>(
+    table: 'applications',
+    column: 'key',
+  );
+  static const ColumnRef<String> displayName = ColumnRef<String>(
+    table: 'applications',
+    column: 'display_name',
+  );
+  static const ColumnRef<String> deployModes = ColumnRef<String>(
+    table: 'applications',
+    column: 'deploy_modes',
+  );
+  static const ColumnRef<String> defaultDeployMode = ColumnRef<String>(
+    table: 'applications',
+    column: 'default_deploy_mode',
+  );
+  static const ColumnRef<String?> defaultVersion = ColumnRef<String?>(
+    table: 'applications',
+    column: 'default_version',
+  );
+  static const ColumnRef<String?> defaultBuildCommand = ColumnRef<String?>(
+    table: 'applications',
+    column: 'default_build_command',
+  );
+  static const ColumnRef<String?> defaultStartCommand = ColumnRef<String?>(
+    table: 'applications',
+    column: 'default_start_command',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'applications',
+    column: 'status',
+  );
+  static const ColumnRef<bool?> isBuiltin = ColumnRef<bool?>(
+    table: 'applications',
+    column: 'is_builtin',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'applications',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> installedAt = ColumnRef<DateTime?>(
+    table: 'applications',
+    column: 'installed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'applications',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'applications',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<Application> metadata = TableMeta<Application>(
+    tableName: 'applications',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'key',
+      'display_name',
+      'deploy_modes',
+      'default_deploy_mode',
+      'default_version',
+      'default_build_command',
+      'default_start_command',
+      'status',
+      'is_builtin',
+      'error_message',
+      'installed_at',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: Application.fromRow,
+  );
+}
+
+Query<Application> applications() =>
+    Query<Application>(ApplicationTable.metadata);
+
 class App with Preloadable {
   final int? id;
   final int projectId;
@@ -1019,10 +1239,13 @@ class App with Preloadable {
   final String? linuxUser;
   final String workDir;
   final int? internalPort;
+  final int? applicationId;
+  final String? deploymentMode;
   final String runtime;
   final String sourceType;
   final String? gitUrl;
   final String? gitBranch;
+  final String? sourceSubdir;
   final String? buildCommand;
   final String? startCommand;
   final String? healthCheckPath;
@@ -1066,10 +1289,13 @@ class App with Preloadable {
     this.linuxUser,
     required this.workDir,
     this.internalPort,
+    this.applicationId,
+    this.deploymentMode,
     required this.runtime,
     required this.sourceType,
     this.gitUrl,
     this.gitBranch,
+    this.sourceSubdir,
     this.buildCommand,
     this.startCommand,
     this.healthCheckPath,
@@ -1114,10 +1340,13 @@ class App with Preloadable {
     linuxUser: row['linux_user'] as String?,
     workDir: row['work_dir'] as String,
     internalPort: row['internal_port'] as int?,
+    applicationId: row['application_id'] as int?,
+    deploymentMode: row['deployment_mode'] as String?,
     runtime: row['runtime'] as String,
     sourceType: row['source_type'] as String,
     gitUrl: row['git_url'] as String?,
     gitBranch: row['git_branch'] as String?,
+    sourceSubdir: row['source_subdir'] as String?,
     buildCommand: row['build_command'] as String?,
     startCommand: row['start_command'] as String?,
     healthCheckPath: row['health_check_path'] as String?,
@@ -1172,10 +1401,13 @@ class App with Preloadable {
     'linux_user': linuxUser,
     'work_dir': workDir,
     'internal_port': internalPort,
+    'application_id': applicationId,
+    'deployment_mode': deploymentMode,
     'runtime': runtime,
     'source_type': sourceType,
     'git_url': gitUrl,
     'git_branch': gitBranch,
+    'source_subdir': sourceSubdir,
     'build_command': buildCommand,
     'start_command': startCommand,
     'health_check_path': healthCheckPath,
@@ -1232,10 +1464,13 @@ class App with Preloadable {
     String? linuxUser,
     String? workDir,
     int? internalPort,
+    int? applicationId,
+    String? deploymentMode,
     String? runtime,
     String? sourceType,
     String? gitUrl,
     String? gitBranch,
+    String? sourceSubdir,
     String? buildCommand,
     String? startCommand,
     String? healthCheckPath,
@@ -1278,10 +1513,13 @@ class App with Preloadable {
     linuxUser: linuxUser ?? this.linuxUser,
     workDir: workDir ?? this.workDir,
     internalPort: internalPort ?? this.internalPort,
+    applicationId: applicationId ?? this.applicationId,
+    deploymentMode: deploymentMode ?? this.deploymentMode,
     runtime: runtime ?? this.runtime,
     sourceType: sourceType ?? this.sourceType,
     gitUrl: gitUrl ?? this.gitUrl,
     gitBranch: gitBranch ?? this.gitBranch,
+    sourceSubdir: sourceSubdir ?? this.sourceSubdir,
     buildCommand: buildCommand ?? this.buildCommand,
     startCommand: startCommand ?? this.startCommand,
     healthCheckPath: healthCheckPath ?? this.healthCheckPath,
@@ -1325,6 +1563,15 @@ class App with Preloadable {
     parentForeignKey: 'project_id',
     childMeta: ProjectTable.metadata,
   );
+
+  static final Relation<App, Application> application =
+      BelongsToRelation<App, Application>(
+        parentTable: 'apps',
+        childTable: 'applications',
+        name: 'application',
+        parentForeignKey: 'application_id',
+        childMeta: ApplicationTable.metadata,
+      );
 
   static final Relation<App, SshKey> deployKey = BelongsToRelation<App, SshKey>(
     parentTable: 'apps',
@@ -1388,6 +1635,9 @@ class App with Preloadable {
   /// Preloaded project; null when not preloaded or absent.
   Project? get projectLoaded => preloaded<Project>('project');
 
+  /// Preloaded application; null when not preloaded or absent.
+  Application? get applicationLoaded => preloaded<Application>('application');
+
   /// Preloaded deployKey; null when not preloaded or absent.
   SshKey? get deployKeyLoaded => preloaded<SshKey>('deployKey');
 
@@ -1446,6 +1696,14 @@ class AppTable {
     table: 'apps',
     column: 'internal_port',
   );
+  static const ColumnRef<int?> applicationId = ColumnRef<int?>(
+    table: 'apps',
+    column: 'application_id',
+  );
+  static const ColumnRef<String?> deploymentMode = ColumnRef<String?>(
+    table: 'apps',
+    column: 'deployment_mode',
+  );
   static const ColumnRef<String> runtime = ColumnRef<String>(
     table: 'apps',
     column: 'runtime',
@@ -1461,6 +1719,10 @@ class AppTable {
   static const ColumnRef<String?> gitBranch = ColumnRef<String?>(
     table: 'apps',
     column: 'git_branch',
+  );
+  static const ColumnRef<String?> sourceSubdir = ColumnRef<String?>(
+    table: 'apps',
+    column: 'source_subdir',
   );
   static const ColumnRef<String?> buildCommand = ColumnRef<String?>(
     table: 'apps',
@@ -1610,10 +1872,13 @@ class AppTable {
       'linux_user',
       'work_dir',
       'internal_port',
+      'application_id',
+      'deployment_mode',
       'runtime',
       'source_type',
       'git_url',
       'git_branch',
+      'source_subdir',
       'build_command',
       'start_command',
       'health_check_path',

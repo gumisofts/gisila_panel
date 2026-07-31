@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRelative } from "@/lib/utils";
-import type { App } from "@/lib/types";
+import { DEPLOY_MODE_LABEL, type App } from "@/lib/types";
 
 export function OverviewTab({ app }: { app: App }) {
   return (
@@ -8,7 +8,15 @@ export function OverviewTab({ app }: { app: App }) {
       <Card>
         <CardHeader><CardTitle>Runtime</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <Row label="Runtime" value={app.runtime} />
+          <Row label="Application" value={app.runtime} mono />
+          <Row
+            label="Deployment mode"
+            value={
+              app.deploymentMode
+                ? DEPLOY_MODE_LABEL[app.deploymentMode] ?? app.deploymentMode
+                : "—"
+            }
+          />
           <Row label="Source" value={app.sourceType} />
           <Row label="Git URL" value={app.gitUrl ?? "—"} mono />
           <Row label="Branch" value={app.gitBranch ?? "—"} mono />

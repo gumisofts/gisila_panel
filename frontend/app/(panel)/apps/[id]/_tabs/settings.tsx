@@ -67,6 +67,7 @@ export function SettingsTab({
     name: app.name,
     gitUrl: app.gitUrl ?? "",
     gitBranch: app.gitBranch ?? "",
+    sourceSubdir: app.sourceSubdir ?? "",
     buildCommand: app.buildCommand ?? "",
     startCommand: app.startCommand ?? "",
     healthCheckPath: app.healthCheckPath ?? "",
@@ -110,6 +111,7 @@ export function SettingsTab({
       name: app.name,
       gitUrl: app.gitUrl ?? "",
       gitBranch: app.gitBranch ?? "",
+      sourceSubdir: app.sourceSubdir ?? "",
       buildCommand: app.buildCommand ?? "",
       startCommand: app.startCommand ?? "",
       healthCheckPath: app.healthCheckPath ?? "",
@@ -168,6 +170,7 @@ export function SettingsTab({
         name: form.name,
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
+        sourceSubdir: form.sourceSubdir || undefined,
         buildCommand: form.buildCommand || undefined,
         startCommand: form.startCommand || undefined,
         healthCheckPath: form.healthCheckPath || undefined,
@@ -302,6 +305,26 @@ export function SettingsTab({
                       onChange={(e) => set("gitBranch", e.target.value)}
                     />
                   </div>
+                </div>
+                <div>
+                  <Label htmlFor="s-source-subdir">
+                    Directory
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                      (optional — for monorepos)
+                    </span>
+                  </Label>
+                  <Input
+                    id="s-source-subdir"
+                    className="mt-1 font-mono text-sm"
+                    placeholder="e.g. apps/api"
+                    value={form.sourceSubdir}
+                    onChange={(e) => set("sourceSubdir", e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    If this repo contains multiple projects, set the path to
+                    the one to build and run. Leave blank to use the repo
+                    root. Takes effect on the next deploy.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="s-deploy-key">

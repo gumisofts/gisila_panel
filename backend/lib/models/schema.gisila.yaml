@@ -184,6 +184,61 @@ Project:
       type: timestamp
       is_null: false
 
+# An installable runtime/language stack (Python, Dart, Node, …) that the panel
+# can deploy apps against. Applications are managed independently of the panel
+# itself — installed, updated, or removed on a given host without touching
+# panel code — mirroring the ManagedService / PostgresInstance pattern below.
+Application:
+  columns:
+    # Stable machine identifier, e.g. python | dart | node | go | rust | bun |
+    # zig | binary | celery | static. Matches the historical `App.runtime`
+    # values so existing apps migrate cleanly.
+    key:
+      type: varchar
+      is_unique: true
+      is_index: true
+    display_name:
+      type: varchar
+      is_null: false
+    # Deployment mechanisms this Application supports, comma-separated subset
+    # of: build_execute | direct_run | static_publish.
+    deploy_modes:
+      type: varchar
+      is_null: false
+    default_deploy_mode:
+      type: varchar
+      is_null: false
+    default_version:
+      type: varchar
+      is_null: true
+    default_build_command:
+      type: varchar
+      is_null: true
+    default_start_command:
+      type: varchar
+      is_null: true
+    # pending | installing | installed | updating | removing | disabled | failed
+    status:
+      type: varchar
+      default: pending
+    # true for the curated set shipped in-repo with the panel. Reserved for a
+    # future non-builtin (custom/uploaded) path.
+    is_builtin:
+      type: boolean
+      default: true
+    error_message:
+      type: text
+      is_null: true
+    installed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
 App:
   columns:
     project:
@@ -211,6 +266,19 @@ App:
       is_unique: true
       is_index: true
     # Runtime + source.
+    # The Application this app deploys against (installed independently of the
+    # panel — see the Application model below). `runtime` is kept in sync with
+    # `application.key` for cheap denormalized reads / backward compatibility.
+    application:
+      type: foreign_key
+      references: Application
+      is_null: true
+      reverse_name: apps
+      on_delete: set null
+    # build_execute | direct_run — must be one of application.deploy_modes.
+    deployment_mode:
+      type: varchar
+      is_null: true
     runtime:
       type: varchar          # dart | go | rust | zig | bun | node | python | binary | celery | static
       is_null: false
@@ -223,6 +291,9 @@ App:
     git_branch:
       type: varchar
       is_null: true
+    source_subdir:
+      type: varchar
+      is_null: true          # optional subdirectory within the repo to build/run from (monorepos)
     build_command:
       type: varchar
       is_null: true

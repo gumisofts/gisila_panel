@@ -189,10 +189,13 @@ services:
     restart: unless-stopped
     working_dir: /workspace/gisila-panel/frontend
     environment:
-      # In dev the browser calls the API directly; env vars are baked into the
-      # JS bundle at build time by Vite.
-      VITE_API_URL: http://localhost:8000
-      VITE_WS_URL: ws://localhost:8000
+      # VITE_API_URL / VITE_WS_URL are deliberately NOT set. Vite bakes those
+      # into the JS bundle at build time, and this service writes that bundle
+      # to the git-tracked backend/web/ — so any absolute URL set here ends up
+      # committed and shipped to production by infra/install.sh. Leaving them
+      # unset makes lib/api.ts fall back to origin-relative URLs, which are
+      # correct both here (the Dart API serves the panel on localhost:8000)
+      # and on a real deployment.
       # Enable polling so file-watch works inside Docker bind mounts.
       CHOKIDAR_USEPOLLING: "true"
     volumes:

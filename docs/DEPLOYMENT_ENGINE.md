@@ -20,6 +20,7 @@ Redis lists used as work queues:
 | `gisila:queue:lifecycle` | `LifecycleService.{start,stop,restart}` | worker | `{appId, action}` |
 | `gisila:queue:vhosts` | `DomainsService` | worker | `{appId, reason}` |
 | `gisila:queue:ssl` | `DomainsService.issueCert` | worker | `{appId, domainId, hostname}` |
+| `gisila:queue:applications` | `ApplicationService.{install,remove}` | `ApplicationWorker` | `{action, applicationId, version?}` |
 
 Redis pubsub channels for live logs:
 
@@ -50,25 +51,43 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 | Subcommand | What it does | Idempotent? |
 |---|---|---|
 | `provision` | Ensure Linux user + work-dir layout + `.env` file | ✓ |
-| `build` | Fetch source (git / zip / binary) and run runtime build | ✓ (per artifact) |
+| `build` | Fetch source (git / zip / binary) and dispatch to the app's `RuntimePlugin.build()` via `--deploy-mode` | ✓ (per artifact) |
 | `apply-unit` | Render + write `gisila-<user>.service` and AppArmor profile, reload systemd | ✓ |
 | `apply-vhost` | Render + write nginx vhost, `nginx -t`, reload | ✓ |
 | `issue-cert` | `certbot --nginx -d <host>` + reload nginx | ✓ (skip if cert exists & valid) |
 | `start` / `stop` / `restart` | `systemctl <action> gisila-<user>.service` | ✓ |
 | `uninstall` | Stop + disable unit, drop unit / profile / vhost | ✓ |
+| `runtime install --key <k> [--version <v>]` | Dispatch to `RuntimePlugin.installToolchain()` (pyenv/fnm/SDK setup) | ✓ |
+| `runtime remove --key <k>` | Dispatch to `RuntimePlugin.removeToolchain()` | ✓ |
+| `runtime status --key <k>` | Report whether the plugin's toolchain is present | ✓ |
 
-## Runtime build matrix
+## Runtime plugin table
 
-| Runtime | Default build command | Default start command |
-|---|---|---|
-| dart | `dart pub get && dart compile exe bin/server.dart -o build/app` | `<work-dir>/current/app` |
-| go | `go build -o build/app ./...` | `<work-dir>/current/app` |
-| rust | `cargo build --release` | as specified by user |
-| node | `npm ci` | `node dist/index.js` |
-| bun | `bun install` | `bun run start` |
-| python | `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` | `.venv/bin/python …` |
-| zig | as specified | as specified |
-| binary | (none — drop in place) | `<work-dir>/current/app` |
+Runtime support is no longer a hand-written `switch (runtime)` — each row
+below is an independent `RuntimePlugin` (`agent/lib/runtimes/`), registered
+in `RuntimeRegistry` and backed by an `Application` catalog entry
+(`backend/lib/services/application_catalog.dart`). Adding a new runtime
+means adding a new plugin + catalog entry, not editing this table's
+implementation.
+
+| Runtime | Plugin | Supported deploy modes | Default build command | Default start command |
+|---|---|---|---|---|
+| dart | `DartPlugin` | `build_execute` | `dart pub get && dart compile exe bin/server.dart -o build/app` | `<work-dir>/current/app` |
+| go | `GoPlugin` | `build_execute` | `go build -o build/app ./...` | `<work-dir>/current/app` |
+| rust | `RustPlugin` | `build_execute` | `cargo build --release` | as specified by user |
+| node | `NodePlugin` | `build_execute` | `npm ci` | `node dist/index.js` |
+| bun | `BunPlugin` | `build_execute` | `bun install` | `bun run start` |
+| celery | `CeleryPlugin` | `build_execute` | `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` | `.venv/bin/celery …` |
+| python | `PythonPlugin` | `direct_run` | (none — deps only) `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` | `.venv/bin/python …` |
+| binary | `BinaryPlugin` | `direct_run` | (none — drop in place) | `<work-dir>/current/app` |
+| zig | `ZigPlugin` | `build_execute` | as specified | as specified |
+| static | `StaticPlugin` | `static_publish` | (none — nginx serves files) | n/a (no process) |
+
+Modes are declared per-Application (`deploy_modes`) and enforced per-App
+(`App.deployment_mode`, validated against its Application's supported
+modes); `build_execute` compiles/packages before running the artifact,
+`direct_run` runs the interpreter/pre-built binary against the source in
+place, and `static_publish` skips the process entirely.
 
 The build is always run as the **app's** Linux user via `runuser -u`, so
 even a compromised build step can only touch the app's own work-dir.

@@ -1,3 +1,5 @@
+import 'package:gisila_agent/runtime/runtime_registry.dart';
+
 /// Strict input validation for everything the agent shells out with.
 ///
 /// All routines throw [ArgumentError] on rejection. The agent CLI maps
@@ -7,12 +9,11 @@ class AgentValidators {
   static final _userRe = RegExp(r'^app_[a-z0-9]{6,}$');
   static final _workDirRe =
       RegExp(r'^/srv/apps/app_[a-z0-9]{6,}(/[a-zA-Z0-9_.\-]+)*/?$');
-  static final _runtimeRe =
-      RegExp(r'^(dart|go|rust|zig|bun|node|python|binary|celery|static)$');
   static final _sourceTypeRe = RegExp(r'^(binary|git|zip)$');
   static final _hostnameRe =
       RegExp(r'^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$');
   static final _commandRe = RegExp(r'^[^|&;`$<>]+$');
+  static final _pathSegmentRe = RegExp(r'^[a-zA-Z0-9_.\-]+$');
 
   static String requireUser(String? raw) {
     if (raw == null || !_userRe.hasMatch(raw)) {
@@ -36,8 +37,11 @@ class AgentValidators {
     return p;
   }
 
+  /// Validated against the [RuntimeRegistry] — the set of installed
+  /// Application plugins — rather than a compiled-in allowlist, so a newly
+  /// registered runtime plugin is automatically valid with no changes here.
   static String requireRuntime(String? raw) {
-    if (raw == null || !_runtimeRe.hasMatch(raw)) {
+    if (raw == null || !RuntimeRegistry.has(raw)) {
       throw ArgumentError('Invalid --runtime: $raw');
     }
     return raw;
@@ -63,5 +67,25 @@ class AgentValidators {
       throw ArgumentError('Refusing potentially unsafe command: $raw');
     }
     return raw;
+  }
+
+  /// Validate a monorepo subdirectory (relative path under the repo root
+  /// where the actual project to build/run lives). Rejects absolute paths,
+  /// `.`/`..` traversal segments and any shell/glob metacharacters — this
+  /// value is spliced directly into filesystem paths the agent runs as root.
+  /// Returns null (meaning "repo root") for a null/blank/root ("." or "/")
+  /// input, and the cleaned (no leading/trailing slashes) path otherwise.
+  static String? optionalSourceSubdir(String? raw) {
+    if (raw == null) return null;
+    final cleaned =
+        raw.trim().replaceAll(RegExp(r'^/+'), '').replaceAll(RegExp(r'/+$'), '');
+    if (cleaned.isEmpty || cleaned == '.') return null;
+    final segments = cleaned.split('/');
+    for (final s in segments) {
+      if (s.isEmpty || s == '.' || s == '..' || !_pathSegmentRe.hasMatch(s)) {
+        throw ArgumentError('Invalid --source-subdir: $raw');
+      }
+    }
+    return segments.join('/');
   }
 }

@@ -7,8 +7,11 @@ import 'package:gisila_agent/databases/mongodb.dart';
 import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
+import 'package:gisila_agent/runtime/deploy_mode.dart';
 import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
+import 'package:gisila_agent/runtime/runtime_plugin.dart';
+import 'package:gisila_agent/runtime/runtime_registry.dart';
 import 'package:gisila_agent/runtime/validators.dart';
 import 'package:gisila_agent/services/handler.dart';
 
@@ -30,6 +33,9 @@ Future<void> main(List<String> args) async {
         break;
       case 'build':
         await _build(rest);
+        break;
+      case 'runtime':
+        await _runtime(rest);
         break;
       case 'apply-unit':
         await _applyUnit(rest);
@@ -128,6 +134,8 @@ Future<void> _build(List<String> args) async {
     p.addOption('source-type', mandatory: true);
     p.addOption('git-url');
     p.addOption('git-branch');
+    // Monorepo support: build/run from a subdirectory of the cloned repo.
+    p.addOption('source-subdir');
     p.addOption('build-command');
     p.addOption('artifact-path');
     // SSH deploy key path (optional — for private git repos).
@@ -141,6 +149,11 @@ Future<void> _build(List<String> args) async {
     p.addOption('go-version');
     p.addOption('rust-version');
     p.addOption('bun-version');
+    // Fallback version flag for runtimes without their own named flag above.
+    p.addOption('version');
+    // build_execute | direct_run | static_publish — forwarded to the plugin
+    // so it can branch when its Application supports more than one mode.
+    p.addOption('deploy-mode');
     // App env vars (JSON object) so build-time Django commands — migrate,
     // collectstatic — run against the same DB/config as the runtime unit.
     p.addOption('env-json');
@@ -155,6 +168,8 @@ Future<void> _build(List<String> args) async {
       AgentValidators.requireSourceType(r['source-type'] as String?);
   final buildCommand =
       AgentValidators.optionalCommand(r['build-command'] as String?);
+  final sourceSubdir =
+      AgentValidators.optionalSourceSubdir(r['source-subdir'] as String?);
   final noCache = r['no-cache'] as bool? ?? false;
   // Drop every cache marker up front so a force-rebuild starts from a clean
   // slate and re-records fresh fingerprints as each step reinstalls.
@@ -206,84 +221,67 @@ Future<void> _build(List<String> args) async {
       break;
   }
 
-  switch (runtime) {
-    case 'dart':
-      await Builders.buildDart(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        dartVersion: r['dart-version'] as String?,
-      );
+  // Runtime-specific version pin: each plugin owns exactly one of these CLI
+  // flags today (python/celery share --python-version). Falls back to
+  // --version for any future plugin that doesn't need a runtime-specific
+  // flag name of its own.
+  final version = <String, String?>{
+        'dart': r['dart-version'] as String?,
+        'go': r['go-version'] as String?,
+        'rust': r['rust-version'] as String?,
+        'node': r['node-version'] as String?,
+        'bun': r['bun-version'] as String?,
+        'python': r['python-version'] as String?,
+        'celery': r['python-version'] as String?,
+      }[runtime] ??
+      r['version'] as String?;
+
+  await RuntimeRegistry.get(runtime).build(RuntimeBuildContext(
+    workDir: workDir,
+    user: user,
+    buildCommand: buildCommand,
+    version: version,
+    appEnv: appEnv,
+    noCache: noCache,
+    sourceSubdir: sourceSubdir,
+    deployMode: DeployMode.tryParse(r['deploy-mode'] as String?),
+  ));
+}
+
+/// `gisila-agent runtime install|remove|status --key <k> [--version <v>]`
+///
+/// Promotes toolchain provisioning from something that happens lazily on an
+/// app's first deploy into an explicit, admin-triggered step — the host-side
+/// half of "Application Management" (install/update/remove independently of
+/// the panel itself).
+Future<void> _runtime(List<String> args) async {
+  if (args.isEmpty) {
+    throw ArgumentError('Usage: gisila-agent runtime <install|remove|status>');
+  }
+  final action = args.first;
+  final r = _parse(args.sublist(1), (p) {
+    p.addOption('key', mandatory: true);
+    p.addOption('version');
+  });
+  final key = r['key'] as String?;
+  if (key == null || !RuntimeRegistry.has(key)) {
+    throw ArgumentError('Unknown --key: $key');
+  }
+  final plugin = RuntimeRegistry.get(key);
+  final version = r['version'] as String?;
+
+  switch (action) {
+    case 'install':
+      await plugin.installToolchain(version: version);
       break;
-    case 'go':
-      await Builders.buildGo(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        goVersion: r['go-version'] as String?,
-      );
+    case 'remove':
+      await plugin.removeToolchain(version: version);
       break;
-    case 'rust':
-      await Builders.buildRust(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        rustVersion: r['rust-version'] as String?,
-      );
-      break;
-    case 'node':
-      await Builders.buildNode(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        nodeVersion: r['node-version'] as String?,
-        appEnv: appEnv,
-        noCache: noCache,
-      );
-      break;
-    case 'bun':
-      await Builders.buildBun(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        bunVersion: r['bun-version'] as String?,
-        appEnv: appEnv,
-        noCache: noCache,
-      );
-      break;
-    case 'python':
-      await Builders.buildPython(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        pythonVersion: r['python-version'] as String?,
-        appEnv: appEnv,
-        noCache: noCache,
-      );
-      break;
-    case 'celery':
-      await Builders.buildCelery(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        pythonVersion: r['python-version'] as String?,
-        appEnv: appEnv,
-        noCache: noCache,
-      );
-      break;
-    case 'static':
-      await Builders.buildStatic(
-        workDir: workDir,
-        user: user,
-        buildCommand: buildCommand,
-        appEnv: appEnv,
-        noCache: noCache,
-      );
-      break;
-    case 'zig':
-    case 'binary':
-      // Nothing more to do — the executable is already in place.
-      break;
+    case 'status':
+      _ok({'key': key, 'installed': true});
+      return;
+    default:
+      throw ArgumentError('Unknown runtime action: $action');
   }
 }
 
@@ -296,6 +294,9 @@ Future<void> _applyUnit(List<String> args) async {
     p.addOption('port');
     p.addOption('runtime', defaultsTo: 'binary');
     p.addOption('start-command');
+    // Monorepo support: the built project lives in a subdirectory of the
+    // cloned repo instead of its root.
+    p.addOption('source-subdir');
     p.addOption('memory-mb', defaultsTo: '256');
     p.addOption('cpu-quota', defaultsTo: '50');
     p.addOption('tasks-max', defaultsTo: '100');
@@ -375,11 +376,19 @@ Future<void> _applyUnit(List<String> args) async {
   final isPython = runtime == 'python';
   final isJit = runtime == 'node' || runtime == 'bun';
 
+  // Monorepo support: the project actually being run may live in a
+  // subdirectory of the cloned repo rather than its root.
+  final sourceSubdir =
+      AgentValidators.optionalSourceSubdir(r['source-subdir'] as String?);
+  final src = Builders.resolveSrc(workDir, sourceSubdir);
+
   // Node/Bun apps run from the build source tree (where package.json /
   // node_modules live). [unitWorkingDir] overrides that when a framework ships a
   // self-contained output (Next standalone). [unitWritableSource] grants the
   // tree write access so server frameworks can write their runtime caches.
-  String? unitWorkingDir;
+  // Python (gunicorn) also runs with its cwd set explicitly here so a
+  // configured source subdirectory (not just the repo root) is honoured.
+  String? unitWorkingDir = isPython ? src : null;
   var unitWritableSource = false;
 
   String startCommand;
@@ -434,7 +443,6 @@ Future<void> _applyUnit(List<String> args) async {
   } else if (isJit) {
     // Node / Bun with no explicit start command: detect the framework from the
     // built source tree and generate the right command + working directory.
-    final src = '$workDir/releases/current_build';
     final plan = NodeFramework.plan(src: src, port: port, runtime: runtime);
     if (plan.isStaticSpa) {
       throw ArgumentError(
@@ -707,12 +715,15 @@ Future<void> _exec(List<String> args) async {
     p.addOption('user', mandatory: true);
     p.addOption('work-dir', mandatory: true);
     p.addOption('runtime', defaultsTo: 'binary');
+    p.addOption('source-subdir');
     p.addOption('command', mandatory: true);
     p.addOption('timeout', defaultsTo: '300'); // seconds
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
   final runtime = r['runtime'] as String;
+  final sourceSubdir =
+      AgentValidators.optionalSourceSubdir(r['source-subdir'] as String?);
   final command = (r['command'] as String?)?.trim() ?? '';
   if (command.isEmpty) throw ArgumentError('--command is required');
   final timeout = int.tryParse(r['timeout'] as String? ?? '300') ?? 300;
@@ -724,8 +735,9 @@ Future<void> _exec(List<String> args) async {
   // ERR_PNPM_NO_PKG_MANIFEST. Only binary/static keep their artifact in current/.
   final isSourceTree =
       isPython || runtime == 'node' || runtime == 'bun';
-  final runDir =
-      isSourceTree ? '$workDir/releases/current_build' : '$workDir/current';
+  final runDir = isSourceTree
+      ? Builders.resolveSrc(workDir, sourceSubdir)
+      : '$workDir/current';
   final activate = isPython
       ? '[ -f .venv/bin/activate ] && source .venv/bin/activate; '
       : '';
@@ -3879,7 +3891,11 @@ Subcommands:
   build         --app-id ID --user app_xxx --work-dir PATH \\
                 --runtime RT --source-type SRC \\
                 [--git-url URL] [--git-branch B] \\
-                [--build-command CMD] [--artifact-path PATH]
+                [--build-command CMD] [--artifact-path PATH] \\
+                [--deploy-mode build_execute|direct_run|static_publish]
+  runtime       install|remove|status --key RT [--version V]
+                  (installs/removes a runtime's toolchain independently of
+                   any specific app — the Application Management lifecycle)
   apply-unit    --app-id ID --user app_xxx --work-dir PATH --port N \\
                 [--start-command CMD] [--env-json JSON] \\
                 [--memory-mb MB] [--cpu-quota PCT] [--tasks-max N]

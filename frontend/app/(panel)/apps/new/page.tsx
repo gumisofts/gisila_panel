@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "@/compat/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -25,22 +25,18 @@ import {
 } from "@/components/ui/dialog";
 import { api, fetcher } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { App, ListResponse, Project, SshKey, Team } from "@/lib/types";
+import type {
+  App,
+  Application,
+  DeployMode,
+  ListResponse,
+  Project,
+  SshKey,
+  Team,
+} from "@/lib/types";
+import { DEPLOY_MODE_LABEL } from "@/lib/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const RUNTIMES = [
-  { id: "dart",   label: "Dart",    group: "compiled" },
-  { id: "go",     label: "Go",      group: "compiled" },
-  { id: "rust",   label: "Rust",    group: "compiled" },
-  { id: "zig",    label: "Zig",     group: "compiled" },
-  { id: "bun",    label: "Bun",     group: "js" },
-  { id: "node",   label: "Node.js", group: "js" },
-  { id: "python", label: "Python",  group: "python" },
-  { id: "celery", label: "Celery",  group: "python" },
-  { id: "static", label: "Static",  group: "static" },
-  { id: "binary", label: "Binary",  group: "compiled" },
-];
 
 // Common CPython releases — the panel installs any of these via pyenv.
 const PYTHON_VERSIONS = [
@@ -86,6 +82,10 @@ export default function NewAppPage() {
   const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
   const teams = useSWR<ListResponse<Team>>("/teams/", fetcher);
   const sshKeys = useSWR<{ results: SshKey[] }>("/me/security/ssh-keys", fetcher);
+  const applications = useSWR<ListResponse<Application>>("/applications/", fetcher);
+  const installedApps = (applications.data?.results ?? []).filter(
+    (a) => a.status === "installed",
+  );
 
   // Quick project-create dialog state
   const [projDialog, setProjDialog] = useState(false);
@@ -97,9 +97,12 @@ export default function NewAppPage() {
     projectId: 0,
     name: "",
     runtime: "dart",
+    applicationId: 0,
+    deploymentMode: "" as DeployMode | "",
     sourceType: "git",
     gitUrl: "",
     gitBranch: "main",
+    sourceSubdir: "",
     buildCommand: "",
     startCommand: "",
     // Python-specific
@@ -149,6 +152,30 @@ export default function NewAppPage() {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  const selectedApplication = installedApps.find(
+    (a) => a.id === form.applicationId,
+  );
+  const applicationModes = (selectedApplication?.deployModes.split(",").filter(
+    Boolean,
+  ) ?? []) as DeployMode[];
+
+  function selectApplication(app: Application) {
+    setForm((f) => ({
+      ...f,
+      runtime: app.key,
+      applicationId: app.id,
+      deploymentMode: app.defaultDeployMode,
+    }));
+  }
+
+  // Default to the first installed Application once the catalog loads.
+  useEffect(() => {
+    if (form.applicationId === 0 && installedApps.length > 0) {
+      selectApplication(installedApps[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installedApps.length]);
+
   async function createProject(e: React.FormEvent) {
     e.preventDefault();
     setCreatingProj(true);
@@ -175,12 +202,15 @@ export default function NewAppPage() {
       const payload: Record<string, unknown> = {
         projectId: form.projectId,
         name: form.name,
+        applicationId: form.applicationId || undefined,
         runtime: form.runtime,
+        deploymentMode: form.deploymentMode || undefined,
         sourceType: form.sourceType,
         // Static sites are served directly by Nginx and have no listening port.
         ...(isStatic ? {} : { internalPort: Number(form.internalPort) }),
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
+        sourceSubdir: form.sourceSubdir || undefined,
         buildCommand: form.buildCommand || undefined,
         startCommand: form.startCommand || undefined,
       };
@@ -290,26 +320,68 @@ export default function NewAppPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Runtime</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {RUNTIMES.map(({ id, label }) => (
+                <Label>Application</Label>
+                {installedApps.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No Applications installed yet.{" "}
+                    <a href="/applications" className="underline">
+                      Install one
+                    </a>{" "}
+                    from Application Management first.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {installedApps.map((app) => (
+                      <button
+                        key={app.id}
+                        type="button"
+                        onClick={() => selectApplication(app)}
+                        className={cn(
+                          "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                          form.applicationId === app.id
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                        )}
+                      >
+                        {app.displayName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Deployment mode — only shown when the selected Application supports
+                more than one mechanism (e.g. Node/Bun: build vs. run as-is). */}
+            {applicationModes.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Deployment mode</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {applicationModes.map((m) => (
                     <button
-                      key={id}
+                      key={m}
                       type="button"
-                      onClick={() => set("runtime", id)}
+                      onClick={() => set("deploymentMode", m)}
                       className={cn(
-                        "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                        form.runtime === id
-                          ? "border-primary bg-primary/10 text-foreground"
-                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                        "flex flex-col items-start rounded-md border p-3 text-left transition-colors",
+                        form.deploymentMode === m
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-card hover:border-primary/40",
                       )}
                     >
-                      {label}
+                      <span className="text-sm font-medium">
+                        {DEPLOY_MODE_LABEL[m] ?? m}
+                      </span>
+                      <span className="mt-0.5 text-xs text-muted-foreground">
+                        {m === "build_execute"
+                          ? "Compile/package first, then execute the built artifact."
+                          : "Run the source directly — no build step."}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Port — static sites are served directly by Nginx, no port. */}
             {!isStatic && (
@@ -874,6 +946,26 @@ export default function NewAppPage() {
                       onChange={(e) => set("gitBranch", e.target.value)}
                     />
                   </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="sourceSubdir">
+                    Directory
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                      (optional — for monorepos)
+                    </span>
+                  </Label>
+                  <Input
+                    id="sourceSubdir"
+                    placeholder="e.g. apps/api"
+                    value={form.sourceSubdir}
+                    onChange={(e) => set("sourceSubdir", e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    If this repo contains multiple projects, set the path to
+                    the one to build and run. Leave blank to use the repo
+                    root.
+                  </p>
                 </div>
 
                 {/* Deploy key picker */}

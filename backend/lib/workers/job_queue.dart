@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:gisila_panel/config.dart';
-import 'package:redis/redis.dart';
+import 'package:redis/redis.dart' show Command;
 
 /// A minimal blocking-pop Redis job consumer.
 ///
@@ -25,10 +25,8 @@ class JobQueue {
   }
 
   Future<void> run() async {
-    final host = env.getOrElse('REDIS_HOST', () => 'localhost');
-    final port = int.parse(env.getOrElse('REDIS_PORT', () => '6380'));
-    _cmd = await RedisConnection().connect(host, port);
-    logger.i('worker: connected to redis $host:$port');
+    _cmd = await connectRedis();
+    logger.i('worker: connected to redis $redisHost:$redisPort');
     logger.i('worker: queues = ${_handlers.keys.join(', ')}');
 
     while (true) {
@@ -48,8 +46,8 @@ class JobQueue {
         logger.e('worker: redis error — reconnecting', error: e, stackTrace: st);
         await Future<void>.delayed(const Duration(seconds: 2));
         try {
-          _cmd = await RedisConnection().connect(host, port);
-          logger.i('worker: reconnected to redis $host:$port');
+          _cmd = await connectRedis();
+          logger.i('worker: reconnected to redis $redisHost:$redisPort');
         } catch (reconnectErr) {
           logger.e('worker: redis reconnect failed', error: reconnectErr);
         }

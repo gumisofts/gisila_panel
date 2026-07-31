@@ -43,6 +43,10 @@ class ExecWorker {
         '--user', app.linuxUser!,
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
+        if (app.sourceSubdir != null && app.sourceSubdir!.isNotEmpty) ...[
+          '--source-subdir',
+          app.sourceSubdir!,
+        ],
         '--command', command,
       ], execId);
       await _log(execId, 'system', '__EXIT__:$exit');

@@ -3,9 +3,10 @@ import { toast } from "sonner";
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 // ── WebSocket base URL ────────────────────────────────────────────────────────
-// In dev VITE_WS_URL=ws://localhost:8000 is set in .env.
-// In production (panel served from the same Dart origin) it is derived
-// automatically from the current page location.
+// Derived from the current page location, since the panel is always served
+// from the same origin as the Dart API. Only set VITE_WS_URL when running the
+// UI on a different origin than the API — never for a build whose output lands
+// in the git-tracked backend/web/, as that value is baked into the bundle.
 export function getWsBase(): string {
   const configured = import.meta.env.VITE_WS_URL;
   if (configured) return `${configured}/ws`;

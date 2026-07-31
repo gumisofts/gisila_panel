@@ -4,6 +4,7 @@ import Link from "@/compat/link";
 import { usePathname, useRouter } from "@/compat/navigation";
 import {
   LayoutDashboard,
+  Blocks,
   Boxes,
   FolderOpen,
   Globe,
@@ -44,6 +45,7 @@ const NAV_SECTIONS = [
   {
     label: "Infrastructure",
     items: [
+      { href: "/applications", label: "Applications", icon: Blocks },
       { href: "/services",  label: "Services",  icon: Layers },
       { href: "/databases", label: "Databases", icon: Database },
       { href: "/storage",   label: "Storage",   icon: HardDrive },

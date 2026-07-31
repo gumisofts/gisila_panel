@@ -65,10 +65,17 @@ export interface App {
   linuxUser: string;
   workDir: string;
   internalPort: number;
+  // The installed Application this app deploys against. `runtime` is kept
+  // in sync with `application.key` for backward compatibility.
+  applicationId?: ID | null;
+  deploymentMode?: DeployMode | null;
   runtime: string;
   sourceType: "binary" | "git" | "zip";
   gitUrl?: string | null;
   gitBranch?: string | null;
+  // Optional subdirectory within the repo to build/run from, so a single
+  // monorepo can be deployed by pointing at just one of its projects.
+  sourceSubdir?: string | null;
   buildCommand?: string | null;
   startCommand?: string | null;
   healthCheckPath?: string | null;
@@ -194,6 +201,61 @@ export interface BuildLog {
 export interface ListResponse<T> {
   results: T[];
 }
+
+// ── Applications (runtime/language stacks) ────────────────────────────────────
+//
+// An Application is an installable runtime/language stack (Python, Dart,
+// Node, …) managed independently of the panel itself — see the
+// "Application Management" section. Apps pick one of the *installed*
+// Applications as their deployment target.
+
+export type DeployMode = "build_execute" | "direct_run" | "static_publish";
+
+export type ApplicationStatus =
+  | "pending"
+  | "installing"
+  | "installed"
+  | "updating"
+  | "removing"
+  | "disabled"
+  | "failed";
+
+export interface ApplicationDef {
+  key: string;
+  displayName: string;
+  description: string;
+  deployModes: DeployMode[];
+  defaultDeployMode: DeployMode;
+  defaultVersion?: string | null;
+  defaultBuildCommand?: string | null;
+  defaultStartCommand?: string | null;
+  versionHint?: string | null;
+  docsUrl?: string | null;
+}
+
+export interface Application {
+  id: ID;
+  key: string;
+  displayName: string;
+  deployModes: string; // csv, e.g. "build_execute,direct_run"
+  defaultDeployMode: DeployMode;
+  defaultVersion?: string | null;
+  defaultBuildCommand?: string | null;
+  defaultStartCommand?: string | null;
+  status: ApplicationStatus;
+  isBuiltin?: boolean;
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  _def?: ApplicationDef; // injected by the retrieve endpoint
+}
+
+export const DEPLOY_MODE_LABEL: Record<DeployMode, string> = {
+  build_execute: "Build → Execute",
+  direct_run: "Direct Run",
+  static_publish: "Static Publish",
+};
 
 // ── Managed services ─────────────────────────────────────────────────────────
 

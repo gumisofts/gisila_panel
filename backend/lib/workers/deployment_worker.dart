@@ -162,6 +162,13 @@ class DeploymentWorker {
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
         if (forceRebuild) '--no-cache',
+        // Which of the Application's supported deploy_modes this app uses —
+        // lets a plugin branch between compiling and a dependency-only
+        // prepare when its Application supports both.
+        if (app.deploymentMode != null && app.deploymentMode!.isNotEmpty) ...[
+          '--deploy-mode',
+          app.deploymentMode!,
+        ],
         // App env vars are needed at build time across runtimes:
         //  - Django (python/celery): migrate/collectstatic must reach the same
         //    DB/config as the runtime unit.
@@ -172,6 +179,12 @@ class DeploymentWorker {
         '--env-json', jsonEncode(envMap),
         if (app.gitUrl != null) ...['--git-url', app.gitUrl!],
         if (app.gitBranch != null) ...['--git-branch', app.gitBranch!],
+        // Monorepo support: build/run from a subdirectory of the cloned repo
+        // instead of its root.
+        if (app.sourceSubdir != null && app.sourceSubdir!.isNotEmpty) ...[
+          '--source-subdir',
+          app.sourceSubdir!,
+        ],
         if (app.buildCommand != null && app.buildCommand!.isNotEmpty) ...[
           '--build-command',
           app.buildCommand!
@@ -214,6 +227,10 @@ class DeploymentWorker {
         if (app.internalPort != null) ...['--port', '${app.internalPort}'],
         '--runtime', app.runtime,
         '--env-json', jsonEncode(envMap),
+        if (app.sourceSubdir != null && app.sourceSubdir!.isNotEmpty) ...[
+          '--source-subdir',
+          app.sourceSubdir!,
+        ],
         if (app.startCommand != null) ...['--start-command', app.startCommand!],
         '--memory-mb', '${app.memoryMbLimit ?? 256}',
         '--cpu-quota', '${app.cpuQuotaPercent ?? 50}',
@@ -290,9 +307,16 @@ class DeploymentWorker {
             (app.staticRoot != null && app.staticRoot!.isNotEmpty)
                 ? app.staticRoot!
                 : '';
+        // Monorepo support: the cloned repo root stays at current_build, but
+        // the actual project (and therefore its build output) may live in a
+        // subdirectory of it.
+        final sourceRoot =
+            (app.sourceSubdir != null && app.sourceSubdir!.isNotEmpty)
+                ? '${app.workDir}/releases/current_build/${app.sourceSubdir}'
+                : '${app.workDir}/releases/current_build';
         final buildOutput = staticRoot.isNotEmpty
-            ? '${app.workDir}/releases/current_build/$staticRoot'
-            : '${app.workDir}/releases/current_build';
+            ? '$sourceRoot/$staticRoot'
+            : sourceRoot;
         await _runAgent([
           'apply-vhost',
           '--app-id', '${app.id}',

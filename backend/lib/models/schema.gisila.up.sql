@@ -74,6 +74,24 @@ CREATE TABLE "projects" (
 );
 
 
+CREATE TABLE "applications" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "key" VARCHAR(255) UNIQUE,
+  "display_name" VARCHAR(255) NOT NULL,
+  "deploy_modes" VARCHAR(255) NOT NULL,
+  "default_deploy_mode" VARCHAR(255) NOT NULL,
+  "default_version" VARCHAR(255),
+  "default_build_command" VARCHAR(255),
+  "default_start_command" VARCHAR(255),
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "is_builtin" BOOLEAN DEFAULT TRUE,
+  "error_message" TEXT,
+  "installed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
 CREATE TABLE "apps" (
   "id" BIGSERIAL PRIMARY KEY,
   "project_id" INTEGER NOT NULL,
@@ -82,10 +100,13 @@ CREATE TABLE "apps" (
   "linux_user" VARCHAR(255) UNIQUE,
   "work_dir" VARCHAR(255) NOT NULL,
   "internal_port" INTEGER UNIQUE,
+  "application_id" INTEGER,
+  "deployment_mode" VARCHAR(255),
   "runtime" VARCHAR(255) NOT NULL,
   "source_type" VARCHAR(255) NOT NULL,
   "git_url" VARCHAR(255),
   "git_branch" VARCHAR(255),
+  "source_subdir" VARCHAR(255),
   "build_command" VARCHAR(255),
   "start_command" VARCHAR(255),
   "health_check_path" VARCHAR(255),
@@ -430,6 +451,7 @@ ALTER TABLE "ssh_keys" ADD CONSTRAINT "ssh_keys_user_fkey" FOREIGN KEY ("user_id
 ALTER TABLE "projects" ADD CONSTRAINT "projects_team_fkey" FOREIGN KEY ("team_id") REFERENCES "teams" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "apps" ADD CONSTRAINT "apps_project_fkey" FOREIGN KEY ("project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "apps" ADD CONSTRAINT "apps_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "apps" ADD CONSTRAINT "apps_deploy_key_fkey" FOREIGN KEY ("deploy_key_id") REFERENCES "ssh_keys" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "env_vars" ADD CONSTRAINT "env_vars_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;

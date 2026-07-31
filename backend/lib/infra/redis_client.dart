@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:gisila_panel/config.dart';
-import 'package:redis/redis.dart';
+import 'package:redis/redis.dart' show Command;
 
 /// A tiny lazy singleton wrapper around the `redis` package. The connection is
 /// established on first use and reconnected automatically on failure.
@@ -18,10 +18,8 @@ class RedisClient {
     if (_pending != null) return _pending!.future;
 
     _pending = Completer<Command>();
-    final host = env.getOrElse('REDIS_HOST', () => 'localhost');
-    final port = int.parse(env.getOrElse('REDIS_PORT', () => '6380'));
 
-    RedisConnection().connect(host, port).then((cmd) {
+    connectRedis().then((cmd) {
       _command = cmd;
       _pending!.complete(cmd);
       _pending = null;

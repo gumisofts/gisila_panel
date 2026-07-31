@@ -13,6 +13,16 @@ class Builders {
   /// stash and restore them explicitly.
   static const _artifactDirs = ['node_modules', '.venv'];
 
+  /// Resolve the actual project root to build/run from: the repo is always
+  /// cloned/extracted into `<workDir>/releases/current_build` in full (so a
+  /// monorepo's other projects stay available for reference), but the build
+  /// and start commands run inside [sourceSubdir] of it when one is given.
+  static String resolveSrc(String workDir, [String? sourceSubdir]) {
+    final base = '$workDir/releases/current_build';
+    if (sourceSubdir == null || sourceSubdir.isEmpty) return base;
+    return '$base/$sourceSubdir';
+  }
+
   static Future<void> fromGit({
     required String workDir,
     required String user,
@@ -169,8 +179,9 @@ class Builders {
     required String user,
     String? buildCommand,
     String? dartVersion,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     final dart = dartVersion != null
         ? await _ensureDartSdk(dartVersion)
         : 'dart';
@@ -189,8 +200,9 @@ class Builders {
     required String user,
     String? buildCommand,
     String? goVersion,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     final goEnv = goVersion != null ? await _ensureGo(goVersion) : null;
     // When a versioned Go is available, prepend its bin dir to PATH.
     final cmd = buildCommand ?? 'go build -o build/app ./...';
@@ -211,8 +223,9 @@ class Builders {
     required String user,
     String? buildCommand,
     String? rustVersion,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     await _ensureRustup();
     final toolchain = (rustVersion != null && rustVersion.isNotEmpty)
         ? rustVersion
@@ -234,8 +247,9 @@ class Builders {
     String? nodeVersion,
     Map<String, String>? appEnv,
     bool noCache = false,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
 
     // 1. Detect the package manager from lock files before the build starts.
     //    This determines the default install command and whether corepack is
@@ -659,8 +673,9 @@ class Builders {
     String? bunVersion,
     Map<String, String>? appEnv,
     bool noCache = false,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     Map<String, String>? env;
     if (bunVersion != null) {
       final bunBin = await _ensureBun(bunVersion);
@@ -732,8 +747,9 @@ class Builders {
     String pyenvRoot = '/opt/pyenv',
     Map<String, String>? appEnv,
     bool noCache = false,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     final venv = '$src/.venv';
     final currentVenv = '$workDir/current/.venv';
 
@@ -1166,8 +1182,9 @@ class Builders {
     String pyenvRoot = '/opt/pyenv',
     Map<String, String>? appEnv,
     bool noCache = false,
+    String? sourceSubdir,
   }) async {
-    final src = '$workDir/releases/current_build';
+    final src = resolveSrc(workDir, sourceSubdir);
     final venv = '$src/.venv';
     final currentVenv = '$workDir/current/.venv';
 
@@ -1249,6 +1266,7 @@ class Builders {
     String? buildCommand,
     Map<String, String>? appEnv,
     bool noCache = false,
+    String? sourceSubdir,
   }) async {
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
       // Install deps first (npm ci / bun install), then run the build. appEnv is
@@ -1260,6 +1278,7 @@ class Builders {
         buildCommand: buildCommand,
         appEnv: appEnv,
         noCache: noCache,
+        sourceSubdir: sourceSubdir,
       );
     }
     // No compiled binary to install — Nginx will serve the files directly
@@ -1441,6 +1460,95 @@ class Builders {
     await ShellExec.run('rm', ['-f', archive]);
     return bin;
   }
+
+  // ── Toolchain lifecycle (Application Management) ────────────────────────
+  //
+  // Thin public wrappers around the private `_ensureX` helpers above so a
+  // `RuntimePlugin` (agent/lib/runtimes/<key>/plugin.dart) can pre-warm or
+  // remove a toolchain independently of any specific app build/deploy — i.e.
+  // an admin installing/removing an Application from the panel, rather than
+  // the toolchain being installed lazily on an app's first deploy.
+
+  static Future<void> installPythonToolchain({
+    String? version,
+    String pyenvRoot = '/opt/pyenv',
+  }) async {
+    await _ensurePythonBuildDeps();
+    await _ensurePyenv(pyenvRoot);
+    if (version != null && version.trim().isNotEmpty) {
+      await _pyenvPython(pyenvRoot, version.trim());
+    }
+  }
+
+  static Future<void> removePythonToolchain({
+    String? version,
+    String pyenvRoot = '/opt/pyenv',
+  }) async {
+    if (version != null && version.trim().isNotEmpty) {
+      await ShellExec.run(
+          'rm', ['-rf', '$pyenvRoot/versions/${version.trim()}'],
+          requireSuccess: false);
+    } else {
+      await ShellExec.run('rm', ['-rf', pyenvRoot], requireSuccess: false);
+    }
+  }
+
+  static Future<void> installDartToolchain(String version) async {
+    await _ensureDartSdk(version);
+  }
+
+  static Future<void> removeDartToolchain({String? version}) =>
+      ShellExec.run(
+          'rm', ['-rf', version != null ? '$_dartBase/$version' : _dartBase],
+          requireSuccess: false);
+
+  static Future<void> installGoToolchain(String version) async {
+    await _ensureGo(version);
+  }
+
+  static Future<void> removeGoToolchain({String? version}) => ShellExec.run(
+      'rm', ['-rf', version != null ? '$_goBase/$version' : _goBase],
+      requireSuccess: false);
+
+  static Future<void> installRustToolchain({String? version}) async {
+    await _ensureRustup();
+    if (version != null && version.trim().isNotEmpty) {
+      await ShellExec.run('rustup', ['toolchain', 'install', version.trim()],
+          requireSuccess: false);
+    }
+  }
+
+  /// rustup itself is shared, global infrastructure (other apps may still use
+  /// it), so only a specific pinned toolchain is removed — never the rustup
+  /// installation itself.
+  static Future<void> removeRustToolchain({String? version}) async {
+    if (version == null || version.trim().isEmpty) return;
+    await ShellExec.run(
+        'rustup', ['toolchain', 'uninstall', version.trim()],
+        requireSuccess: false);
+  }
+
+  static Future<void> installNodeToolchain(String version) async {
+    await _ensureFnmNode(version);
+  }
+
+  static Future<void> removeNodeToolchain({String? version}) => ShellExec.run(
+      'rm',
+      [
+        '-rf',
+        version != null
+            ? '$_fnmDir/node-versions/v$version'
+            : _fnmDir,
+      ],
+      requireSuccess: false);
+
+  static Future<void> installBunToolchain(String version) async {
+    await _ensureBun(version);
+  }
+
+  static Future<void> removeBunToolchain({String? version}) => ShellExec.run(
+      'rm', ['-rf', version != null ? '$_bunBase/$version' : _bunBase],
+      requireSuccess: false);
 
   // ── Shared helpers ────────────────────────────────────────────────────────
 

@@ -5,6 +5,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/services/application_service.dart';
 import 'package:gisila_panel/services/projects_service.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 
@@ -60,13 +61,23 @@ class AppsService extends Service {
     User actor, {
     required int projectId,
     required String name,
-    required String runtime,
+    // Preferred: the id of an installed [Application]. `runtime` remains a
+    // deprecated free-text alias, resolved to the matching Application by
+    // key, for backward compatibility with older API clients.
+    int? applicationId,
+    String? runtime,
+    // build_execute | direct_run | static_publish — must be one of the
+    // resolved Application's deployModes; defaults to its defaultDeployMode.
+    String? deploymentMode,
     required String sourceType,
     // Static sites are served directly by Nginx and have no listening port.
     // Required for every other (service) runtime.
     int? port,
     String? gitUrl,
     String? gitBranch,
+    // Optional subdirectory within the repo to build/run from, so a single
+    // monorepo can be deployed by pointing at just one of its projects.
+    String? sourceSubdir,
     String? buildCommand,
     String? startCommand,
     String? healthCheckPath,
@@ -110,6 +121,30 @@ class AppsService extends Service {
     // Creating an app is a developer-level action.
     await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
 
+    // Resolve the Application: prefer the explicit applicationId, falling
+    // back to the deprecated free-text `runtime` alias so older API clients
+    // keep working unchanged.
+    final applicationsSvc = ApplicationService()..attach(ctx);
+    final application = applicationId != null
+        ? await applicationsSvc.findById(applicationId)
+        : (runtime != null ? await applicationsSvc.findByKey(runtime) : null);
+    if (application == null) {
+      throw BadRequest('Either a valid applicationId or runtime is required.');
+    }
+    if (application.status != 'installed') {
+      throw BadRequest(
+          '${application.displayName} is not installed on this host '
+          '(status: ${application.status}). Install it from Application '
+          'Management first.');
+    }
+    runtime = application.key!;
+    final supportedModes = application.deployModes.split(',');
+    if (deploymentMode != null && !supportedModes.contains(deploymentMode)) {
+      throw BadRequest('${application.displayName} does not support deploy '
+          'mode "$deploymentMode".');
+    }
+    deploymentMode ??= application.defaultDeployMode;
+
     // Static apps carry no port; every service runtime needs a unique one.
     final isStatic = runtime == 'static';
     if (isStatic) {
@@ -135,10 +170,13 @@ class AppsService extends Service {
       'linuxUser': linuxUser,
       'workDir': workDir,
       'internalPort': port,
+      'applicationId': application.id,
+      'deploymentMode': deploymentMode,
       'runtime': runtime,
       'sourceType': sourceType,
       'gitUrl': gitUrl,
       'gitBranch': gitBranch,
+      if (sourceSubdir != null) 'sourceSubdir': sourceSubdir,
       'buildCommand': buildCommand,
       'startCommand': startCommand,
       'healthCheckPath': healthCheckPath,

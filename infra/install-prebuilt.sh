@@ -8,11 +8,19 @@
 # or pnpm and compiles nothing — so it is far faster and never hits the pnpm
 # build-approval failure.
 #
+# PostgreSQL and Redis are NOT installed or managed by this script — the panel
+# is a client of both, not their operator. Point it at existing instances
+# (same host or remote) with the DB_*/REDIS_* env vars below; defaults assume
+# a Postgres/Redis you've already stood up locally with those exact settings.
+#
 # Run as root. Examples:
 #   sudo bash infra/install-prebuilt.sh                       # newest release
 #   sudo VERSION=0.1.0 bash infra/install-prebuilt.sh         # pinned version
 #   sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \
 #        bash infra/install-prebuilt.sh                       # local artifact
+#   sudo DB_HOST=10.0.0.5 DB_PASSWORD=secret \
+#        REDIS_HOST=10.0.0.5 REDIS_PASSWORD=secret \
+#        bash infra/install-prebuilt.sh                       # external DB/Redis
 #
 # One-liner (no clone needed):
 #   curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh | sudo bash
@@ -22,6 +30,8 @@
 #   GITHUB_REPO   owner/repo to fetch from (default: gumisofts/gisila_panel)
 #   RELEASE_URL   exact tarball URL (overrides VERSION/GITHUB_REPO)
 #   RELEASE_FILE  path to a local tarball (skips the download entirely)
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSL   PostgreSQL
+#   REDIS_HOST, REDIS_PORT, REDIS_PASSWORD                   Redis
 # =============================================================================
 set -euo pipefail
 
@@ -36,6 +46,21 @@ APPS_ROOT="/srv/apps"
 MIGRATIONS_DIR="/usr/local/share/gisila/migrations"
 GITHUB_REPO="${GITHUB_REPO:-gumisofts/gisila_panel}"
 VERSION="${VERSION:-latest}"
+
+# External PostgreSQL connection this install will point the panel at. Not
+# installed here — see the header comment above.
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_NAME="${DB_NAME:-gisila_panel}"
+DB_USER="${DB_USER:-gisila}"
+DB_PASSWORD="${DB_PASSWORD:-gisila}"
+DB_SSL="${DB_SSL:-false}"
+
+# External Redis connection this install will point the panel at. Not
+# installed here — see the header comment above.
+REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+REDIS_PORT="${REDIS_PORT:-6379}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -57,10 +82,13 @@ if [[ "$ARCH" != "x64" && -z "${RELEASE_FILE:-}" && -z "${RELEASE_URL:-}" ]]; th
 fi
 
 # ── 1. System packages (runtime only — no build toolchain) ────────────────────
+# Note: no `postgresql` or `redis-server` here — this installer is a client of
+# both, not their operator (see header comment). `postgresql-client` only
+# provides the `psql` CLI, used below to sanity-check connectivity.
 echo "==> Installing system packages"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-  postgresql redis-server nginx \
+  postgresql-client nginx \
   certbot python3-certbot-nginx \
   apparmor apparmor-utils \
   curl ca-certificates rsync tar
@@ -82,7 +110,27 @@ else
     URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION#v}/$ASSET"
   fi
   echo "==> Downloading $URL"
-  if ! curl -fSL "$URL" -o "$STAGE/release.tar.gz"; then
+  DOWNLOAD_OK=false
+  if curl -fSL "$URL" -o "$STAGE/release.tar.gz"; then
+    DOWNLOAD_OK=true
+  elif [[ "$VERSION" == "latest" && -z "${RELEASE_URL:-}" ]]; then
+    # GitHub's "latest release" endpoint/URL (used above) silently skips
+    # draft *and prerelease* releases — so it 404s whenever the newest
+    # published release was tagged as a prerelease (common for early v0.x
+    # tags). Fall back to the releases API, which lists every release
+    # newest-first regardless of that flag, and retry against its tag
+    # directly instead of making the operator pass an explicit VERSION.
+    echo "    /releases/latest has no asset (likely a prerelease) — checking the releases API"
+    FALLBACK_TAG="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases" 2>/dev/null \
+      | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)"
+    if [[ -n "$FALLBACK_TAG" ]]; then
+      URL="https://github.com/$GITHUB_REPO/releases/download/$FALLBACK_TAG/$ASSET"
+      echo "==> Retrying with newest published release: $FALLBACK_TAG"
+      curl -fSL "$URL" -o "$STAGE/release.tar.gz" && DOWNLOAD_OK=true
+    fi
+  fi
+
+  if ! $DOWNLOAD_OK; then
     echo >&2
     echo "ERROR: failed to download the release asset from:" >&2
     echo "         $URL" >&2
@@ -114,33 +162,32 @@ install -d -o root -g root -m 0755 /var/log/gisila
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups/uploads
 
-# ── 4. PostgreSQL ─────────────────────────────────────────────────────────────
-echo "==> Configuring PostgreSQL"
-systemctl enable --now postgresql
-
-echo "==> Waiting for PostgreSQL to be ready"
-for i in $(seq 1 15); do
-  sudo -u postgres pg_isready -q && break
-  echo "    waiting... ($i/15)"
-  sleep 2
-done
-sudo -u postgres pg_isready
-
-sudo -u postgres psql --set ON_ERROR_STOP=1 <<SQL
-DO \$\$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gisila') THEN
-    CREATE ROLE gisila LOGIN PASSWORD 'gisila';
-  END IF;
-END \$\$;
-SQL
-
-if ! sudo -u postgres psql --set ON_ERROR_STOP=1 \
-    -tc "SELECT 1 FROM pg_database WHERE datname='gisila_panel'" | grep -q 1; then
-  sudo -u postgres createdb --owner=gisila gisila_panel
-  echo "    created database gisila_panel"
-else
-  echo "    database gisila_panel already exists, skipping"
+# ── 4. Check external PostgreSQL & Redis connectivity ────────────────────────
+# Neither is provisioned by this script (see header comment) — the database,
+# role, and password must already exist on $DB_HOST. We only verify we can
+# reach both so a misconfigured DB_*/REDIS_* var fails fast, here, instead of
+# deep inside the migration step below.
+echo "==> Checking PostgreSQL connectivity ($DB_USER@$DB_HOST:$DB_PORT/$DB_NAME)"
+if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
+    -d "$DB_NAME" --set ON_ERROR_STOP=1 -tc 'SELECT 1' >/dev/null 2>&1; then
+  echo "ERROR: could not connect to PostgreSQL as $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME." >&2
+  echo "       This script no longer installs/configures PostgreSQL — create the" >&2
+  echo "       database and role yourself, then re-run with matching DB_HOST/DB_PORT/" >&2
+  echo "       DB_NAME/DB_USER/DB_PASSWORD env vars. Example, on the DB host:" >&2
+  echo "         sudo -u postgres psql -c \"CREATE ROLE $DB_USER LOGIN PASSWORD '<pw>';\"" >&2
+  echo "         sudo -u postgres createdb --owner=$DB_USER $DB_NAME" >&2
+  exit 1
 fi
+echo "    connected."
+
+echo "==> Checking Redis connectivity ($REDIS_HOST:$REDIS_PORT)"
+if ! timeout 5 bash -c "exec 3<>/dev/tcp/$REDIS_HOST/$REDIS_PORT" 2>/dev/null; then
+  echo "ERROR: could not open a TCP connection to Redis at $REDIS_HOST:$REDIS_PORT." >&2
+  echo "       This script no longer installs/configures Redis — stand it up yourself," >&2
+  echo "       then re-run with matching REDIS_HOST/REDIS_PORT/REDIS_PASSWORD env vars." >&2
+  exit 1
+fi
+echo "    connected."
 
 # ── 5. Install prebuilt binaries ──────────────────────────────────────────────
 echo "==> Installing binaries to /usr/local/bin"
@@ -184,8 +231,9 @@ STUDIO_USERNAME=admin
 STUDIO_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -d '/+=')
 SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)
 SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
+REDIS_HOST=$REDIS_HOST
+REDIS_PORT=$REDIS_PORT
+REDIS_PASSWORD=$REDIS_PASSWORD
 APPS_ROOT=$APPS_ROOT
 NGINX_SITES_DIR=/etc/nginx/sites-enabled
 SYSTEMD_UNITS_DIR=/etc/systemd/system
@@ -206,25 +254,32 @@ else
       >> /etc/gisila/.env
     echo "    added SUPERUSER_EMAIL/SUPERUSER_PASSWORD to existing .env"
   fi
+  if ! grep -q 'REDIS_PASSWORD' /etc/gisila/.env; then
+    echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /etc/gisila/.env
+    echo "    added REDIS_PASSWORD to existing .env"
+  fi
 fi
 
 # ── 10. /etc/gisila/database.yaml ─────────────────────────────────────────────
 echo "==> Writing /etc/gisila/database.yaml"
-SYSTEM_PG_VERSION="$(sudo -u postgres psql -tAc 'SHOW server_version_num' 2>/dev/null \
+# Detect the major version of the configured cluster (works for remote hosts
+# too, unlike `sudo -u postgres`).
+SYSTEM_PG_VERSION="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" \
+  -U "$DB_USER" -d "$DB_NAME" -tAc 'SHOW server_version_num' 2>/dev/null \
   | awk '{ printf "%d", $1 / 10000 }')"
 SYSTEM_PG_VERSION="${SYSTEM_PG_VERSION:-0}"
-echo "    detected system PostgreSQL major version: $SYSTEM_PG_VERSION"
+echo "    detected PostgreSQL major version: $SYSTEM_PG_VERSION"
 cat > /etc/gisila/database.yaml <<EOF
 default: default
 connections:
   default:
     type: postgresql
-    host: localhost
-    port: 5432
-    database: gisila_panel
-    username: gisila
-    password: gisila
-    ssl: false
+    host: $DB_HOST
+    port: $DB_PORT
+    database: $DB_NAME
+    username: $DB_USER
+    password: $DB_PASSWORD
+    ssl: $DB_SSL
     connection_timeout: 30
     query_timeout: 30
     max_connections: 20
@@ -270,6 +325,9 @@ IP=$(hostname -I | awk '{print $1}')
 echo "  Panel:  http://$IP  (or your configured domain)"
 echo "  Docs:   http://$IP/docs"
 echo "  Admin:  http://$IP/admin"
+echo
+echo "  PostgreSQL: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME (external, /etc/gisila/database.yaml)"
+echo "  Redis:      $REDIS_HOST:$REDIS_PORT (external, /etc/gisila/.env)"
 echo
 echo "  Panel superuser:  see /etc/gisila/.env (SUPERUSER_EMAIL/PASSWORD)"
 echo "  Studio/admin:     see /etc/gisila/.env (STUDIO_USERNAME/PASSWORD)"

@@ -57,8 +57,9 @@
    `DeploymentWorker.onDeployment`.
 4. The worker shells out to `gisila-agent`:
    - `provision` (idempotent: useradd + dir layout + .env file)
-   - `build` (git clone / unzip / install binary, then `dart compile` /
-     `go build` / `cargo build` / `npm ci` …)
+   - `build` (git clone / unzip / install binary, then dispatches to the
+     app's `RuntimePlugin` — see [Application Management](#application-management)
+     below — passing `--deploy-mode build_execute|direct_run|static_publish`)
    - `apply-unit` (write AppArmor profile, write systemd unit, reload)
    - `apply-vhost` (write nginx vhost, reload)
    - `restart` (systemctl restart gisila-app_xxx)
@@ -67,6 +68,59 @@
 6. The UI's logs tab is a WebSocket bridged to that Redis channel.
 7. On success the worker flips the `Deployment.isActive=true`, switches the
    `App.status='running'`, and records an `AppEvent`.
+
+## Application Management
+
+Runtime/language support (Python, Dart, Node, …) is **not** hardcoded into
+the panel or bundled with its installation — it's modeled as its own
+independently-managed entity, `Application`, decoupled from both the panel's
+release cycle and from any specific deployed `App`:
+
+```
+┌─────────────────────────────┐        ┌───────────────────────────────┐
+│ Application catalog (builtin) │      │ apps table                     │
+│ backend/lib/services/         │      │  application_id → applications │
+│ application_catalog.dart      │      │  deployment_mode                │
+└──────────────┬────────────────┘      └───────────────┬─────────────────┘
+               │ install/update/remove                  │ deploy job
+               ▼                                        ▼
+     applications table (per host,          ┌────────────────────────────┐
+     status: pending|installing|            │ RuntimeRegistry (agent)     │
+     installed|updating|removing|failed)    │  key → RuntimePlugin        │
+               │                             │  DartPlugin · PythonPlugin  │
+               ▼                             │  NodePlugin · … (one per     │
+     gisila:queue:applications                │  builtin runtime)            │
+     → ApplicationWorker →                    └────────────────────────────┘
+     `gisila-agent runtime install|remove --key <k> [--version <v>]`
+```
+
+- **Catalog vs. installed state.** `kApplicationCatalog` (in-repo, one
+  `ApplicationDef` per builtin runtime) is the set of Applications the panel
+  *knows how to* support. The `applications` table is the per-host
+  *installed* state — mirroring the existing `ManagedService` /
+  `PostgresInstance` pattern (`GET /applications/catalog` vs. `GET
+  /applications/`, `ApplicationService`, `ApplicationWorker`).
+- **Deployment modes.** Each Application declares which of
+  `build_execute` (compile/package, then run the artifact), `direct_run`
+  (interpreter/pre-built binary runs the source in place, no compile step),
+  or `static_publish` (nginx serves files directly, no process) it supports.
+  An `App` picks one via `deployment_mode`, validated against its
+  Application's supported modes.
+- **RuntimePlugin.** On the agent side, `RuntimeRegistry` (a `key →
+  RuntimePlugin` map in `agent/lib/runtime/runtime_registry.dart`) replaces
+  what used to be a single hand-written `switch (runtime)` in
+  `gisila-agent.dart`. Each plugin (`agent/lib/runtimes/<key>/…`) owns its
+  toolchain install/remove (`installToolchain`/`removeToolchain` — promoting
+  what used to be a lazy first-deploy install into an explicit
+  admin-triggered step) and its build/prepare step
+  (`build(RuntimeBuildContext)`). Adding a new runtime means adding one new
+  plugin + one catalog entry — no existing plugin or orchestration code
+  changes.
+- **Independent lifecycle.** Installing, updating, or removing an
+  Application never touches a running App's deploy/restart/rollback flow;
+  conversely, `App.runtime` stays in sync with `application.key` so existing
+  tooling that reads the denormalized `runtime` column keeps working
+  unchanged.
 
 ## Multi-tenancy & isolation
 

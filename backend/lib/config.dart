@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dotenv/dotenv.dart';
 import 'package:gisila_orm/gisila.dart';
 import 'package:logger/logger.dart';
+import 'package:redis/redis.dart';
 
 /// Global environment variables (platform env + `.env` file).
 final env = DotEnv(includePlatformEnvironment: true, quiet: true)..load();
@@ -64,6 +65,30 @@ int? get systemPgVersion {
   // Treat a missing or non-positive value (e.g. failed install-time detection)
   // as "not configured" so we never seed a bogus instance.
   return (parsed != null && parsed > 0) ? parsed : null;
+}
+
+// ── External Redis ────────────────────────────────────────────────────────────
+//
+// Redis is not installed or managed by this panel (see infra/install.sh) — it
+// is expected to already exist, with connection details supplied via env vars
+// in /etc/gisila/.env. `connectRedis()` is the single place that resolves
+// those vars and authenticates, so every call site (API, worker, log bridge)
+// stays in sync if the auth story changes.
+
+String get redisHost => env.getOrElse('REDIS_HOST', () => 'localhost');
+int get redisPort => int.parse(env.getOrElse('REDIS_PORT', () => '6380'));
+String? get redisPassword =>
+    (env['REDIS_PASSWORD']?.isNotEmpty ?? false) ? env['REDIS_PASSWORD'] : null;
+
+/// Open a new connection to the configured Redis instance, authenticating
+/// with [redisPassword] first when one is set.
+Future<Command> connectRedis() async {
+  final cmd = await RedisConnection().connect(redisHost, redisPort);
+  final password = redisPassword;
+  if (password != null) {
+    await cmd.send_object(['AUTH', password]);
+  }
+  return cmd;
 }
 
 /// Host paths and runtime knobs that the worker / agent need.

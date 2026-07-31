@@ -39,11 +39,14 @@ class AppsApi {
       user,
       projectId: form.projectId.value!,
       name: form.name.value!,
-      runtime: form.runtime.value!,
+      applicationId: form.applicationId.value,
+      runtime: form.runtime.value,
+      deploymentMode: form.deploymentMode.value,
       sourceType: form.sourceType.value!,
       port: form.internalPort.value,
       gitUrl: form.gitUrl.value,
       gitBranch: form.gitBranch.value,
+      sourceSubdir: form.sourceSubdir.value,
       buildCommand: form.buildCommand.value,
       startCommand: form.startCommand.value,
       healthCheckPath: form.healthCheckPath.value,
@@ -101,6 +104,8 @@ class AppsApi {
       if (form.name.value != null) 'name': form.name.value,
       if (form.gitUrl.value != null) 'gitUrl': form.gitUrl.value,
       if (form.gitBranch.value != null) 'gitBranch': form.gitBranch.value,
+      if (form.sourceSubdir.value != null)
+        'sourceSubdir': form.sourceSubdir.value,
       if (form.buildCommand.value != null)
         'buildCommand': form.buildCommand.value,
       if (form.startCommand.value != null)

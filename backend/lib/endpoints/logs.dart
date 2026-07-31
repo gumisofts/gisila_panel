@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/jwt.dart';
-import 'package:redis/redis.dart';
+import 'package:redis/redis.dart' show PubSub;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
@@ -317,14 +317,11 @@ Future<void> _bridgeRedis(
   required Future<void> closed,
   String? historyKey,
 }) async {
-  final host = env.getOrElse('REDIS_HOST', () => 'localhost');
-  final port = int.parse(env.getOrElse('REDIS_PORT', () => '6380'));
-
   // Replay buffered history (if any) on a dedicated short-lived connection so
   // reconnecting clients see prior lines before live tailing begins.
   if (historyKey != null) {
     try {
-      final histConn = await RedisConnection().connect(host, port);
+      final histConn = await connectRedis();
       final raw = await histConn.send_object(['LRANGE', historyKey, '0', '-1']);
       if (raw is List) {
         for (final entry in raw) {
@@ -338,7 +335,7 @@ Future<void> _bridgeRedis(
     } catch (_) {/* history is best-effort */}
   }
 
-  final cmd = await RedisConnection().connect(host, port);
+  final cmd = await connectRedis();
   final ps = PubSub(cmd);
   ps.subscribe([channel]);
   final redisSub = ps.getStream().listen(

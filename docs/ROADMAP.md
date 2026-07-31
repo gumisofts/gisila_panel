@@ -13,6 +13,11 @@
       deployments / env / domains / live logs / metrics).
 - [x] systemd units + nginx vhost + sudoers rule for the panel itself.
 - [x] `infra/install.sh` single-node installer.
+- [x] **Application registry** — runtimes decoupled from the panel into an
+      independently install/update/removable `Application` catalog
+      (`RuntimePlugin` + `RuntimeRegistry` on the agent, `ApplicationService`
+      + `/applications` API on the backend), with per-application
+      deployment modes (`build_execute` / `direct_run` / `static_publish`).
 
 ## v0.2 · Production hardening
 
@@ -57,7 +62,9 @@
 
 ## v1.0 · Enterprise extensibility
 
-- [ ] Plugin system for custom build steps + auth providers + runtimes.
+- [x] Plugin system for builtin runtimes (see v0.1 **Application registry**);
+      remaining scope: dynamic/remote plugin loading for *custom*,
+      non-builtin build steps + auth providers + runtimes.
 - [ ] SAML / OIDC SSO.
 - [ ] Audit log export (S3 / SIEM).
 - [ ] Multi-tenancy with org-level isolation (Postgres schemas).

@@ -18,8 +18,17 @@
 #                   target/worker/beat/flower), AppArmor profiles, nginx vhosts,
 #                   supervisor configs, Linux users, and /srv/apps.
 #   --purge       : the gisila system user + /srv/gisila, /var/log/gisila,
-#                   /var/lib/gisila (DB backups), /etc/gisila, the gisila_panel
-#                   Postgres database + role, and the panel's Redis keys.
+#                   /var/lib/gisila (DB backups), /etc/gisila, and (best-effort,
+#                   local Postgres/Redis only — see note below) the gisila_panel
+#                   database + role and the panel's Redis keys.
+#
+# PostgreSQL and Redis are not installed/managed by infra/install.sh — they are
+# external services the panel connects to (see /etc/gisila/database.yaml and
+# /etc/gisila/.env). --purge's DB/Redis cleanup below is a same-host
+# convenience for local dev/single-node setups (it only works when they are
+# actually reachable via `sudo -u postgres`/local `redis-cli`); for a remote or
+# externally-managed instance, drop the database/role and flush the `gisila:*`
+# keys yourself.
 #
 # Every step is best-effort and idempotent — safe to re-run.
 # =============================================================================
@@ -114,13 +123,17 @@ fi
 if $PURGE; then
   echo "==> Purging panel data"
 
-  # PostgreSQL: drop the panel database, then its owning role.
+  # PostgreSQL: drop the panel database, then its owning role. Best-effort —
+  # only works for a local cluster reachable via the `postgres` OS user; a
+  # remote/externally-managed instance must be cleaned up by its operator.
   if command -v psql >/dev/null 2>&1; then
     sudo -u postgres dropdb   --if-exists gisila_panel 2>/dev/null || true
     sudo -u postgres dropuser --if-exists gisila       2>/dev/null || true
   fi
 
-  # Redis: delete only the panel's keys (queues, pub/sub, caches).
+  # Redis: delete only the panel's keys (queues, pub/sub, caches). Best-effort
+  # — only reaches a Redis on localhost:6379 with no auth; for a remote or
+  # password-protected instance, flush `gisila:*` keys yourself.
   if command -v redis-cli >/dev/null 2>&1; then
     keys=$(redis-cli --scan --pattern 'gisila:*' 2>/dev/null || true)
     if [[ -n "$keys" ]]; then
@@ -148,5 +161,9 @@ echo "✓ gisila-panel uninstalled."
 if ! $REMOVE_APPS || ! $PURGE; then
   echo "  Re-run with --all to remove deployed apps and panel data too."
 fi
-echo "  Note: shared system packages (postgres, redis, nginx, certbot, dart,"
-echo "  node) and any Let's Encrypt certificates are left untouched."
+echo "  Note: PostgreSQL and Redis are external services the panel connects to"
+echo "  (never installed by this project) — for a remote/managed instance,"
+echo "  --purge's local-only cleanup won't reach it; drop the database/role and"
+echo "  flush 'gisila:*' Redis keys yourself. Shared system packages (nginx,"
+echo "  certbot, dart, node) and any Let's Encrypt certificates are also left"
+echo "  untouched."

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
@@ -18,6 +19,7 @@ Future<void> main(List<String> args) async {
   final database = await Database.connect(databaseConfig);
   final deploymentWorker = DeploymentWorker(database);
   final serviceWorker = ServiceWorker(database);
+  final applicationWorker = ApplicationWorker(database);
   final postgresWorker = PostgresWorker(database);
   final mongoWorker = MongoWorker(database);
   final storageWorker = StorageWorker(database);
@@ -31,6 +33,7 @@ Future<void> main(List<String> args) async {
   queue.on('gisila:queue:vhosts', deploymentWorker.onVhost);
   queue.on('gisila:queue:ssl', deploymentWorker.onSsl);
   queue.on('gisila:queue:services', serviceWorker.onServiceJob);
+  queue.on('gisila:queue:applications', applicationWorker.onApplicationJob);
   queue.on('gisila:queue:postgres', postgresWorker.onPostgresJob);
   queue.on('gisila:queue:mongo', mongoWorker.onMongoJob);
   queue.on('gisila:queue:storage', storageWorker.onStorageJob);
