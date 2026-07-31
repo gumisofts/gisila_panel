@@ -1056,6 +1056,17 @@ Future<void> _mailEnsureStack() async {
     'smtp_tls_security_level=may',
     'smtpd_tls_auth_only=no',
     'smtpd_tls_loglevel=1',
+    // IPv4 only. Postfix defaults to `all`, and prefers IPv6 whenever the
+    // recipient publishes AAAA records — which Gmail and Outlook both do. The
+    // SPF record this panel generates authorises the detected public *IPv4*
+    // address, and a host's IPv6 PTR is usually the provider's generic name
+    // (e.g. vmi123456.contaboserver.net) rather than the mail hostname. Mail
+    // sent over IPv6 therefore fails both SPF and forward-confirmed reverse
+    // DNS, and Gmail rejects it outright with 5.7.26. Neither the SPF record
+    // nor the PTR can be fixed from here, so we keep outbound on IPv4.
+    // Operators with correct IPv6 rDNS can set inet_protocols=all and add an
+    // ip6: term to SPF.
+    'inet_protocols=ipv4',
     // DKIM signing milter.
     'milter_default_action=accept',
     'milter_protocol=6',
@@ -1217,7 +1228,12 @@ SigningTable            refile:/etc/opendkim/SigningTable
   // first so Postfix can reach the milter as soon as it (re)starts.
   for (final svc in <String>['opendkim', 'postfix', 'dovecot']) {
     await _serviceCtl('enable', svc);
-    await _serviceCtl('reload-or-restart', svc);
+    // Postfix gets a genuine restart rather than a reload: `postfix reload`
+    // re-reads main.cf but keeps the running master process, and settings that
+    // choose listeners — inet_protocols above chief among them — only take
+    // effect when master itself is replaced. A reload here would silently leave
+    // an already-running Postfix delivering over IPv6.
+    await _serviceCtl(svc == 'postfix' ? 'restart' : 'reload-or-restart', svc);
   }
 
   // Open the standard mail ports on the host firewall (no-op when ufw absent).

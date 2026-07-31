@@ -283,8 +283,12 @@ List<Map<String, Object?>> buildDnsRecords(MailDomain d) {
       'type': 'A',
       'host': host,
       'value': d.publicIp ?? '<server-public-ip>',
-      'note': 'Points the mail hostname at this server. '
-          'Set reverse DNS (PTR) for this IP at your hosting provider.',
+      'note': 'Points the mail hostname at this server. Must be DNS-only — '
+          'if your provider proxies it (Cloudflare\'s orange cloud), the name '
+          'resolves to the proxy instead, which does not forward SMTP: '
+          'inbound mail stops arriving and outbound fails reverse-DNS checks. '
+          'Also set reverse DNS (PTR) for this IP at your hosting provider so '
+          'it resolves back to exactly this hostname.',
     },
     {
       'type': 'MX',
@@ -296,9 +300,23 @@ List<Map<String, Object?>> buildDnsRecords(MailDomain d) {
     {
       'type': 'TXT',
       'host': d.domain,
-      'value': 'v=spf1 mx ~all',
+      // Authorise the sending IP directly rather than with the `mx` mechanism.
+      // `mx` resolves the domain's MX at verification time, so it only works
+      // while the MX host's A record still points at this server — put the
+      // mail hostname behind a CDN/proxy, or route inbound mail elsewhere, and
+      // SPF starts failing for outbound mail even though nothing about sending
+      // changed. An explicit ip4 term keeps the two concerns independent.
+      'value': (d.publicIp?.isNotEmpty ?? false)
+          ? 'v=spf1 ip4:${d.publicIp} ~all'
+          : 'v=spf1 mx ~all',
       'label': 'SPF',
-      'note': 'Authorises this server (via its MX) to send for the domain.',
+      'note': (d.publicIp?.isNotEmpty ?? false)
+          ? 'Authorises this server to send for the domain. Add another '
+              'ip4:/include: term for every additional sender (e.g. a '
+              'transactional provider) before tightening ~all to -all.'
+          : 'Authorises this server (via its MX) to send for the domain. '
+              'Re-run a mail sync to replace this with the server IP, which '
+              'keeps working even if the MX later moves.',
     },
     {
       'type': 'TXT',
