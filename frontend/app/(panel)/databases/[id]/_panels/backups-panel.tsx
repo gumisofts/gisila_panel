@@ -1,35 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
+import { Download, Reset, TrashCan } from "@carbon/icons-react";
 import {
-  Loader,
-  Download,
-  Trash2,
-  RotateCcw,
-  Upload,
-  HardDriveDownload,
-  Clock,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
+  Button,
+  FileUploaderButton,
+  FormGroup,
+  InlineLoading,
+  InlineNotification,
+  Modal,
+  NumberInput,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  Tile,
+  Toggle,
+} from "@carbon/react";
 import {
   api,
   fetcher,
@@ -44,10 +39,19 @@ import type {
   PgBackupFrequency,
   ListResponse,
 } from "@/lib/types";
+import "../../_databases.scss";
 
 // Minimal shape shared by Postgres and Mongo database rows — the backups panel
 // only needs an id + a display name.
 type BackupDb = { id: ID; dbName: string };
+
+// Destructive actions are confirmed in a sibling Modal rather than inside the
+// backups Modal: Carbon's open modal container carries a transform, which would
+// become the containing block for a nested fixed-position modal.
+type PendingAction =
+  | { kind: "restore"; backup: PgBackup }
+  | { kind: "delete"; backup: PgBackup }
+  | { kind: "upload"; file: File };
 
 const SCOPE_LABEL: Record<PgBackupScope, string> = {
   full: "Full (schema + data)",
@@ -55,14 +59,14 @@ const SCOPE_LABEL: Record<PgBackupScope, string> = {
   data: "Data only",
 };
 
-const STATUS_VARIANT: Record<
+const STATUS_TAG: Record<
   PgBackup["status"],
-  "default" | "secondary" | "destructive" | "outline"
+  "red" | "green" | "blue" | "gray"
 > = {
-  pending: "secondary",
-  running: "secondary",
-  completed: "outline",
-  failed: "destructive",
+  pending: "blue",
+  running: "blue",
+  completed: "green",
+  failed: "red",
 };
 
 const WEEKDAYS = [
@@ -115,15 +119,97 @@ export function BackupsDialog({
   uploadNote?: string;
 }) {
   const open = !!db;
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const listKey = db ? `${apiBase}/${instanceId}/dbs/${db.id}/backups` : "";
+
+  async function runPending() {
+    if (!db || !pending) return;
+    const action = pending;
+    setPending(null);
+
+    if (action.kind === "restore") {
+      try {
+        await api(`${apiBase}/${instanceId}/dbs/${db.id}/restore`, {
+          method: "POST",
+          body: JSON.stringify({ backupId: action.backup.id }),
+        });
+        alert("Restore queued. It will run in the background.");
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : "Restore failed.");
+      }
+      return;
+    }
+
+    if (action.kind === "delete") {
+      try {
+        await api(`${listKey}/${action.backup.id}`, { method: "DELETE" });
+        mutate(listKey);
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : "Delete failed.");
+      }
+      return;
+    }
+
+    setUploading(true);
+    try {
+      await uploadFile(
+        `${apiBase}/${instanceId}/dbs/${db.id}/restore-upload`,
+        action.file,
+      );
+      alert("Upload received. Restore queued in the background.");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function confirmCopy(action: PendingAction): {
+    heading: string;
+    primary: string;
+    body: string;
+  } {
+    const name = db?.dbName ?? "";
+    switch (action.kind) {
+      case "restore":
+        return {
+          heading: "Restore from backup",
+          primary: "Restore",
+          body: `Restore ${name} from this backup? This loads the dump into the existing database and may overwrite current data. This cannot be undone.`,
+        };
+      case "delete":
+        return {
+          heading: "Delete backup",
+          primary: "Delete",
+          body: "Delete this backup file? This cannot be undone.",
+        };
+      case "upload":
+        return {
+          heading: "Restore from file",
+          primary: "Restore",
+          body: `Restore ${name} from "${action.file.name}"? This loads the dump into the existing database and may overwrite current data.`,
+        };
+    }
+  }
+
+  const copy = pending ? confirmCopy(pending) : null;
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <HardDriveDownload className="h-4 w-4 text-muted-foreground" />
-            Backups — {db?.dbName}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Modal
+        open={open}
+        onRequestClose={() => {
+          setPending(null);
+          onClose();
+        }}
+        onRequestSubmit={onClose}
+        modalHeading={`Backups — ${db?.dbName ?? ""}`}
+        primaryButtonText="Close"
+        size="lg"
+        hasScrollingContent
+      >
         {db && (
           <BackupsBody
             instanceId={instanceId}
@@ -132,15 +218,25 @@ export function BackupsDialog({
             scopes={scopes}
             uploadAccept={uploadAccept}
             uploadNote={uploadNote}
+            uploading={uploading}
+            onRequest={setPending}
           />
         )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Modal>
+
+      <Modal
+        danger
+        open={!!pending}
+        onRequestClose={() => setPending(null)}
+        onRequestSubmit={runPending}
+        modalHeading={copy?.heading ?? ""}
+        primaryButtonText={copy?.primary ?? ""}
+        secondaryButtonText="Cancel"
+        size="sm"
+      >
+        <p className="gisila-db__note">{copy?.body}</p>
+      </Modal>
+    </>
   );
 }
 
@@ -151,6 +247,8 @@ function BackupsBody({
   scopes,
   uploadAccept,
   uploadNote,
+  uploading,
+  onRequest,
 }: {
   instanceId: string;
   db: BackupDb;
@@ -158,6 +256,8 @@ function BackupsBody({
   scopes: PgBackupScope[];
   uploadAccept: string;
   uploadNote: string;
+  uploading: boolean;
+  onRequest: (action: PendingAction) => void;
 }) {
   const listKey = `${apiBase}/${instanceId}/dbs/${db.id}/backups`;
   const schedKey = `${apiBase}/${instanceId}/dbs/${db.id}/backup-schedule`;
@@ -177,8 +277,6 @@ function BackupsBody({
   const [scope, setScope] = useState<PgBackupScope>("full");
   const [backingUp, setBackingUp] = useState(false);
   const [error, setError] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
 
   async function handleBackup() {
     setError("");
@@ -204,183 +302,133 @@ function BackupsBody({
     }
   }
 
-  async function handleRestore(b: PgBackup) {
-    if (
-      !confirm(
-        `Restore ${db.dbName} from this backup?\n\nThis loads the dump into the existing database and may overwrite current data. This cannot be undone.`,
-      )
-    )
-      return;
-    try {
-      await api(`${apiBase}/${instanceId}/dbs/${db.id}/restore`, {
-        method: "POST",
-        body: JSON.stringify({ backupId: b.id }),
-      });
-      alert("Restore queued. It will run in the background.");
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Restore failed.");
-    }
-  }
-
-  async function handleDelete(b: PgBackup) {
-    if (!confirm("Delete this backup file? This cannot be undone.")) return;
-    try {
-      await api(`${listKey}/${b.id}`, { method: "DELETE" });
-      mutate(listKey);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Delete failed.");
-    }
-  }
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (
-      !confirm(
-        `Restore ${db.dbName} from "${file.name}"?\n\nThis loads the dump into the existing database and may overwrite current data.`,
-      )
-    ) {
-      if (fileRef.current) fileRef.current.value = "";
-      return;
-    }
-    setUploading(true);
-    try {
-      await uploadFile(
-        `${apiBase}/${instanceId}/dbs/${db.id}/restore-upload`,
-        file,
-      );
-      alert("Upload received. Restore queued in the background.");
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+    onRequest({ kind: "upload", file });
   }
 
   return (
-    <div className="space-y-5 py-1">
+    <Stack gap={6}>
       {/* Back up now */}
-      <div className="flex items-end gap-2">
-        <div className="flex-1 space-y-1.5">
-          <Label className="text-xs">Back up now</Label>
-          <Select value={scope} onValueChange={(v) => setScope(v as PgBackupScope)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {scopes.map((s) => (
-                <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
-              ))}
-            </SelectContent>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Select
+            id="backup-scope"
+            labelText="Back up now"
+            value={scope}
+            onChange={(e) => setScope(e.target.value as PgBackupScope)}
+          >
+            {scopes.map((s) => (
+              <SelectItem key={s} value={s} text={SCOPE_LABEL[s]} />
+            ))}
           </Select>
         </div>
-        <Button onClick={handleBackup} disabled={backingUp}>
-          {backingUp ? (
-            <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />
-          )}
+        <Button renderIcon={Download} onClick={handleBackup} disabled={backingUp}>
           Back up
         </Button>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {backingUp && <InlineLoading description="Starting backup…" />}
+      {error && (
+        <InlineNotification kind="error" lowContrast hideCloseButton title={error} />
+      )}
 
       {/* Schedule */}
       <ScheduleEditor schedKey={schedKey} schedule={schedule} scopes={scopes} />
 
       {/* Restore from file */}
-      <div className="space-y-1.5">
-        <Label className="text-xs flex items-center gap-1.5">
-          <Upload className="h-3.5 w-3.5 text-muted-foreground" />
-          Restore from a file
-        </Label>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={uploadAccept}
-          onChange={handleUpload}
-          disabled={uploading}
-          className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-accent"
-        />
-        <p className="text-[11px] text-muted-foreground">{uploadNote}</p>
-      </div>
+      <FormGroup legendText="Restore from a file">
+        <Stack gap={3}>
+          <FileUploaderButton
+            accept={uploadAccept.split(",")}
+            buttonKind="tertiary"
+            labelText="Choose a dump file"
+            disabled={uploading}
+            onChange={handleUpload}
+          />
+          {uploading && <InlineLoading description="Uploading…" />}
+          <p className="gisila-db__hint">{uploadNote}</p>
+        </Stack>
+      </FormGroup>
 
       {/* Backups list */}
-      <div className="space-y-2">
-        <Label className="text-xs">Backups</Label>
-        {backups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No backups yet.</p>
-        ) : (
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
-            {backups.map((b) => (
-              <div
-                key={b.id}
-                className="flex items-center gap-3 rounded-md border px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium">
-                      {formatDate(b.createdAt)}
-                    </span>
-                    <Badge variant={STATUS_VARIANT[b.status]} className="text-[10px] py-0">
-                      {b.status === "running" || b.status === "pending" ? (
-                        <Loader className="mr-1 h-2.5 w-2.5 animate-spin" />
-                      ) : null}
-                      {b.status}
-                    </Badge>
-                    {b.trigger === "scheduled" && (
-                      <Badge variant="secondary" className="text-[10px] py-0">
-                        scheduled
-                      </Badge>
+      {backups.length === 0 ? (
+        <div>
+          <p className="gisila-db__stat-label">Backups</p>
+          <p className="gisila-db__note">No backups yet.</p>
+        </div>
+      ) : (
+        <TableContainer title="Backups">
+          <Table size="sm">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Created</TableHeader>
+                <TableHeader>Scope</TableHeader>
+                <TableHeader>Size</TableHeader>
+                <TableHeader>Status</TableHeader>
+                <TableHeader>Actions</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {backups.map((b) => (
+                <TableRow key={b.id}>
+                  <TableCell>{formatDate(b.createdAt)}</TableCell>
+                  <TableCell>{SCOPE_LABEL[b.scope]}</TableCell>
+                  <TableCell>{formatSize(b.sizeBytes)}</TableCell>
+                  <TableCell>
+                    <div className="gisila-db__tags">
+                      <Tag type={STATUS_TAG[b.status]} size="sm">
+                        {b.status}
+                      </Tag>
+                      {b.trigger === "scheduled" && (
+                        <Tag type="cool-gray" size="sm">scheduled</Tag>
+                      )}
+                    </div>
+                    {b.errorMessage && (
+                      <span className="gisila-db__suberror">
+                        {b.errorMessage}
+                      </span>
                     )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    {SCOPE_LABEL[b.scope]} · {formatSize(b.sizeBytes)}
-                    {b.errorMessage ? (
-                      <span className="text-destructive"> · {b.errorMessage}</span>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {b.status === "completed" && (
-                    <>
+                  </TableCell>
+                  <TableCell>
+                    <div className="gisila-db__row-actions">
+                      {b.status === "completed" && (
+                        <>
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            hasIconOnly
+                            renderIcon={Download}
+                            iconDescription="Download"
+                            onClick={() => handleDownload(b)}
+                          />
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            hasIconOnly
+                            renderIcon={Reset}
+                            iconDescription="Restore from this backup"
+                            onClick={() => onRequest({ kind: "restore", backup: b })}
+                          />
+                        </>
+                      )}
                       <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground"
-                        title="Download"
-                        onClick={() => handleDownload(b)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground"
-                        title="Restore from this backup"
-                        onClick={() => handleRestore(b)}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    title="Delete backup"
-                    onClick={() => handleDelete(b)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+                        kind="danger--ghost"
+                        size="sm"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription="Delete backup"
+                        onClick={() => onRequest({ kind: "delete", backup: b })}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Stack>
   );
 }
 
@@ -438,148 +486,119 @@ function ScheduleEditor({
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-3 py-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            Scheduled backups
-          </Label>
-          <Select
-            value={enabled ? "on" : "off"}
-            onValueChange={(v) => setEnabled(v === "on")}
-          >
-            <SelectTrigger className="h-7 w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="off">Disabled</SelectItem>
-              <SelectItem value="on">Enabled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+    <Tile>
+      <Stack gap={5}>
+        <Toggle
+          id="backup-schedule-enabled"
+          labelText="Scheduled backups"
+          labelA="Disabled"
+          labelB="Enabled"
+          toggled={enabled}
+          onToggle={setEnabled}
+        />
 
         {enabled && (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px]">Frequency</Label>
-                <Select
-                  value={frequency}
-                  onValueChange={(v) => setFrequency(v as PgBackupFrequency)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px]">Scope</Label>
-                <Select value={scope} onValueChange={(v) => setScope(v as PgBackupScope)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scopes.map((s) => (
-                      <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="gisila-db__form-grid">
+              <Select
+                id="backup-frequency"
+                labelText="Frequency"
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as PgBackupFrequency)}
+              >
+                <SelectItem value="hourly" text="Hourly" />
+                <SelectItem value="daily" text="Daily" />
+                <SelectItem value="weekly" text="Weekly" />
+              </Select>
+
+              <Select
+                id="backup-schedule-scope"
+                labelText="Scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value as PgBackupScope)}
+              >
+                {scopes.map((s) => (
+                  <SelectItem key={s} value={s} text={SCOPE_LABEL[s]} />
+                ))}
+              </Select>
 
               {frequency === "weekly" && (
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Day of week</Label>
-                  <Select
-                    value={String(weekday)}
-                    onValueChange={(v) => setWeekday(Number(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {WEEKDAYS.map((d, i) => (
-                        <SelectItem key={i} value={String(i)}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select
+                  id="backup-weekday"
+                  labelText="Day of week"
+                  value={String(weekday)}
+                  onChange={(e) => setWeekday(Number(e.target.value))}
+                >
+                  {WEEKDAYS.map((d, i) => (
+                    <SelectItem key={i} value={String(i)} text={d} />
+                  ))}
+                </Select>
               )}
 
               {frequency !== "hourly" && (
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Time (UTC)</Label>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={23}
-                      value={hour}
-                      onChange={(e) => setHour(Number(e.target.value))}
-                      className="h-9"
-                    />
-                    <span className="text-muted-foreground">:</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={minute}
-                      onChange={(e) => setMinute(Number(e.target.value))}
-                      className="h-9"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {frequency === "hourly" && (
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Minute past the hour</Label>
-                  <Input
-                    type="number"
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem" }}>
+                  <NumberInput
+                    id="backup-hour"
+                    label="Time (UTC)"
+                    min={0}
+                    max={23}
+                    value={hour}
+                    onChange={(_evt, { value }) => setHour(Number(value))}
+                  />
+                  <NumberInput
+                    id="backup-minute"
+                    label="Minute"
                     min={0}
                     max={59}
                     value={minute}
-                    onChange={(e) => setMinute(Number(e.target.value))}
-                    className="h-9"
+                    onChange={(_evt, { value }) => setMinute(Number(value))}
                   />
                 </div>
               )}
 
-              <div className="space-y-1">
-                <Label className="text-[11px]">Keep last (backups)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={keepCount}
-                  onChange={(e) => setKeepCount(Number(e.target.value))}
-                  className="h-9"
+              {frequency === "hourly" && (
+                <NumberInput
+                  id="backup-minute-hourly"
+                  label="Minute past the hour"
+                  min={0}
+                  max={59}
+                  value={minute}
+                  onChange={(_evt, { value }) => setMinute(Number(value))}
                 />
-              </div>
+              )}
+
+              <NumberInput
+                id="backup-keep-count"
+                label="Keep last (backups)"
+                min={1}
+                max={365}
+                value={keepCount}
+                onChange={(_evt, { value }) => setKeepCount(Number(value))}
+              />
             </div>
 
             {schedule?.nextRunAt && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="gisila-db__hint">
                 Next run: {formatDate(schedule.nextRunAt)}
               </p>
             )}
           </>
         )}
 
-        <div className="flex justify-end">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: "0.5rem",
+          }}
+        >
+          {saving && <InlineLoading description="Saving…" />}
           <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving && <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             Save schedule
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </Stack>
+    </Tile>
   );
 }

@@ -2,25 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import { Add, Save, TrashCan, View, ViewOff } from "@carbon/icons-react";
 import {
-  Plus,
-  Trash2,
-  Save,
-  Loader,
-  Eye,
-  EyeOff,
-  Copy,
-  Check,
-  Database,
-  Users,
-  Network,
-  Link2,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+  Button,
+  CodeSnippet,
+  Form,
+  FormGroup,
+  InlineLoading,
+  NumberInput,
+  PasswordInput,
+  Select,
+  SelectItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type {
@@ -33,6 +38,7 @@ import type {
   PostgresDatabase,
   ListResponse,
 } from "@/lib/types";
+import "../../_services.scss";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,25 +52,12 @@ function parseList<T>(raw: string | undefined): T[] {
   }
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+function RequiredLabel({ children }: { children: string }) {
   return (
-    <button
-      type="button"
-      className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-      title="Copy"
-      onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
+    <span className="gisila-label">
+      {children}
+      <span className="gisila-required">*</span>
+    </span>
   );
 }
 
@@ -142,14 +135,11 @@ export function PgBouncerConfig({
   }
 
   return (
-    <div className="space-y-6">
-      {/* ── Settings ─────────────────────────────────────────────── */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <Network className="h-4 w-4 text-muted-foreground" />
-          Settings
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+    // Nothing here submits: saving goes through the button below, so the form
+    // element only groups the controls (as it did before the migration).
+    <Form onSubmit={(e) => e.preventDefault()}>
+      <PageSection title="Settings">
+        <div className="gisila-fields">
           {scalarFields.map((f) => (
             <ScalarField
               key={f.key}
@@ -159,22 +149,17 @@ export function PgBouncerConfig({
             />
           ))}
         </div>
-      </section>
+      </PageSection>
 
-      {/* ── Databases ────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold flex items-center gap-2">
-            <Database className="h-4 w-4 text-muted-foreground" />
-            Database servers (pools)
-          </h2>
-          <div className="flex items-center gap-2">
-            <PickManaged
-              onPick={(db) => setDatabases((p) => [...p, db])}
-            />
+      <PageSection
+        title="Database servers (pools)"
+        actions={
+          <>
+            <PickManaged onPick={(db) => setDatabases((p) => [...p, db])} />
             <Button
               size="sm"
-              variant="outline"
+              kind="ghost"
+              renderIcon={Add}
               onClick={() =>
                 setDatabases((p) => [
                   ...p,
@@ -182,24 +167,25 @@ export function PgBouncerConfig({
                 ])
               }
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add
             </Button>
-          </div>
-        </div>
-
+          </>
+        }
+      >
         {databases.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="gisila-detail__note">
             No pools yet. Add one manually or pick from this panel&apos;s managed
             Postgres.
           </p>
         ) : (
-          <div className="space-y-2">
+          <Stack gap={4}>
             {databases.map((d, i) => (
               <DatabaseRow
                 key={i}
+                index={i}
                 db={d}
                 showSecret={showSecrets}
+                onToggleSecret={() => setShowSecrets((s) => !s)}
                 onChange={(next) =>
                   setDatabases((p) => p.map((x, j) => (j === i ? next : x)))
                 }
@@ -208,94 +194,113 @@ export function PgBouncerConfig({
                 }
               />
             ))}
-          </div>
+          </Stack>
         )}
-      </section>
+      </PageSection>
 
-      {/* ── Users ────────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            Client users
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              onClick={() => setShowSecrets((s) => !s)}
-            >
-              {showSecrets ? (
-                <EyeOff className="h-3.5 w-3.5" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
-              )}
-              {showSecrets ? "Hide" : "Show"} passwords
-            </button>
+      <PageSection
+        title="Client users"
+        actions={
+          <>
             <Button
               size="sm"
-              variant="outline"
+              kind="ghost"
+              renderIcon={showSecrets ? ViewOff : View}
+              onClick={() => setShowSecrets((s) => !s)}
+            >
+              {showSecrets ? "Hide" : "Show"} passwords
+            </Button>
+            <Button
+              size="sm"
+              kind="ghost"
+              renderIcon={Add}
               onClick={() =>
                 setUsers((p) => [...p, { username: "", password: "" }])
               }
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add user
             </Button>
-          </div>
-        </div>
-
+          </>
+        }
+      >
         {users.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="gisila-detail__note">
             No users yet. Required unless auth type is{" "}
-            <code className="text-xs">trust</code>.
+            <CodeSnippet type="inline">trust</CodeSnippet>.
           </p>
         ) : (
-          <div className="space-y-2">
-            {users.map((u, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input
-                  placeholder="username"
-                  value={u.username}
-                  className="h-8"
-                  onChange={(e) =>
-                    setUsers((p) =>
-                      p.map((x, j) =>
-                        j === i ? { ...x, username: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-                <Input
-                  placeholder="password"
-                  type={showSecrets ? "text" : "password"}
-                  value={u.password}
-                  className="h-8"
-                  onChange={(e) =>
-                    setUsers((p) =>
-                      p.map((x, j) =>
-                        j === i ? { ...x, password: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() =>
-                    setUsers((p) => p.filter((_, j) => j !== i))
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
+          <TableContainer>
+            <Table size="sm">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Username</TableHeader>
+                  <TableHeader>Password</TableHeader>
+                  <TableHeader className="gisila-table__actions">
+                    Remove
+                  </TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {users.map((u, i) => (
+                  <TableRow key={i}>
+                    <TableCell>
+                      <TextInput
+                        id={`pgb-user-name-${i}`}
+                        labelText="Username"
+                        hideLabel
+                        size="sm"
+                        placeholder="username"
+                        value={u.username}
+                        onChange={(e) =>
+                          setUsers((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, username: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <PasswordInput
+                        id={`pgb-user-password-${i}`}
+                        labelText="Password"
+                        hideLabel
+                        size="sm"
+                        placeholder="password"
+                        type={showSecrets ? "text" : "password"}
+                        onTogglePasswordVisibility={() =>
+                          setShowSecrets((s) => !s)
+                        }
+                        value={u.password}
+                        onChange={(e) =>
+                          setUsers((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, password: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </TableCell>
+                    <TableCell className="gisila-table__actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription="Remove"
+                        onClick={() =>
+                          setUsers((p) => p.filter((_, j) => j !== i))
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
-      </section>
+      </PageSection>
 
-      {/* ── Connection info ──────────────────────────────────────── */}
       {databases.length > 0 && (
         <ConnectionInfo
           databases={databases}
@@ -304,15 +309,16 @@ export function PgBouncerConfig({
         />
       )}
 
-      <Button size="sm" disabled={saving} onClick={save}>
+      <PageSection>
         {saving ? (
-          <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          <InlineLoading status="active" description="Saving…" />
         ) : (
-          <Save className="mr-1.5 h-3.5 w-3.5" />
+          <Button size="md" renderIcon={Save} onClick={save}>
+            Save configuration
+          </Button>
         )}
-        Save configuration
-      </Button>
-    </div>
+      </PageSection>
+    </Form>
   );
 }
 
@@ -327,148 +333,138 @@ function ScalarField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  if (field.type === "select") {
+    return (
+      <Select
+        id={`pgb-${field.key}`}
+        labelText={field.label}
+        helperText={field.hint}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {field.options?.map((opt) => (
+          <SelectItem key={opt} value={opt} text={opt} />
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "number") {
+    return (
+      <NumberInput
+        id={`pgb-${field.key}`}
+        label={field.label}
+        helperText={field.hint}
+        value={value}
+        min={field.min}
+        max={field.max}
+        allowEmpty
+        // Every config value is persisted as a string, so the number is written
+        // straight back into the flat string map.
+        onChange={(_event, { value: next }) => onChange(String(next))}
+      />
+    );
+  }
+
   return (
-    <div className="space-y-1.5">
-      <Label className="flex items-center gap-1.5 text-xs">{field.label}</Label>
-      {field.type === "select" ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {field.options?.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <Input
-          type={field.type === "number" ? "number" : "text"}
-          value={value}
-          placeholder={field.placeholder ?? field.default}
-          min={field.min}
-          max={field.max}
-          className="h-8"
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-      {field.hint && (
-        <p className="text-[11px] text-muted-foreground">{field.hint}</p>
-      )}
-    </div>
+    <TextInput
+      id={`pgb-${field.key}`}
+      labelText={field.label}
+      helperText={field.hint}
+      value={value}
+      placeholder={field.placeholder ?? field.default}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 
 // ── Database row editor ────────────────────────────────────────────────────────
 
 function DatabaseRow({
+  index,
   db,
   showSecret,
+  onToggleSecret,
   onChange,
   onRemove,
 }: {
+  index: number;
   db: PgbDatabase;
   showSecret: boolean;
+  onToggleSecret: () => void;
   onChange: (next: PgbDatabase) => void;
   onRemove: () => void;
 }) {
   const set = (patch: Partial<PgbDatabase>) => onChange({ ...db, ...patch });
+  const id = (name: string) => `pgb-db-${index}-${name}`;
+
   return (
-    <Card>
-      <CardContent className="py-3 space-y-2">
-        <div className="grid gap-2 sm:grid-cols-4">
-          <Field label="Pool name" required>
-            <Input
-              placeholder="app_pool"
-              value={db.name}
-              className="h-8"
-              onChange={(e) => set({ name: e.target.value })}
-            />
-          </Field>
-          <Field label="Host" required>
-            <Input
-              placeholder="127.0.0.1"
-              value={db.host}
-              className="h-8"
-              onChange={(e) => set({ host: e.target.value })}
-            />
-          </Field>
-          <Field label="Port">
-            <Input
-              type="number"
-              placeholder="5432"
-              value={db.port}
-              className="h-8"
-              onChange={(e) => set({ port: e.target.value })}
-            />
-          </Field>
-          <Field label="Database" required>
-            <Input
-              placeholder="app_prod"
-              value={db.dbname}
-              className="h-8"
-              onChange={(e) => set({ dbname: e.target.value })}
-            />
-          </Field>
-          <Field label="User (optional)">
-            <Input
-              placeholder="(forwarded from client)"
-              value={db.user ?? ""}
-              className="h-8"
-              onChange={(e) => set({ user: e.target.value })}
-            />
-          </Field>
-          <Field label="Password (optional)">
-            <Input
-              type={showSecret ? "text" : "password"}
-              value={db.password ?? ""}
-              className="h-8"
-              onChange={(e) => set({ password: e.target.value })}
-            />
-          </Field>
-          <Field label="Pool size (optional)">
-            <Input
-              type="number"
-              placeholder="default"
-              value={db.pool_size ?? ""}
-              className="h-8"
-              onChange={(e) => set({ pool_size: e.target.value })}
-            />
-          </Field>
-          <div className="flex items-end justify-end">
+    <Tile>
+      <FormGroup legendText={db.name || `Pool ${index + 1}`}>
+        <div className="gisila-fields">
+          <TextInput
+            id={id("name")}
+            labelText={<RequiredLabel>Pool name</RequiredLabel>}
+            placeholder="app_pool"
+            value={db.name}
+            onChange={(e) => set({ name: e.target.value })}
+          />
+          <TextInput
+            id={id("host")}
+            labelText={<RequiredLabel>Host</RequiredLabel>}
+            className="gisila-field--mono"
+            placeholder="127.0.0.1"
+            value={db.host}
+            onChange={(e) => set({ host: e.target.value })}
+          />
+          <NumberInput
+            id={id("port")}
+            label="Port"
+            value={db.port}
+            allowEmpty
+            onChange={(_event, { value }) => set({ port: String(value) })}
+          />
+          <TextInput
+            id={id("dbname")}
+            labelText={<RequiredLabel>Database</RequiredLabel>}
+            placeholder="app_prod"
+            value={db.dbname}
+            onChange={(e) => set({ dbname: e.target.value })}
+          />
+          <TextInput
+            id={id("user")}
+            labelText="User (optional)"
+            placeholder="(forwarded from client)"
+            value={db.user ?? ""}
+            onChange={(e) => set({ user: e.target.value })}
+          />
+          <PasswordInput
+            id={id("password")}
+            labelText="Password (optional)"
+            type={showSecret ? "text" : "password"}
+            onTogglePasswordVisibility={onToggleSecret}
+            value={db.password ?? ""}
+            onChange={(e) => set({ password: e.target.value })}
+          />
+          <NumberInput
+            id={id("pool_size")}
+            label="Pool size (optional)"
+            value={db.pool_size ?? ""}
+            allowEmpty
+            onChange={(_event, { value }) => set({ pool_size: String(value) })}
+          />
+          <div className="gisila-row-actions">
             <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              kind="ghost"
+              hasIconOnly
+              renderIcon={TrashCan}
+              iconDescription="Remove"
               onClick={onRemove}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            />
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-[11px] flex items-center gap-1">
-        {label}
-        {required && <span className="text-red-500">*</span>}
-      </Label>
-      {children}
-    </div>
+      </FormGroup>
+    </Tile>
   );
 }
 
@@ -494,21 +490,30 @@ function PickManaged({ onPick }: { onPick: (db: PgbDatabase) => void }) {
   if (instances.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <select
+    <div className="gisila-picker">
+      <Select
+        id="pgb-pick-instance"
+        labelText="Pick from managed instance"
+        hideLabel
+        size="sm"
         value={instanceId}
         onChange={(e) => setInstanceId(e.target.value)}
-        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
       >
-        <option value="">Pick from managed…</option>
+        <SelectItem value="" text="Pick from managed…" />
         {instances.map((i) => (
-          <option key={i.id} value={String(i.id)}>
-            {i.displayName} (:{i.port})
-          </option>
+          <SelectItem
+            key={i.id}
+            value={String(i.id)}
+            text={`${i.displayName} (:${i.port})`}
+          />
         ))}
-      </select>
+      </Select>
       {instanceId && (
-        <select
+        <Select
+          id="pgb-pick-database"
+          labelText="Pick a database"
+          hideLabel
+          size="sm"
           value=""
           onChange={(e) => {
             const db = dbs.find((d) => String(d.id) === e.target.value);
@@ -523,15 +528,12 @@ function PickManaged({ onPick }: { onPick: (db: PgbDatabase) => void }) {
               setInstanceId("");
             }
           }}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
         >
-          <option value="">Select database…</option>
+          <SelectItem value="" text="Select database…" />
           {dbs.map((d) => (
-            <option key={d.id} value={String(d.id)}>
-              {d.dbName}
-            </option>
+            <SelectItem key={d.id} value={String(d.id)} text={d.dbName} />
           ))}
-        </select>
+        </Select>
       )}
     </div>
   );
@@ -553,41 +555,33 @@ function ConnectionInfo({
   const defaultUser = users[0]?.username;
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold flex items-center gap-2">
-        <Link2 className="h-4 w-4 text-muted-foreground" />
-        Connection info
-      </h2>
-      <p className="text-[11px] text-muted-foreground">
-        Point your apps at PgBouncer instead of Postgres directly. The pool name
-        is used as the database name.
-      </p>
-      <div className="space-y-2">
+    <PageSection
+      title="Connection info"
+      description="Point your apps at PgBouncer instead of Postgres directly. The pool name is used as the database name."
+    >
+      <Stack gap={5}>
         {databases
           .filter((d) => d.name?.trim())
           .map((d, i) => {
             const user = d.user || defaultUser || "user";
             const url = `postgresql://${user}@${host}:${listenPort}/${d.name}`;
             return (
-              <div key={i} className="rounded-md border bg-muted/30 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px]">
+              <Stack key={i} gap={2}>
+                <div className="gisila-catalog__tags">
+                  <Tag type="outline" size="sm">
                     {d.name}
-                  </Badge>
-                  <span className="text-[11px] text-muted-foreground">
+                  </Tag>
+                  <span className="gisila-catalog__meta">
                     host={host} port={listenPort} dbname={d.name}
                   </span>
                 </div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <code className="flex-1 break-all text-xs font-mono">
-                    {url}
-                  </code>
-                  <CopyButton text={url} />
-                </div>
-              </div>
+                <CodeSnippet type="single" feedback="Copied!">
+                  {url}
+                </CodeSnippet>
+              </Stack>
             );
           })}
-      </div>
-    </section>
+      </Stack>
+    </PageSection>
   );
 }

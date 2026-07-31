@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/compat/link";
+import {
+  Button,
+  Link as CarbonLink,
+  PasswordInput,
+  Stack,
+  TextInput,
+} from "@carbon/react";
+import RouterLink from "@/compat/link";
 import { useRouter } from "@/compat/navigation";
 import { toast } from "@/lib/toast";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, setToken } from "@/lib/api";
 import type { User, Team } from "@/lib/types";
+import "../../(panel)/_batch-a.scss";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -42,72 +47,61 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Create your panel
-        </h1>
-        <p className="text-sm text-muted-foreground">
+    <Stack gap={6}>
+      <div>
+        <h1 className="gisila-auth__title">Create your panel</h1>
+        <p className="gisila-auth__subtitle">
           One panel, infinite apps. 30 seconds to first deploy.
         </p>
       </div>
-      <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="firstName">First name</Label>
-            <Input
+      <form onSubmit={onSubmit}>
+        <Stack gap={5}>
+          <div className="gisila-auth__names">
+            <TextInput
               id="firstName"
+              labelText="First name"
               value={form.firstName}
-              onChange={(e) =>
-                setForm({ ...form, firstName: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="lastName">Last name</Label>
-            <Input
+            <TextInput
               id="lastName"
+              labelText="Last name"
               value={form.lastName}
-              onChange={(e) =>
-                setForm({ ...form, lastName: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
             />
           </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
+          <TextInput
             id="email"
+            labelText="Email"
             type="email"
             required
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
+            labelText="Password"
             required
             minLength={8}
+            helperText="At least 8 characters."
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
-          <p className="text-xs text-muted-foreground">
-            At least 8 characters.
-          </p>
-        </div>
-        <Button className="w-full" type="submit" disabled={loading}>
-          {loading ? "Creating…" : "Create account"}
-        </Button>
+          <Button
+            className="gisila-auth__submit"
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? "Creating…" : "Create account"}
+          </Button>
+        </Stack>
       </form>
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="gisila-auth__footnote">
         Already have an account?{" "}
-        <Link href="/login" className="text-primary hover:underline">
+        <CarbonLink as={RouterLink} href="/login">
           Sign in
-        </Link>
+        </CarbonLink>
       </p>
-    </div>
+    </Stack>
   );
 }

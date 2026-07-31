@@ -1,59 +1,80 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ElementType } from "react";
 import useSWR, { mutate } from "swr";
 import { toast } from "@/lib/toast";
 import {
-  HardDrive,
-  Plus,
-  Trash2,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Play,
-  Square,
+  Add,
+  BareMetalServer,
+  CheckmarkFilled,
   Cloud,
-  Server,
-  Copy,
-  Eye,
-  Globe,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  Earth,
+  ObjectStorage,
+  PlayFilled,
+  StopFilled,
+  TrashCan,
+  View,
+  WarningAlt,
+} from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  Button,
+  Checkbox,
+  CodeSnippet,
+  InlineLoading,
+  Link as CarbonLink,
+  Modal,
+  NumberInput,
+  PasswordInput,
+  SkeletonText,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type {
   ListResponse,
   StorageProvider,
   StorageProviderStatus,
   StorageBucket,
 } from "@/lib/types";
+import "../_storage-mail.scss";
+
+type StatusTone = "green" | "gray" | "red" | "blue";
 
 const STATUS: Record<
   StorageProviderStatus,
-  { icon: React.ReactNode; label: string; variant: "outline" | "secondary" | "destructive" }
+  { label: string; tone: StatusTone; icon?: ElementType; busy?: boolean }
 > = {
-  running:      { icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />, label: "Running", variant: "outline" },
-  config_only:  { icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />, label: "Ready", variant: "outline" },
-  stopped:      { icon: <AlertCircle className="h-3.5 w-3.5 text-amber-500" />,   label: "Stopped", variant: "secondary" },
-  failed:       { icon: <AlertCircle className="h-3.5 w-3.5 text-red-500" />,     label: "Failed", variant: "destructive" },
-  pending:      { icon: <Loader className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: "Pending", variant: "secondary" },
-  installing:   { icon: <Loader className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: "Installing", variant: "secondary" },
-  uninstalling: { icon: <Loader className="h-3.5 w-3.5 animate-spin text-amber-500" />, label: "Removing", variant: "secondary" },
+  running:      { label: "Running", tone: "green", icon: CheckmarkFilled },
+  config_only:  { label: "Ready", tone: "green", icon: CheckmarkFilled },
+  stopped:      { label: "Stopped", tone: "gray", icon: WarningAlt },
+  failed:       { label: "Failed", tone: "red", icon: WarningAlt },
+  pending:      { label: "Pending", tone: "blue", busy: true },
+  installing:   { label: "Installing", tone: "blue", busy: true },
+  uninstalling: { label: "Removing", tone: "gray", busy: true },
 };
 
-function copy(text: string) {
-  navigator.clipboard.writeText(text);
+function ProviderStatusTag({ status }: { status: StorageProviderStatus }) {
+  const s = STATUS[status] ?? STATUS.pending;
+  if (s.busy) return <InlineLoading status="active" description={s.label} />;
+  return (
+    <Tag size="sm" type={s.tone} renderIcon={s.icon}>
+      {s.label}
+    </Tag>
+  );
+}
+
+/// CodeSnippet copies its own contents; this only keeps the toast the panel
+/// has always shown on copy.
+function copied() {
   toast.success("Copied");
 }
 
@@ -69,54 +90,58 @@ export default function StoragePage() {
   const hasMinio = providers.some((p) => p.kind === "minio");
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Object storage</h1>
-          <p className="text-sm text-muted-foreground">
-            S3-compatible buckets — self-hosted MinIO or an external provider.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setConnectorOpen(true)}>
-            <Cloud className="mr-1.5 h-4 w-4" /> Add connector
-          </Button>
-          {!hasMinio && (
-            <Button size="sm" onClick={() => setMinioOpen(true)}>
-              <Server className="mr-1.5 h-4 w-4" /> Install MinIO
+    <Page>
+      <PageHeader
+        title="Object storage"
+        description="S3-compatible buckets — self-hosted MinIO or an external provider."
+        actions={
+          <>
+            <Button
+              kind="tertiary"
+              size="sm"
+              renderIcon={Cloud}
+              onClick={() => setConnectorOpen(true)}
+            >
+              Add connector
             </Button>
-          )}
-        </div>
-      </div>
+            {!hasMinio && (
+              <Button
+                size="sm"
+                renderIcon={BareMetalServer}
+                onClick={() => setMinioOpen(true)}
+              >
+                Install MinIO
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <SkeletonText paragraph lineCount={3} />
       ) : providers.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <HardDrive className="mx-auto mb-3 h-10 w-10 opacity-40" />
-            <p className="text-sm text-muted-foreground">
-              No storage providers yet. Install MinIO for self-hosted buckets, or
-              connect an external S3/R2 endpoint.
-            </p>
-          </CardContent>
-        </Card>
+        <Tile className="gisila-empty">
+          <ObjectStorage size={32} style={{ opacity: 0.4 }} />
+          <p>
+            No storage providers yet. Install MinIO for self-hosted buckets, or
+            connect an external S3/R2 endpoint.
+          </p>
+        </Tile>
       ) : (
-        <div className="space-y-4">
+        <Stack gap={5}>
           {providers.map((p) => (
             <ProviderCard key={p.id} provider={p} />
           ))}
-        </div>
+        </Stack>
       )}
 
       <InstallMinioDialog open={minioOpen} onOpenChange={setMinioOpen} />
       <AddConnectorDialog open={connectorOpen} onOpenChange={setConnectorOpen} />
-    </div>
+    </Page>
   );
 }
 
 function ProviderCard({ provider: p }: { provider: StorageProvider }) {
-  const s = STATUS[p.status] ?? STATUS.pending;
   const bucketsKey = `/storage/providers/${p.id}/buckets`;
   const { data } = useSWR<ListResponse<StorageBucket>>(bucketsKey, fetcher, {
     refreshInterval: p.status === "running" || p.kind === "external" ? 0 : 4000,
@@ -149,110 +174,118 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
   const canHaveBuckets = p.status === "running" || p.kind === "external";
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0">
-        <div className="space-y-1">
-          <CardTitle className="flex items-center gap-2 text-base">
+    <Tile>
+      <div className="gisila-sm__tile-head">
+        <Stack gap={2}>
+          <div className="gisila-sm__title-row">
             {p.kind === "minio" ? (
-              <Server className="h-4 w-4 text-violet-500" />
+              <BareMetalServer size={16} />
             ) : (
-              <Cloud className="h-4 w-4 text-sky-500" />
+              <Cloud size={16} />
             )}
-            {p.displayName}
-            <Badge variant={s.variant} className="ml-1 gap-1 text-[10px]">
-              {s.icon} {s.label}
-            </Badge>
-          </CardTitle>
-          <p className="font-mono text-xs text-muted-foreground">{p.endpoint}</p>
+            <span className="gisila-sm__title">{p.displayName}</span>
+            <ProviderStatusTag status={p.status} />
+          </div>
+          <p className="gisila-sm__meta">{p.endpoint}</p>
           {p.publicUrl ? (
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="gisila-sm__meta">
               public:{" "}
-              <a
-                href={p.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-violet-500 hover:underline"
-              >
+              <CarbonLink href={p.publicUrl} target="_blank" rel="noreferrer">
                 {p.publicUrl}
-              </a>
+              </CarbonLink>
             </p>
           ) : (
             p.kind === "minio" && (
-              <p className="text-xs text-amber-500">
+              <p className="gisila-sm__warning">
                 Not publicly exposed — only reachable from apps on this host.
               </p>
             )
           )}
           {p.consoleUrl && (
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="gisila-sm__meta">
               console:{" "}
-              <a
-                href={p.consoleUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-violet-500 hover:underline"
-              >
+              <CarbonLink href={p.consoleUrl} target="_blank" rel="noreferrer">
                 {p.consoleUrl}
-              </a>
+              </CarbonLink>
             </p>
           )}
           {p.errorMessage && (
-            <p className="text-xs text-red-500">{p.errorMessage}</p>
+            <p className="gisila-sm__error">{p.errorMessage}</p>
           )}
-        </div>
-        <div className="flex gap-1">
+        </Stack>
+        <div className="gisila-sm__actions">
           {p.kind === "minio" && (
             <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              title="Public URL"
+              kind="ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={Earth}
+              iconDescription="Public URL"
               onClick={() => setExposeOpen(true)}
-            >
-              <Globe className="h-4 w-4" />
-            </Button>
+            />
           )}
           {p.kind === "minio" && p.status === "stopped" && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => lifecycle("start")}>
-              <Play className="h-4 w-4" />
-            </Button>
+            <Button
+              kind="ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={PlayFilled}
+              iconDescription="Start"
+              onClick={() => lifecycle("start")}
+            />
           )}
           {p.kind === "minio" && p.status === "running" && (
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => lifecycle("stop")}>
-              <Square className="h-4 w-4" />
-            </Button>
+            <Button
+              kind="ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={StopFilled}
+              iconDescription="Stop"
+              onClick={() => lifecycle("stop")}
+            />
           )}
           <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-muted-foreground hover:text-red-500"
+            kind="danger--ghost"
+            size="sm"
+            hasIconOnly
+            renderIcon={TrashCan}
+            iconDescription="Remove provider"
             onClick={remove}
+          />
+        </div>
+      </div>
+
+      <div className="gisila-sm__bar" style={{ marginBlock: "1.5rem 0.5rem" }}>
+        <p className="gisila-sm__label">Buckets</p>
+        {canHaveBuckets && (
+          <Button
+            kind="tertiary"
+            size="sm"
+            renderIcon={Add}
+            onClick={() => setCreateOpen(true)}
           >
-            <Trash2 className="h-4 w-4" />
+            New bucket
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Buckets
-          </p>
-          {canHaveBuckets && (
-            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" /> New bucket
-            </Button>
-          )}
-        </div>
-        {buckets.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No buckets yet.</p>
-        ) : (
-          <div className="divide-y divide-border rounded-md border border-border">
+        )}
+      </div>
+      {buckets.length === 0 ? (
+        <p className="gisila-sm__note">No buckets yet.</p>
+      ) : (
+        <Table size="sm">
+          <TableHead>
+            <TableRow>
+              <TableHeader>Bucket</TableHeader>
+              <TableHeader>Status</TableHeader>
+              <TableHeader aria-label="Actions" />
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {buckets.map((b) => (
               <BucketRow key={b.id} providerId={p.id} bucket={b} />
             ))}
-          </div>
-        )}
-      </CardContent>
+          </TableBody>
+        </Table>
+      )}
 
       <CreateBucketDialog
         open={createOpen}
@@ -265,7 +298,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
         onOpenChange={setExposeOpen}
         provider={p}
       />
-    </Card>
+    </Tile>
   );
 }
 
@@ -314,79 +347,64 @@ function ExposeDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Public URL for {p.displayName}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>S3 API URL</Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              placeholder="https://s3.example.com"
-              value={publicUrl}
-              onChange={(e) => setPublicUrl(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>
-              Console URL
-              <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              placeholder="https://minio.example.com"
-              value={consoleUrl}
-              onChange={(e) => setConsoleUrl(e.target.value)}
-            />
-          </div>
-          <label
-            className={cn(
-              "flex items-center gap-2 text-sm",
-              !anyHttps && "opacity-50",
-            )}
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-border"
-              checked={issueCert}
-              disabled={!anyHttps}
-              onChange={(e) => setIssueCert(e.target.checked)}
-            />
-            Obtain a Let&apos;s Encrypt certificate
-          </label>
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
-            <p>
-              MinIO listens on <code className="font-mono">127.0.0.1</code> only.
-              Each URL creates an nginx reverse-proxy vhost — the S3 API (unlimited
-              upload size) and the web console (websockets) get their own
-              hostnames, since they can&apos;t share one.
-            </p>
-            <p>
-              Leave the certificate box unchecked if TLS is terminated upstream
-              (e.g. a Cloudflare proxy or external load balancer) — nginx then
-              serves plain HTTP on port 80 and no certbot runs.
-            </p>
-            <p>
-              Point a DNS <code className="font-mono">A</code> record at this
-              server for each hostname first. An{" "}
-              <code className="font-mono">https://</code> URL triggers a
-              Let&apos;s Encrypt certificate automatically.
-            </p>
-            <p>Leave a field blank to remove its vhost.</p>
-          </div>
+    <Modal
+      open={open}
+      onRequestClose={() => onOpenChange(false)}
+      modalHeading={`Public URL for ${p.displayName}`}
+      primaryButtonText={saving ? "Saving…" : "Save"}
+      primaryButtonDisabled={saving}
+      secondaryButtonText="Cancel"
+      onRequestSubmit={submit}
+      size="md"
+    >
+      <Stack gap={5}>
+        <TextInput
+          id={`expose-public-${p.id}`}
+          labelText="S3 API URL"
+          placeholder="https://s3.example.com"
+          value={publicUrl}
+          onChange={(e) => setPublicUrl(e.target.value)}
+        />
+        <TextInput
+          id={`expose-console-${p.id}`}
+          labelText={
+            <>
+              Console URL <span className="gisila-sm__optional">(optional)</span>
+            </>
+          }
+          placeholder="https://minio.example.com"
+          value={consoleUrl}
+          onChange={(e) => setConsoleUrl(e.target.value)}
+        />
+        <Checkbox
+          id={`expose-cert-${p.id}`}
+          labelText="Obtain a Let's Encrypt certificate"
+          checked={issueCert}
+          disabled={!anyHttps}
+          onChange={(_, { checked }) => setIssueCert(checked)}
+        />
+        <div className="gisila-sm__callout gisila-sm__note">
+          <p>
+            MinIO listens on <code className="gisila-sm__code">127.0.0.1</code>{" "}
+            only. Each URL creates an nginx reverse-proxy vhost — the S3 API
+            (unlimited upload size) and the web console (websockets) get their
+            own hostnames, since they can&apos;t share one.
+          </p>
+          <p>
+            Leave the certificate box unchecked if TLS is terminated upstream
+            (e.g. a Cloudflare proxy or external load balancer) — nginx then
+            serves plain HTTP on port 80 and no certbot runs.
+          </p>
+          <p>
+            Point a DNS <code className="gisila-sm__code">A</code> record at this
+            server for each hostname first. An{" "}
+            <code className="gisila-sm__code">https://</code> URL triggers a
+            Let&apos;s Encrypt certificate automatically.
+          </p>
+          <p>Leave a field blank to remove its vhost.</p>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -424,67 +442,99 @@ function BucketRow({
   }
 
   return (
-    <div className="px-3 py-2.5 text-sm">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-mono">{b.bucketName}</span>
-          {b.isPublic && (
-            <Badge variant="secondary" className="text-[10px]">public</Badge>
-          )}
-          <Badge
-            variant={
+    <>
+      <TableRow>
+        <TableCell>
+          <div className="gisila-sm__title-row">
+            <span className="gisila-sm__code">{b.bucketName}</span>
+            {b.isPublic && (
+              <Tag size="sm" type="cool-gray">
+                public
+              </Tag>
+            )}
+          </div>
+        </TableCell>
+        <TableCell>
+          <Tag
+            size="sm"
+            type={
               b.status === "active"
-                ? "outline"
+                ? "green"
                 : b.status === "failed"
-                  ? "destructive"
-                  : "secondary"
+                  ? "red"
+                  : "gray"
             }
-            className="text-[10px]"
           >
             {b.status}
-          </Badge>
-        </div>
-        <div className="flex gap-1">
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={reveal}>
-            <Eye className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-muted-foreground hover:text-red-500"
-            onClick={remove}
+          </Tag>
+        </TableCell>
+        <TableCell>
+          <div className="gisila-sm__actions" style={{ justifyContent: "flex-end" }}>
+            <Button
+              kind="ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={View}
+              iconDescription="Show credentials"
+              onClick={reveal}
+            />
+            <Button
+              kind="danger--ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={TrashCan}
+              iconDescription="Delete bucket"
+              onClick={remove}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+      {(b.errorMessage || creds) && (
+        <TableRow>
+          <TableCell colSpan={3}>
+            <Stack gap={3}>
+              {b.errorMessage && (
+                <p className="gisila-sm__error">{b.errorMessage}</p>
+              )}
+              {creds && (
+                <CredentialList
+                  rows={[
+                    ["Endpoint", creds.endpoint],
+                    ["Region", creds.region],
+                    ["Bucket", creds.bucket],
+                    ["Access key", creds.accessKey],
+                    ["Secret key", creds.secretKey],
+                    ...(creds.publicUrl ? [["Public URL", creds.publicUrl]] : []),
+                  ]}
+                />
+              )}
+            </Stack>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
+
+/// Key/value list of S3 credentials. Every value is copied verbatim into an
+/// SDK config, so each one gets its own copy button.
+function CredentialList({ rows }: { rows: (string | null | undefined)[][] }) {
+  return (
+    <div className="gisila-sm__kv">
+      {rows.map(([k, v]) => (
+        <div key={k} className="gisila-sm__kv-row">
+          <span className="gisila-sm__kv-key">{k}</span>
+          <CodeSnippet
+            type="single"
+            copyText={String(v)}
+            feedback="Copied"
+            aria-label={`Copy ${k}`}
+            onClick={copied}
           >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            {String(v)}
+          </CodeSnippet>
         </div>
-      </div>
-      {b.errorMessage && (
-        <p className="mt-1 text-xs text-red-500">{b.errorMessage}</p>
-      )}
-      {creds && (
-        <div className="mt-2 space-y-1 rounded bg-muted/50 p-2 font-mono text-[11px]">
-          {[
-            ["Endpoint", creds.endpoint],
-            ["Region", creds.region],
-            ["Bucket", creds.bucket],
-            ["Access key", creds.accessKey],
-            ["Secret key", creds.secretKey],
-            ...(creds.publicUrl ? [["Public URL", creds.publicUrl]] : []),
-          ].map(([k, v]) => (
-            <div key={k} className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">{k}</span>
-              <button
-                className="flex items-center gap-1 truncate hover:text-foreground"
-                onClick={() => copy(String(v))}
-                title="Copy"
-              >
-                <span className="truncate max-w-[18rem]">{v}</span>
-                <Copy className="h-3 w-3 shrink-0" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -527,65 +577,65 @@ function InstallMinioDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Install MinIO</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Display name</Label>
-            <Input
-              className="mt-1"
-              value={form.displayName}
-              onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>API port</Label>
-              <Input
-                className="mt-1"
-                type="number"
-                value={form.port}
-                onChange={(e) => setForm({ ...form, port: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Console port</Label>
-              <Input
-                className="mt-1"
-                type="number"
-                value={form.consolePort}
-                onChange={(e) => setForm({ ...form, consolePort: e.target.value })}
-              />
-            </div>
-          </div>
-          <div>
-            <Label>
-              Public URL
-              <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              placeholder="https://cdn.example.com"
-              value={form.publicUrl}
-              onChange={(e) => setForm({ ...form, publicUrl: e.target.value })}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Base URL for public object reads (front MinIO with nginx or a CDN).
-              The server listens on 127.0.0.1 only.
-            </p>
-          </div>
+    <Modal
+      open={open}
+      onRequestClose={() => onOpenChange(false)}
+      modalHeading="Install MinIO"
+      primaryButtonText={saving ? "Installing…" : "Install"}
+      primaryButtonDisabled={saving}
+      secondaryButtonText="Cancel"
+      onRequestSubmit={submit}
+      size="sm"
+    >
+      <Stack gap={5}>
+        <TextInput
+          id="minio-display-name"
+          labelText="Display name"
+          value={form.displayName}
+          onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+        />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "1rem",
+          }}
+        >
+          <NumberInput
+            id="minio-port"
+            label="API port"
+            allowEmpty
+            hideSteppers
+            value={form.port}
+            onChange={(_, { value }) =>
+              setForm({ ...form, port: String(value) })
+            }
+          />
+          <NumberInput
+            id="minio-console-port"
+            label="Console port"
+            allowEmpty
+            hideSteppers
+            value={form.consolePort}
+            onChange={(_, { value }) =>
+              setForm({ ...form, consolePort: String(value) })
+            }
+          />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving ? "Installing…" : "Install"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <TextInput
+          id="minio-public-url"
+          labelText={
+            <>
+              Public URL <span className="gisila-sm__optional">(optional)</span>
+            </>
+          }
+          placeholder="https://cdn.example.com"
+          helperText="Base URL for public object reads (front MinIO with nginx or a CDN). The server listens on 127.0.0.1 only."
+          value={form.publicUrl}
+          onChange={(e) => setForm({ ...form, publicUrl: e.target.value })}
+        />
+      </Stack>
+    </Modal>
   );
 }
 
@@ -633,87 +683,79 @@ function AddConnectorDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Add external S3 connector</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Display name</Label>
-            <Input
-              className="mt-1"
-              placeholder="Cloudflare R2"
-              value={form.displayName}
-              onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label>Endpoint</Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              placeholder="https://<account>.r2.cloudflarestorage.com"
-              value={form.endpoint}
-              onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Region</Label>
-              <Input
-                className="mt-1"
-                value={form.region}
-                onChange={(e) => setForm({ ...form, region: e.target.value })}
-              />
-            </div>
-            <label className="mt-6 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border"
-                checked={form.forcePathStyle}
-                onChange={(e) => setForm({ ...form, forcePathStyle: e.target.checked })}
-              />
-              Path-style addressing
-            </label>
-          </div>
-          <div>
-            <Label>Access key ID</Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              value={form.accessKey}
-              onChange={(e) => setForm({ ...form, accessKey: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label>Secret access key</Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              type="password"
-              value={form.secretKey}
-              onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label>
-              Public URL
-              <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              className="mt-1 font-mono text-sm"
-              placeholder="https://cdn.example.com"
-              value={form.publicUrl}
-              onChange={(e) => setForm({ ...form, publicUrl: e.target.value })}
-            />
-          </div>
+    <Modal
+      open={open}
+      onRequestClose={() => onOpenChange(false)}
+      modalHeading="Add external S3 connector"
+      primaryButtonText={saving ? "Adding…" : "Add connector"}
+      primaryButtonDisabled={saving}
+      secondaryButtonText="Cancel"
+      onRequestSubmit={submit}
+      size="md"
+    >
+      <Stack gap={5}>
+        <TextInput
+          id="connector-display-name"
+          labelText="Display name"
+          placeholder="Cloudflare R2"
+          value={form.displayName}
+          onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+        />
+        <TextInput
+          id="connector-endpoint"
+          labelText="Endpoint"
+          placeholder="https://<account>.r2.cloudflarestorage.com"
+          value={form.endpoint}
+          onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+        />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            alignItems: "end",
+            gap: "1rem",
+          }}
+        >
+          <TextInput
+            id="connector-region"
+            labelText="Region"
+            value={form.region}
+            onChange={(e) => setForm({ ...form, region: e.target.value })}
+          />
+          <Checkbox
+            id="connector-path-style"
+            labelText="Path-style addressing"
+            checked={form.forcePathStyle}
+            onChange={(_, { checked }) =>
+              setForm({ ...form, forcePathStyle: checked })
+            }
+          />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving ? "Adding…" : "Add connector"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <TextInput
+          id="connector-access-key"
+          labelText="Access key ID"
+          value={form.accessKey}
+          onChange={(e) => setForm({ ...form, accessKey: e.target.value })}
+        />
+        <PasswordInput
+          id="connector-secret-key"
+          labelText="Secret access key"
+          value={form.secretKey}
+          onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
+        />
+        <TextInput
+          id="connector-public-url"
+          labelText={
+            <>
+              Public URL <span className="gisila-sm__optional">(optional)</span>
+            </>
+          }
+          placeholder="https://cdn.example.com"
+          value={form.publicUrl}
+          onChange={(e) => setForm({ ...form, publicUrl: e.target.value })}
+        />
+      </Stack>
+    </Modal>
   );
 }
 
@@ -761,75 +803,52 @@ function CreateBucketDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : close())}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{created ? "Bucket created" : "New bucket"}</DialogTitle>
-        </DialogHeader>
-        {created ? (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Save the secret key now — it is shown only once. Or link this bucket
-              to an app to inject these automatically.
-            </p>
-            <div className="space-y-1 rounded bg-muted/50 p-3 font-mono text-[11px]">
-              {[
-                ["Endpoint", created.endpoint],
-                ["Region", created.region],
-                ["Bucket", created.bucket],
-                ["Access key", created.accessKey],
-                ["Secret key", created.secretKey],
-              ].map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">{k}</span>
-                  <button
-                    className="flex items-center gap-1 truncate hover:text-foreground"
-                    onClick={() => copy(String(v))}
-                  >
-                    <span className="truncate max-w-[16rem]">{v}</span>
-                    <Copy className="h-3 w-3 shrink-0" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <DialogFooter>
-              <Button onClick={close}>Done</Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          <>
-            <div className="space-y-3">
-              <div>
-                <Label>Bucket name</Label>
-                <Input
-                  className="mt-1 font-mono text-sm"
-                  placeholder="my-app-uploads"
-                  value={bucketName}
-                  onChange={(e) => setBucketName(e.target.value.toLowerCase())}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  3–63 lowercase letters, digits and hyphens.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-border"
-                  checked={isPublic}
-                  onChange={(e) => setIsPublic(e.target.checked)}
-                />
-                Public read (anonymous downloads)
-              </label>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={close}>Cancel</Button>
-              <Button onClick={submit} disabled={saving || !bucketName}>
-                {saving ? "Creating…" : "Create bucket"}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open={open}
+      onRequestClose={close}
+      modalHeading={created ? "Bucket created" : "New bucket"}
+      primaryButtonText={
+        created ? "Done" : saving ? "Creating…" : "Create bucket"
+      }
+      primaryButtonDisabled={!created && (saving || !bucketName)}
+      secondaryButtonText={created ? undefined : "Cancel"}
+      onRequestSubmit={created ? close : submit}
+      size="sm"
+    >
+      {created ? (
+        <Stack gap={5}>
+          <p className="gisila-sm__note">
+            Save the secret key now — it is shown only once. Or link this bucket
+            to an app to inject these automatically.
+          </p>
+          <CredentialList
+            rows={[
+              ["Endpoint", created.endpoint],
+              ["Region", created.region],
+              ["Bucket", created.bucket],
+              ["Access key", created.accessKey],
+              ["Secret key", created.secretKey],
+            ]}
+          />
+        </Stack>
+      ) : (
+        <Stack gap={5}>
+          <TextInput
+            id={`bucket-name-${providerId}`}
+            labelText="Bucket name"
+            placeholder="my-app-uploads"
+            helperText="3–63 lowercase letters, digits and hyphens."
+            value={bucketName}
+            onChange={(e) => setBucketName(e.target.value.toLowerCase())}
+          />
+          <Checkbox
+            id={`bucket-public-${providerId}`}
+            labelText="Public read (anonymous downloads)"
+            checked={isPublic}
+            onChange={(_, { checked }) => setIsPublic(checked)}
+          />
+        </Stack>
+      )}
+    </Modal>
   );
 }

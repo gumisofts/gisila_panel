@@ -5,6 +5,7 @@ import { Toaster } from "@/lib/toast";
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
 import LoginPage from "../app/(auth)/login/page";
+import RegisterPage from "../app/(auth)/register/page";
 import PanelLayout from "../app/(panel)/layout";
 import DashboardPage from "../app/(panel)/dashboard/page";
 import ProjectsPage from "../app/(panel)/projects/page";
@@ -18,6 +19,7 @@ import ServicesPage from "../app/(panel)/services/page";
 import ServiceDetailPage from "../app/(panel)/services/[id]/page";
 import DatabasesPage from "../app/(panel)/databases/page";
 import InstancePage from "../app/(panel)/databases/[id]/page";
+import MongoInstancePage from "../app/(panel)/databases/mongo/[id]/page";
 import StoragePage from "../app/(panel)/storage/page";
 import MailPage from "../app/(panel)/mail/page";
 import ActivityPage from "../app/(panel)/activity/page";
@@ -46,6 +48,7 @@ export default function App() {
 
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
           </Route>
 
           <Route element={<PanelLayout />}>
@@ -61,6 +64,10 @@ export default function App() {
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />
             <Route path="/databases/:id" element={<InstancePage />} />
+            {/* Not shadowed by /databases/:id above: that pattern is a single
+                segment, and react-router ranks the static "mongo" segment
+                over a param regardless of declaration order. */}
+            <Route path="/databases/mongo/:id" element={<MongoInstancePage />} />
             <Route path="/storage" element={<StoragePage />} />
             <Route path="/mail" element={<MailPage />} />
             <Route path="/activity" element={<ActivityPage />} />

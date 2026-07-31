@@ -1,42 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ElementType } from "react";
+import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR, { mutate } from "swr";
 import {
-  Leaf,
-  Plus,
-  CheckCircle,
-  AlertCircle,
-  Loader,
+  Add,
+  CheckmarkOutline,
+  Download,
+  Earth,
+  Password,
+  PlayFilled,
+  Sprout,
   Star,
-  Play,
-  Square,
-  Trash2,
-  Copy,
-  Eye,
-  EyeOff,
-  ArrowLeft,
-  Table2,
-  HardDriveDownload,
-  Globe,
-  KeyRound,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  StopFilled,
+  Table as TableIcon,
+  TrashCan,
+  View,
+  ViewOff,
+  WarningAlt,
+} from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  Breadcrumb,
+  BreadcrumbItem,
+  Button,
+  Checkbox,
+  CodeSnippet,
+  CopyButton,
+  FormGroup,
+  InlineLoading,
+  InlineNotification,
+  Link as CarbonLink,
+  Modal,
+  PasswordInput,
+  Stack,
+  StructuredListBody,
+  StructuredListCell,
+  StructuredListRow,
+  StructuredListWrapper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import { MongoMetricsPanel } from "./_panels/metrics-panel";
 import { ConfigPanel } from "../../[id]/_panels/config-panel";
 import { BackupsDialog } from "../../[id]/_panels/backups-panel";
@@ -47,24 +62,27 @@ import type {
   MongoInstanceStatus,
   MongoDatabaseStatus,
 } from "@/lib/types";
+import "../../_databases.scss";
+
+type TagType = "red" | "green" | "blue" | "gray" | "cool-gray" | "warm-gray";
 
 const INST_STATUS: Record<
   MongoInstanceStatus,
-  { icon: React.ReactNode; label: string; color: string }
+  { icon?: ElementType; label: string; type: TagType }
 > = {
-  running:      { icon: <CheckCircle className="h-4 w-4 text-emerald-500" />, label: "Running",    color: "text-emerald-600 dark:text-emerald-400" },
-  stopped:      { icon: <AlertCircle className="h-4 w-4 text-amber-500"  />, label: "Stopped",    color: "text-amber-600 dark:text-amber-400" },
-  failed:       { icon: <AlertCircle className="h-4 w-4 text-red-500"    />, label: "Failed",     color: "text-red-600 dark:text-red-400" },
-  pending:      { icon: <Loader      className="h-4 w-4 animate-spin text-blue-500" />, label: "Pending",    color: "text-blue-600" },
-  installing:   { icon: <Loader      className="h-4 w-4 animate-spin text-blue-500" />, label: "Installing", color: "text-blue-600" },
-  uninstalling: { icon: <Loader      className="h-4 w-4 animate-spin text-amber-500" />, label: "Removing",   color: "text-amber-600" },
+  running:      { icon: CheckmarkOutline, label: "Running",    type: "green" },
+  stopped:      { icon: WarningAlt,       label: "Stopped",    type: "gray" },
+  failed:       { icon: WarningAlt,       label: "Failed",     type: "red" },
+  pending:      {                         label: "Pending",    type: "blue" },
+  installing:   {                         label: "Installing", type: "blue" },
+  uninstalling: {                         label: "Removing",   type: "warm-gray" },
 };
 
-const DB_STATUS_BADGE: Record<MongoDatabaseStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "Pending", variant: "secondary" },
-  active:  { label: "Active",  variant: "outline"   },
-  failed:  { label: "Failed",  variant: "destructive" },
-  dropped: { label: "Dropped", variant: "secondary" },
+const DB_STATUS_TAG: Record<MongoDatabaseStatus, { label: string; type: TagType }> = {
+  pending: { label: "Pending", type: "blue" },
+  active:  { label: "Active",  type: "green" },
+  failed:  { label: "Failed",  type: "red" },
+  dropped: { label: "Dropped", type: "gray" },
 };
 
 // MongoDB built-in roles offered when creating/editing a user. Mirrors the
@@ -80,101 +98,76 @@ const MONGO_ROLES: { key: string; label: string; hint: string; danger?: boolean 
   { key: "clusterMonitor",       label: "Cluster monitor",       hint: "Read server-wide monitoring data.", danger: true },
 ];
 
+/// `idPrefix` keeps the input ids unique — the create and edit dialogs both
+/// stay mounted at the same time.
 function RoleToggles({
+  idPrefix,
   value,
   onChange,
   disabled,
 }: {
+  idPrefix: string;
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
 }) {
-  const toggle = (key: string) =>
-    onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
   return (
-    <div className="grid gap-1.5">
-      {MONGO_ROLES.map((a) => {
-        const on = value.includes(a.key);
-        return (
-          <button
-            key={a.key}
-            type="button"
-            disabled={disabled}
-            onClick={() => toggle(a.key)}
-            className={cn(
-              "flex items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors disabled:opacity-50",
-              on
-                ? a.danger
-                  ? "border-destructive/50 bg-destructive/10"
-                  : "border-primary/50 bg-primary/10"
-                : "border-input hover:bg-muted/50",
-            )}
-          >
-            <span
-              className={cn(
-                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]",
-                on ? (a.danger ? "border-destructive bg-destructive text-white" : "border-primary bg-primary text-white") : "border-input",
-              )}
-            >
-              {on ? "✓" : ""}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-medium leading-tight">
-                <span className="font-mono">{a.key}</span>
-                <span className="ml-1.5 font-normal text-muted-foreground">{a.label}</span>
-                {a.danger && (
-                  <span className="ml-1.5 text-xs font-semibold text-destructive">danger</span>
-                )}
+    <Stack gap={3}>
+      {MONGO_ROLES.map((a) => (
+        <Checkbox
+          key={a.key}
+          id={`${idPrefix}-${a.key}`}
+          checked={value.includes(a.key)}
+          disabled={disabled}
+          onChange={(_evt, { checked }) =>
+            onChange(
+              checked
+                ? [...value, a.key]
+                : value.filter((k) => k !== a.key),
+            )
+          }
+          labelText={
+            <>
+              <span className="gisila-db__role-title">
+                <span className="gisila-db__mono">{a.key}</span>
+                <span className="gisila-db__note">{a.label}</span>
+                {a.danger && <span className="gisila-db__danger">danger</span>}
               </span>
-              <span className="block text-xs text-muted-foreground">{a.hint}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      className="text-muted-foreground hover:text-foreground transition-colors"
-      onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-    >
-      {copied ? (
-        <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
+              <span className="gisila-db__role-hint">{a.hint}</span>
+            </>
+          }
+        />
+      ))}
+    </Stack>
   );
 }
 
 function ConnRow({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
   const [show, setShow] = useState(!secret);
   return (
-    <div className="flex items-center justify-between gap-2 py-1.5 text-sm border-b border-border last:border-0">
-      <span className="text-muted-foreground w-24 shrink-0">{label}</span>
-      <span className="font-mono text-xs flex-1 min-w-0 truncate">
-        {show ? value : "••••••••"}
-      </span>
-      <div className="flex items-center gap-1.5 shrink-0">
+    <StructuredListRow>
+      <StructuredListCell noWrap>{label}</StructuredListCell>
+      <StructuredListCell className="gisila-db__conn-value">
+        <span className="gisila-db__mono">{show ? value : "••••••••"}</span>
+      </StructuredListCell>
+      <StructuredListCell className="gisila-db__conn-actions">
         {secret && (
-          <button
-            className="text-muted-foreground hover:text-foreground"
+          <Button
+            kind="ghost"
+            size="sm"
+            hasIconOnly
+            renderIcon={show ? ViewOff : View}
+            iconDescription={show ? "Hide" : "Show"}
             onClick={() => setShow((v) => !v)}
-          >
-            {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
+          />
         )}
-        <CopyButton text={value} />
-      </div>
-    </div>
+        <CopyButton
+          iconDescription={`Copy ${label.toLowerCase()}`}
+          feedbackTimeout={1500}
+          onClick={() => navigator.clipboard.writeText(value)}
+        />
+      </StructuredListCell>
+    </StructuredListRow>
   );
 }
 
@@ -212,72 +205,82 @@ function PublicAccessCard({
   }
 
   return (
-    <Card className="border-violet-500/30 bg-violet-500/5">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Globe className="h-4 w-4 text-violet-500" />
+    <Tile>
+      <Stack gap={5}>
+        <h3 className="gisila-db__tile-name gisila-db__icon-title">
+          <Earth size={16} />
           Public access
           {instance.isPublic ? (
-            <Badge variant="outline" className="ml-1 text-[10px]">Public</Badge>
+            <Tag as="span" type="purple" size="sm">Public</Tag>
           ) : (
-            <Badge variant="secondary" className="ml-1 text-[10px]">Private</Badge>
+            <Tag as="span" type="cool-gray" size="sm">Private</Tag>
           )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        </h3>
+
         {instance.isPublic ? (
           <>
-            <p className="text-sm text-muted-foreground">
+            <p className="gisila-db__note">
               Reachable over TLS at{" "}
-              <code className="font-mono">
+              <span className="gisila-db__mono">
                 {instance.publicDomain}:{instance.port}
-              </code>{" "}
-              (connect with <code className="font-mono">tls=true</code>).
+              </span>{" "}
+              (connect with <span className="gisila-db__mono">tls=true</span>).
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              disabled={busy}
-              onClick={() => save(false)}
-            >
-              Make private
-            </Button>
+            <div>
+              <Button
+                kind="danger--tertiary"
+                size="sm"
+                disabled={busy}
+                onClick={() => save(false)}
+              >
+                Make private
+              </Button>
+            </div>
           </>
         ) : (
           <>
-            <div>
-              <Label htmlFor="mongo-domain">Domain</Label>
-              <Input
-                id="mongo-domain"
-                className="mt-1 font-mono text-sm max-w-sm"
-                placeholder="mongo.example.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-              />
-            </div>
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
-              <p>
+            <TextInput
+              id="mongo-domain"
+              labelText="Domain"
+              placeholder="mongo.example.com"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+            />
+            <Stack gap={3}>
+              <p className="gisila-db__hint">
                 Opens the server to the internet over TLS: obtains a Let&apos;s
                 Encrypt certificate for the domain, enables TLS, and listens on
-                all interfaces at <code className="font-mono">{instance.port}</code>.
+                all interfaces at{" "}
+                <span className="gisila-db__mono">{instance.port}</span>.
               </p>
-              <p>
-                Point a DNS <code className="font-mono">A</code> record at this
+              <p className="gisila-db__hint">
+                Point a DNS <span className="gisila-db__mono">A</span> record at this
                 server and open port{" "}
-                <code className="font-mono">{instance.port}</code> first. The cert
+                <span className="gisila-db__mono">{instance.port}</span> first. The cert
                 needs port 80 reachable.
               </p>
+            </Stack>
+            <div>
+              <Button size="sm" disabled={busy} onClick={() => save(true)}>
+                {busy ? "Enabling…" : "Make public"}
+              </Button>
             </div>
-            <Button size="sm" disabled={busy} onClick={() => save(true)}>
-              {busy ? "Enabling…" : "Make public"}
-            </Button>
           </>
         )}
-        {pending && <p className="text-xs text-amber-500">Exposure in progress…</p>}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </CardContent>
-    </Card>
+
+        {pending && (
+          <InlineNotification
+            kind="warning"
+            lowContrast
+            hideCloseButton
+            title="Exposure in progress…"
+          />
+        )}
+        {error && (
+          <InlineNotification kind="error" lowContrast hideCloseButton title={error} />
+        )}
+      </Stack>
+    </Tile>
   );
 }
 
@@ -386,10 +389,9 @@ export default function MongoInstancePage() {
 
   if (instLoading || !instance) {
     return (
-      <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
-        <Loader className="h-4 w-4 animate-spin" />
-        Loading…
-      </div>
+      <Page>
+        <InlineLoading description="Loading…" />
+      </Page>
     );
   }
 
@@ -398,191 +400,237 @@ export default function MongoInstancePage() {
   const isRunning = instance.status === "running";
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <button
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        onClick={() => router.push("/databases")}
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        All instances
-      </button>
+    <Page>
+      <Breadcrumb noTrailingSlash>
+        <BreadcrumbItem>
+          <CarbonLink as={RouterLink} href="/databases">
+            All instances
+          </CarbonLink>
+        </BreadcrumbItem>
+        <BreadcrumbItem isCurrentPage>{instance.displayName}</BreadcrumbItem>
+      </Breadcrumb>
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
-            <Leaf className="h-6 w-6 text-emerald-500" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold">{instance.displayName}</h1>
-              {instance.isDefault && (
-                <Badge variant="outline" className="gap-1 py-0 text-xs font-normal">
-                  <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
-                  Default
-                </Badge>
-              )}
-            </div>
-            <p className={cn("text-sm flex items-center gap-1.5 mt-0.5", sc.color)}>
-              {sc.icon} {sc.label} · MongoDB {instance.version} · port {instance.port}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {isSuperuser && !instance.isDefault && isRunning && (
-            <Button variant="outline" size="sm" onClick={() => action(`/mongo/${id}/set-default`)} disabled={!!busy}>
-              <Star className="mr-1.5 h-3.5 w-3.5" />
-              Set default
-            </Button>
-          )}
-          {isSuperuser && instance.status === "stopped" && (
-            <Button variant="outline" size="sm" onClick={() => action(`/mongo/${id}/start`)} disabled={!!busy}>
-              <Play className="mr-1.5 h-3.5 w-3.5" />
-              Start
-            </Button>
-          )}
-          {isSuperuser && isRunning && (
-            <Button variant="outline" size="sm" onClick={() => action(`/mongo/${id}/stop`)} disabled={!!busy}>
-              <Square className="mr-1.5 h-3.5 w-3.5" />
-              Stop
-            </Button>
-          )}
-          {isSuperuser && !instance.isDefault && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={async () => {
-                if (!confirm(`Uninstall MongoDB ${instance.version}? All data will be deleted.`)) return;
-                await action(`/mongo/${id}`, "DELETE");
-                router.push("/databases");
-              }}
-              disabled={!!busy}
-            >
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              Uninstall
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <span className="gisila-db__tags">
+            <span className="gisila-status-icon gisila-status-icon--success">
+              <Sprout size={20} />
+            </span>
+            {instance.displayName}
+            <Tag as="span" type={sc.type} renderIcon={sc.icon}>
+              {sc.label}
+            </Tag>
+            {instance.isDefault && (
+              <Tag as="span" type="blue" size="sm" renderIcon={Star}>
+                Default
+              </Tag>
+            )}
+          </span>
+        }
+        description={`MongoDB ${instance.version} · port ${instance.port}`}
+        actions={
+          <>
+            {isSuperuser && !instance.isDefault && isRunning && (
+              <Button
+                kind="tertiary"
+                size="sm"
+                renderIcon={Star}
+                onClick={() => action(`/mongo/${id}/set-default`)}
+                disabled={!!busy}
+              >
+                Set default
+              </Button>
+            )}
+            {isSuperuser && instance.status === "stopped" && (
+              <Button
+                kind="tertiary"
+                size="sm"
+                renderIcon={PlayFilled}
+                onClick={() => action(`/mongo/${id}/start`)}
+                disabled={!!busy}
+              >
+                Start
+              </Button>
+            )}
+            {isSuperuser && isRunning && (
+              <Button
+                kind="tertiary"
+                size="sm"
+                renderIcon={StopFilled}
+                onClick={() => action(`/mongo/${id}/stop`)}
+                disabled={!!busy}
+              >
+                Stop
+              </Button>
+            )}
+            {isSuperuser && !instance.isDefault && (
+              <Button
+                kind="danger--tertiary"
+                size="sm"
+                renderIcon={TrashCan}
+                onClick={async () => {
+                  if (!confirm(`Uninstall MongoDB ${instance.version}? All data will be deleted.`)) return;
+                  await action(`/mongo/${id}`, "DELETE");
+                  router.push("/databases");
+                }}
+                disabled={!!busy}
+              >
+                Uninstall
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {instance.errorMessage && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {instance.errorMessage}
-        </div>
+        <InlineNotification
+          kind="error"
+          lowContrast
+          hideCloseButton
+          title={instance.errorMessage}
+        />
       )}
 
       <MongoMetricsPanel id={String(id)} running={isRunning} />
 
       {isSuperuser && isRunning && (
-        <PublicAccessCard instance={instance} instKey={instKey} />
+        <PageSection>
+          <PublicAccessCard instance={instance} instKey={instKey} />
+        </PageSection>
       )}
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium flex items-center gap-2">
-            <Table2 className="h-4 w-4 text-muted-foreground" />
+      <PageSection
+        title={
+          <span className="gisila-db__icon-title">
+            <TableIcon size={16} />
             Databases &amp; users
-          </h2>
-          {isRunning && isSuperuser && (
-            <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
+          </span>
+        }
+        actions={
+          isRunning && isSuperuser && (
+            <Button
+              size="sm"
+              kind="tertiary"
+              renderIcon={Add}
+              onClick={() => setShowCreate(true)}
+            >
               Create database
             </Button>
-          )}
-        </div>
-
+          )
+        }
+      >
         {databases.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-              <Table2 className="h-8 w-8 text-muted-foreground/30" />
+          <Tile>
+            <div className="gisila-db__empty">
+              <TableIcon size={32} className="gisila-db__empty-icon" />
               <div>
-                <p className="text-sm font-medium">No databases yet</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="gisila-db__empty-title">No databases yet</p>
+                <p className="gisila-db__note">
                   {isRunning
                     ? "Create a database and user to get started."
                     : "Start the instance first to create databases."}
                 </p>
               </div>
               {isRunning && (
-                <Button size="sm" onClick={() => setShowCreate(true)}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                <Button size="sm" renderIcon={Add} onClick={() => setShowCreate(true)}>
                   Create database
                 </Button>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </Tile>
         ) : (
-          <div className="space-y-2">
-            {databases.map((db) => {
-              const dbSc = DB_STATUS_BADGE[db.status] ?? DB_STATUS_BADGE.active;
-              return (
-                <Card key={db.id}>
-                  <CardContent className="py-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-medium text-sm">{db.dbName}</span>
-                          <Badge variant={dbSc.variant} className="text-xs py-0">
-                            {dbSc.label}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          User: <span className="font-mono">{db.userName}</span>
-                        </p>
+          <TableContainer>
+            <Table size="lg">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Database</TableHeader>
+                  <TableHeader>User</TableHeader>
+                  <TableHeader>Status</TableHeader>
+                  <TableHeader>Actions</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {databases.map((db) => {
+                  const dbSc = DB_STATUS_TAG[db.status] ?? DB_STATUS_TAG.active;
+                  return (
+                    <TableRow key={db.id}>
+                      <TableCell>
+                        <span className="gisila-db__mono">{db.dbName}</span>
+                        {db.errorMessage && (
+                          <span className="gisila-db__suberror">
+                            {db.errorMessage}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="gisila-db__mono">{db.userName}</span>
                         {db.roles?.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
+                          <div className="gisila-db__tags">
                             {db.roles.map((a) => (
-                              <Badge
+                              <Tag
                                 key={a}
-                                variant={a.endsWith("AnyDatabase") || a === "clusterMonitor" ? "destructive" : "secondary"}
-                                className="py-0 font-mono text-[10px]"
+                                size="sm"
+                                type={
+                                  a.endsWith("AnyDatabase") || a === "clusterMonitor"
+                                    ? "red"
+                                    : "cool-gray"
+                                }
                               >
                                 {a}
-                              </Badge>
+                              </Tag>
                             ))}
                           </div>
                         )}
-                        {db.errorMessage && (
-                          <p className="mt-1 text-xs text-destructive">{db.errorMessage}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Button size="sm" variant="ghost" onClick={() => showConnection(db)} className="h-7 px-2 text-xs">
-                          Connection info
-                        </Button>
-                        {db.status === "active" && isSuperuser && (
-                          <Button size="sm" variant="ghost" onClick={() => openPerms(db)} className="h-7 px-2 text-xs">
-                            <KeyRound className="mr-1 h-3.5 w-3.5" />
-                            Roles
+                      </TableCell>
+                      <TableCell>
+                        <Tag type={dbSc.type} size="sm">{dbSc.label}</Tag>
+                      </TableCell>
+                      <TableCell>
+                        <div className="gisila-db__row-actions">
+                          <Button kind="ghost" size="sm" onClick={() => showConnection(db)}>
+                            Connection info
                           </Button>
-                        )}
-                        {db.status === "active" && isSuperuser && (
-                          <Button size="sm" variant="ghost" onClick={() => setBackupsDb(db)} className="h-7 px-2 text-xs">
-                            <HardDriveDownload className="mr-1 h-3.5 w-3.5" />
-                            Backups
-                          </Button>
-                        )}
-                        {isSuperuser && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-destructive hover:text-destructive"
-                            onClick={() => handleDrop(db.id)}
-                            disabled={!!busy}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                          {db.status === "active" && isSuperuser && (
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              renderIcon={Password}
+                              onClick={() => openPerms(db)}
+                            >
+                              Roles
+                            </Button>
+                          )}
+                          {db.status === "active" && isSuperuser && (
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              renderIcon={Download}
+                              onClick={() => setBackupsDb(db)}
+                            >
+                              Backups
+                            </Button>
+                          )}
+                          {isSuperuser && (
+                            <Button
+                              kind="danger--ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={TrashCan}
+                              iconDescription={`Drop ${db.dbName}`}
+                              onClick={() => handleDrop(db.id)}
+                              disabled={!!busy}
+                            />
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
-      </div>
+      </PageSection>
 
       <ConfigPanel
         id={String(id)}
@@ -592,136 +640,153 @@ export default function MongoInstancePage() {
       />
 
       {/* Create database dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create database</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Database name</Label>
-              <Input placeholder="myapp" value={newDb} onChange={(e) => setNewDb(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>User</Label>
-              <Input placeholder="myapp_user" value={newUser} onChange={(e) => setNewUser(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Password</Label>
-              <Input
-                type="password"
-                placeholder="Leave blank to auto-generate"
-                value={newPass}
-                onChange={(e) => setNewPass(e.target.value)}
+      <Modal
+        open={showCreate}
+        onRequestClose={() => setShowCreate(false)}
+        onRequestSubmit={handleCreate}
+        modalHeading="Create database"
+        primaryButtonText="Create"
+        primaryButtonDisabled={creating || !newDb || !newUser}
+        secondaryButtonText="Cancel"
+        size="sm"
+        hasScrollingContent
+      >
+        <Stack gap={5}>
+          <TextInput
+            id="mongo-new-db"
+            labelText="Database name"
+            placeholder="myapp"
+            value={newDb}
+            onChange={(e) => setNewDb(e.target.value)}
+          />
+          <TextInput
+            id="mongo-new-user"
+            labelText="User"
+            placeholder="myapp_user"
+            value={newUser}
+            onChange={(e) => setNewUser(e.target.value)}
+          />
+          <PasswordInput
+            id="mongo-new-pass"
+            labelText="Password"
+            placeholder="Leave blank to auto-generate"
+            value={newPass}
+            onChange={(e) => setNewPass(e.target.value)}
+          />
+          <FormGroup legendText="Roles">
+            <Stack gap={4}>
+              <RoleToggles
+                idPrefix="mongo-new-role"
+                value={newRoles}
+                onChange={setNewRoles}
+                disabled={creating}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Roles</Label>
-              <RoleToggles value={newRoles} onChange={setNewRoles} disabled={creating} />
-              <p className="text-xs text-muted-foreground">
+              <p className="gisila-db__hint">
                 Roles are granted on this database unless they are instance-wide
-                (the <span className="font-mono">*AnyDatabase</span> roles).
+                (the <span className="gisila-db__mono">*AnyDatabase</span> roles).
               </p>
-            </div>
-            {createError && <p className="text-sm text-destructive">{createError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !newDb || !newUser}>
-              {creating && <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </Stack>
+          </FormGroup>
+          {creating && <InlineLoading description="Creating…" />}
+          {createError && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={createError}
+            />
+          )}
+        </Stack>
+      </Modal>
 
       {/* Edit roles dialog */}
-      <Dialog open={!!permsDb} onOpenChange={(o) => !o && setPermsDb(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              Roles
-              {permsDb && (
-                <span className="ml-1.5 font-mono text-sm font-normal text-muted-foreground">
-                  {permsDb.userName}
-                </span>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <RoleToggles value={permsRoles} onChange={setPermsRoles} disabled={permsBusy} />
-            <p className="text-xs text-muted-foreground">
-              Changes are applied with <span className="font-mono">updateUser</span>; roles you
-              turn off are revoked.
-            </p>
-            {permsError && <p className="text-sm text-destructive">{permsError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPermsDb(null)} disabled={permsBusy}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdatePerms} disabled={permsBusy}>
-              {permsBusy && <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              Save roles
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={!!permsDb}
+        onRequestClose={() => setPermsDb(null)}
+        onRequestSubmit={handleUpdatePerms}
+        modalHeading="Roles"
+        modalLabel={permsDb?.userName}
+        primaryButtonText="Save roles"
+        primaryButtonDisabled={permsBusy}
+        secondaryButtonText="Cancel"
+        size="sm"
+        hasScrollingContent
+      >
+        <Stack gap={5}>
+          <RoleToggles
+            idPrefix="mongo-perms-role"
+            value={permsRoles}
+            onChange={setPermsRoles}
+            disabled={permsBusy}
+          />
+          <p className="gisila-db__hint">
+            Changes are applied with{" "}
+            <span className="gisila-db__mono">updateUser</span>; roles you turn
+            off are revoked.
+          </p>
+          {permsBusy && <InlineLoading description="Saving…" />}
+          {permsError && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={permsError}
+            />
+          )}
+        </Stack>
+      </Modal>
 
       {/* Connection info dialog */}
-      <Dialog open={!!justCreated} onOpenChange={() => setJustCreated(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Connection info — {justCreated?.dbName}</DialogTitle>
-          </DialogHeader>
-          {justCreated?.connection ? (
-            <div className="space-y-4 py-2">
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                Save this password now — it will not be shown again in plain text.
-              </div>
-              <Card>
-                <CardContent className="py-3 px-4">
-                  <ConnRow label="Host"     value={justCreated.connection.host} />
-                  <ConnRow label="Port"     value={String(justCreated.connection.port)} />
-                  <ConnRow label="Database" value={justCreated.connection.database} />
-                  <ConnRow label="Username" value={justCreated.connection.username} />
-                  <ConnRow label="Password" value={justCreated.connection.password} secret />
-                  <ConnRow label="Auth DB"  value={justCreated.connection.authSource} />
-                </CardContent>
-              </Card>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  Connection URI{justCreated.connection.publicUrl ? " (local)" : ""}
-                </Label>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-                    {justCreated.connection.url}
-                  </code>
-                  <CopyButton text={justCreated.connection.url} />
-                </div>
-              </div>
-              {justCreated.connection.publicUrl && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Public URI (TLS)</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-                      {justCreated.connection.publicUrl}
-                    </code>
-                    <CopyButton text={justCreated.connection.publicUrl} />
-                  </div>
-                </div>
-              )}
+      <Modal
+        open={!!justCreated}
+        onRequestClose={() => setJustCreated(null)}
+        onRequestSubmit={() => setJustCreated(null)}
+        modalHeading={`Connection info — ${justCreated?.dbName ?? ""}`}
+        primaryButtonText="Done"
+        size="md"
+      >
+        {justCreated?.connection ? (
+          <Stack gap={5}>
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              hideCloseButton
+              title="Save this password now — it will not be shown again in plain text."
+            />
+            <StructuredListWrapper aria-label="Connection details" isCondensed>
+              <StructuredListBody>
+                <ConnRow label="Host"     value={justCreated.connection.host} />
+                <ConnRow label="Port"     value={String(justCreated.connection.port)} />
+                <ConnRow label="Database" value={justCreated.connection.database} />
+                <ConnRow label="Username" value={justCreated.connection.username} />
+                <ConnRow label="Password" value={justCreated.connection.password} secret />
+                <ConnRow label="Auth DB"  value={justCreated.connection.authSource} />
+              </StructuredListBody>
+            </StructuredListWrapper>
+            <div>
+              <p className="gisila-db__hint">
+                Connection URI{justCreated.connection.publicUrl ? " (local)" : ""}
+              </p>
+              <CodeSnippet type="single" feedbackTimeout={1500}>
+                {justCreated.connection.url}
+              </CodeSnippet>
             </div>
-          ) : (
-            <p className="py-4 text-sm text-muted-foreground">
-              Connection info not available yet — the database is still being provisioned.
-            </p>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setJustCreated(null)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {justCreated.connection.publicUrl && (
+              <div>
+                <p className="gisila-db__hint">Public URI (TLS)</p>
+                <CodeSnippet type="single" feedbackTimeout={1500}>
+                  {justCreated.connection.publicUrl}
+                </CodeSnippet>
+              </div>
+            )}
+          </Stack>
+        ) : (
+          <p className="gisila-db__note">
+            Connection info not available yet — the database is still being
+            provisioned.
+          </p>
+        )}
+      </Modal>
 
       <BackupsDialog
         instanceId={String(id)}
@@ -732,6 +797,6 @@ export default function MongoInstancePage() {
         uploadAccept=".archive,.gz,.archive.gz"
         uploadNote="Upload a mongodump .archive (optionally gzipped) to restore into this database. Restoring may overwrite existing data."
       />
-    </div>
+    </Page>
   );
 }

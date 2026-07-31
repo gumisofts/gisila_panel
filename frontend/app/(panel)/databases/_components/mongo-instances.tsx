@@ -1,41 +1,37 @@
 "use client";
 
-import { useState } from "react";
-import Link from "@/compat/link";
+import { useState, type ComponentProps, type ElementType } from "react";
+import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";
 import {
-  Leaf,
-  Plus,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Star,
+  Add,
+  CheckmarkOutline,
   ChevronRight,
-  ServerCog,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  ServerProxy,
+  Sprout,
+  Star,
+  WarningAlt,
+} from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
+  Button,
+  ClickableTile,
+  Column,
+  Grid,
+  InlineLoading,
+  InlineNotification,
+  Modal,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SkeletonText,
+  Stack,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import type { ListResponse, MongoInstance, MongoInstanceStatus } from "@/lib/types";
+import "../_databases.scss";
 
 const SUPPORTED_VERSIONS = ["6.0", "7.0", "8.0"] as const;
 
@@ -43,17 +39,25 @@ const DEFAULT_PORTS: Record<string, number> = {
   "6.0": 27017, "7.0": 27018, "8.0": 27019,
 };
 
+type TagType = "red" | "green" | "blue" | "gray" | "cool-gray" | "warm-gray";
+
 const STATUS_CONFIG: Record<
   MongoInstanceStatus,
-  { icon: React.ReactNode; label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+  { icon?: ElementType; label: string; type: TagType }
 > = {
-  running:      { icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />, label: "Running",      variant: "outline" },
-  stopped:      { icon: <AlertCircle className="h-3.5 w-3.5 text-amber-500"  />, label: "Stopped",      variant: "secondary" },
-  failed:       { icon: <AlertCircle className="h-3.5 w-3.5 text-red-500"    />, label: "Failed",       variant: "destructive" },
-  pending:      { icon: <Loader      className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: "Pending",  variant: "secondary" },
-  installing:   { icon: <Loader      className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: "Installing", variant: "secondary" },
-  uninstalling: { icon: <Loader      className="h-3.5 w-3.5 animate-spin text-amber-500" />, label: "Removing", variant: "secondary" },
+  running:      { icon: CheckmarkOutline, label: "Running",    type: "green" },
+  stopped:      { icon: WarningAlt,       label: "Stopped",    type: "gray" },
+  failed:       { icon: WarningAlt,       label: "Failed",     type: "red" },
+  pending:      {                         label: "Pending",    type: "blue" },
+  installing:   {                         label: "Installing", type: "blue" },
+  uninstalling: {                         label: "Removing",   type: "warm-gray" },
 };
+
+// See the note in postgres-instances.tsx: ClickableTile passes unknown props to
+// its polymorphic internal Link, but does not type `as`.
+const RouterTile = ClickableTile as React.ComponentType<
+  ComponentProps<typeof ClickableTile> & { as?: ElementType }
+>;
 
 export function MongoInstances() {
   const { data, isLoading } = useSWR<ListResponse<MongoInstance>>(
@@ -96,185 +100,158 @@ export function MongoInstances() {
   const instances = data?.results ?? [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+    <Stack gap={6}>
+      <div className="gisila-db__toolbar">
+        <p className="gisila-db__note">
           NoSQL document database. Each version runs on its own port with authentication enabled.
         </p>
         {isSuperuser && (
-          <Button size="sm" onClick={() => setShowInstall(true)}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+          <Button size="sm" renderIcon={Add} onClick={() => setShowInstall(true)}>
             Install version
           </Button>
         )}
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <SkeletonText paragraph lineCount={3} />
       ) : instances.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <Leaf className="h-10 w-10 text-muted-foreground/40" />
+        <Tile>
+          <div className="gisila-db__empty">
+            <Sprout size={32} className="gisila-db__empty-icon" />
             <div>
-              <p className="font-medium">No MongoDB instances yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Install a version to get started.
-              </p>
+              <p className="gisila-db__empty-title">No MongoDB instances yet</p>
+              <p className="gisila-db__note">Install a version to get started.</p>
             </div>
             {isSuperuser && (
-              <Button size="sm" onClick={() => setShowInstall(true)}>
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
+              <Button size="sm" renderIcon={Add} onClick={() => setShowInstall(true)}>
                 Install version
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Tile>
       ) : (
-        <div className="space-y-3">
+        <Grid condensed className="gisila-db__list">
           {instances.map((inst) => {
             const sc = STATUS_CONFIG[inst.status] ?? STATUS_CONFIG.stopped;
             return (
-              <Link key={inst.id} href={`/databases/mongo/${inst.id}`}>
-                <Card className="cursor-pointer transition-colors hover:bg-accent/40">
-                  <CardContent className="flex items-center gap-4 py-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-                      <Leaf className="h-5 w-5 text-emerald-500" />
-                    </div>
+              <Column key={inst.id} sm={4} md={8} lg={16}>
+                <RouterTile
+                  as={RouterLink}
+                  href={`/databases/mongo/${inst.id}`}
+                  renderIcon={ChevronRight}
+                >
+                  <div className="gisila-db__tile">
+                    <span className="gisila-status-icon gisila-status-icon--success">
+                      <Sprout size={20} />
+                    </span>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">
+                    <div className="gisila-db__tile-main">
+                      <div className="gisila-db__tags">
+                        <span className="gisila-db__tile-name">
                           {inst.displayName}
                         </span>
                         {inst.isDefault && (
-                          <Badge variant="outline" className="gap-1 text-xs font-normal py-0">
-                            <Star className="h-2.5 w-2.5 text-amber-400 fill-amber-400" />
+                          <Tag type="blue" size="sm" renderIcon={Star}>
                             Default
-                          </Badge>
+                          </Tag>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="gisila-db__tile-meta">
                         MongoDB {inst.version} · port {inst.port}
                         {inst.dataDirectory ? ` · ${inst.dataDirectory}` : ""}
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Badge variant={sc.variant} className="gap-1.5">
-                        {sc.icon}
-                        {sc.label}
-                      </Badge>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                    <Tag type={sc.type} renderIcon={sc.icon}>
+                      {sc.label}
+                    </Tag>
+                  </div>
+                </RouterTile>
+              </Column>
             );
           })}
-        </div>
+        </Grid>
       )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <ServerCog className="h-4 w-4 text-muted-foreground" />
+      <Tile>
+        <Stack gap={4}>
+          <h3 className="gisila-db__tile-name gisila-db__icon-title">
+            <ServerProxy size={16} />
             Available versions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
+          </h3>
+          <div className="gisila-db__versions">
             {SUPPORTED_VERSIONS.map((v) => {
               const installed = instances.some((i) => i.version === v);
               return (
-                <div
+                <Tag
                   key={v}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm",
-                    installed
-                      ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400"
-                      : "border-border text-muted-foreground"
-                  )}
+                  type={installed ? "green" : "gray"}
+                  renderIcon={installed ? CheckmarkOutline : Sprout}
                 >
-                  <Leaf className="h-3.5 w-3.5" />
                   MongoDB {v}
-                  {installed && (
-                    <CheckCircle className="h-3 w-3 fill-emerald-500 text-white" />
-                  )}
-                </div>
+                </Tag>
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+        </Stack>
+      </Tile>
 
-      <Dialog open={showInstall} onOpenChange={setShowInstall}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Install MongoDB</DialogTitle>
-          </DialogHeader>
+      <Modal
+        open={showInstall}
+        onRequestClose={() => setShowInstall(false)}
+        onRequestSubmit={handleInstall}
+        modalHeading="Install MongoDB"
+        primaryButtonText="Install"
+        primaryButtonDisabled={installing}
+        secondaryButtonText="Cancel"
+        size="sm"
+      >
+        <Stack gap={5}>
+          <Select
+            id="mongo-install-version"
+            labelText="Version"
+            value={version}
+            onChange={(e) => {
+              const v = e.target.value;
+              setVersion(v);
+              setPort(String(DEFAULT_PORTS[v] ?? ""));
+            }}
+          >
+            {SUPPORTED_VERSIONS.map((v) => (
+              <SelectItem key={v} value={v} text={`MongoDB ${v}`} />
+            ))}
+          </Select>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Version</Label>
-              <Select value={version} onValueChange={(v) => {
-                setVersion(v);
-                setPort(String(DEFAULT_PORTS[v] ?? ""));
-              }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_VERSIONS.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      MongoDB {v}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <TextInput
+            id="mongo-install-name"
+            labelText="Display name"
+            placeholder={`MongoDB ${version}`}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+          />
 
-            <div className="space-y-1.5">
-              <Label>Display name</Label>
-              <Input
-                placeholder={`MongoDB ${version}`}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
+          <TextInput
+            id="mongo-install-port"
+            type="number"
+            labelText="Port"
+            helperText="Each version must use a unique port. Default shown above."
+            placeholder={String(DEFAULT_PORTS[version] ?? 27017)}
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+          />
 
-            <div className="space-y-1.5">
-              <Label>Port</Label>
-              <Input
-                type="number"
-                placeholder={String(DEFAULT_PORTS[version] ?? 27017)}
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Each version must use a unique port. Default shown above.
-              </p>
-            </div>
+          {installing && <InlineLoading description="Installing…" />}
 
-            {installError && (
-              <p className="text-sm text-destructive">{installError}</p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInstall(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleInstall} disabled={installing}>
-              {installing ? (
-                <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Install
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          {installError && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={installError}
+            />
+          )}
+        </Stack>
+      </Modal>
+    </Stack>
   );
 }

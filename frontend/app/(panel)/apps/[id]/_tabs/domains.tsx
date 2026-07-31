@@ -2,15 +2,26 @@
 
 import { useState } from "react";
 import useSWR from "swr";
+import {
+  Button,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Add, Earth, Security, TrashCan } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
-import { Globe, Plus, Trash2, ShieldCheck } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { Domain, ListResponse } from "@/lib/types";
+import "../_app-detail.scss";
 
 export function DomainsTab({ appId }: { appId: number }) {
   const { data, mutate } = useSWR<ListResponse<Domain>>(
@@ -56,73 +67,86 @@ export function DomainsTab({ appId }: { appId: number }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="p-5">
-          <form onSubmit={add} className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                Custom domain
-              </label>
-              <Input
-                value={hostname}
-                onChange={(e) => setHostname(e.target.value)}
-                placeholder="api.example.com"
-                required
-              />
-            </div>
-            <Button type="submit" disabled={busy}>
-              <Plus className="h-4 w-4" /> Attach
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <Stack gap={5}>
+      <Tile>
+        <form onSubmit={add} className="gisila-app__form-row">
+          <div className="gisila-app__form-field">
+            <TextInput
+              id="domain-hostname"
+              labelText="Custom domain"
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value)}
+              placeholder="api.example.com"
+              required
+            />
+          </div>
+          <Button type="submit" renderIcon={Add} disabled={busy}>
+            Attach
+          </Button>
+        </form>
+      </Tile>
 
-      <div className="space-y-2">
-        {data?.results.length ? (
-          data.results.map((d) => (
-            <div
-              key={d.id}
-              className="flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-5 py-3 text-sm"
-            >
-              <div className="flex items-center gap-3">
-                <Globe className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">{d.hostname}</p>
-                  <p className="text-xs text-muted-foreground">
-                    SSL: {d.sslStatus}
-                    {d.sslExpiresAt
-                      ? ` · expires ${formatRelative(d.sslExpiresAt)}`
-                      : ""}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {d.sslStatus === "issued" ? (
-                  <Badge variant="success">https</Badge>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => issue(d.id)}>
-                    <ShieldCheck className="h-4 w-4" /> Issue cert
-                  </Button>
-                )}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => remove(d.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            </div>
-          ))
-        ) : (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No domains attached yet.
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </div>
+      {data?.results.length ? (
+        <TableContainer>
+          <Table size="md">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Hostname</TableHeader>
+                <TableHeader>TLS</TableHeader>
+                <TableHeader aria-label="Actions" />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.results.map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell>
+                    <span className="gisila-app__inline">
+                      <Earth size={16} />
+                      {d.hostname}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="gisila-app__label">
+                      SSL: {d.sslStatus}
+                      {d.sslExpiresAt
+                        ? ` · expires ${formatRelative(d.sslExpiresAt)}`
+                        : ""}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="gisila-app__row-actions">
+                      {d.sslStatus === "issued" ? (
+                        <Tag type="green" size="sm">
+                          https
+                        </Tag>
+                      ) : (
+                        <Button
+                          size="sm"
+                          kind="tertiary"
+                          renderIcon={Security}
+                          onClick={() => issue(d.id)}
+                        >
+                          Issue cert
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        kind="danger--ghost"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription={`Remove ${d.hostname}`}
+                        onClick={() => remove(d.id)}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      ) : (
+        <Tile className="gisila-empty">No domains attached yet.</Tile>
+      )}
+    </Stack>
   );
 }

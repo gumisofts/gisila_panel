@@ -1,40 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/compat/link";
+import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";
 import {
-  Database,
-  Mail,
-  LayoutGrid,
-  Network,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Plus,
-  ExternalLink,
+  Add,
   ArrowRight,
-  ServerCog,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+  DataBase,
+  Email,
+  Grid as GridIcon,
+  Launch,
+  Network_1,
+  ServerProxy,
+} from "@carbon/icons-react";
+import {
+  Button,
+  ClickableTile,
+  Column,
+  Grid,
+  InlineLoading,
+  InlineNotification,
+  Link as CarbonLink,
+  SkeletonText,
+  Stack,
+  Tag,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import type { ListResponse, ManagedService, ServiceDef } from "@/lib/types";
+import "./_services.scss";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_ICON: Record<string, React.ReactNode> = {
-  running:      <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />,
-  config_only:  <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />,
-  stopped:      <AlertCircle className="h-3.5 w-3.5 text-amber-500" />,
-  failed:       <AlertCircle className="h-3.5 w-3.5 text-red-500" />,
-  installing:   <Loader className="h-3.5 w-3.5 animate-spin text-blue-500" />,
-  uninstalling: <Loader className="h-3.5 w-3.5 animate-spin text-zinc-400" />,
-  pending:      <Loader className="h-3.5 w-3.5 animate-spin text-zinc-400" />,
-};
+/// ClickableTile renders Carbon's polymorphic Link and forwards unknown props to
+/// it, but its own props are typed against an anchor, so `as` — how the tile is
+/// handed to react-router instead of doing a document navigation — is declared
+/// here.
+const RouterTile = ClickableTile as React.ComponentType<
+  React.ComponentProps<typeof ClickableTile> & { as?: React.ElementType }
+>;
 
 const STATUS_LABEL: Record<string, string> = {
   running:      "Running",
@@ -46,18 +52,34 @@ const STATUS_LABEL: Record<string, string> = {
   pending:      "Pending…",
 };
 
-const CATEGORY_ICON: Record<string, React.ReactNode> = {
-  cache: <Database className="h-4 w-4" />,
-  email: <Mail className="h-4 w-4" />,
-  queue: <LayoutGrid className="h-4 w-4" />,
-  database: <Network className="h-4 w-4" />,
+/// Statuses the backend is still working through — these show a spinner rather
+/// than a settled tag.
+const IN_PROGRESS = ["installing", "uninstalling", "pending"];
+
+const STATUS_TAG: Record<string, "green" | "red" | "magenta"> = {
+  running:     "green",
+  config_only: "green",
+  stopped:     "magenta",
+  failed:      "red",
 };
 
-const CATEGORY_COLOR: Record<string, string> = {
-  cache: "bg-violet-500/10 text-violet-500",
-  email: "bg-blue-500/10 text-blue-500",
-  queue: "bg-amber-500/10 text-amber-500",
-  database: "bg-emerald-500/10 text-emerald-500",
+function StatusIndicator({ status }: { status: string }) {
+  const label = STATUS_LABEL[status] ?? status;
+  if (IN_PROGRESS.includes(status)) {
+    return <InlineLoading status="active" description={label} />;
+  }
+  return (
+    <Tag type={STATUS_TAG[status] ?? "cool-gray"} size="sm">
+      {label}
+    </Tag>
+  );
+}
+
+const CATEGORY_ICON: Record<string, typeof ServerProxy> = {
+  cache: DataBase,
+  email: Email,
+  queue: GridIcon,
+  database: Network_1,
 };
 
 const SERVICE_CATEGORY: Record<string, string> = {
@@ -65,6 +87,15 @@ const SERVICE_CATEGORY: Record<string, string> = {
   smtp: "email", mailpit: "email",
   pgbouncer: "database",
 };
+
+function CategoryIcon({ category }: { category: string }) {
+  const Icon = CATEGORY_ICON[category] ?? ServerProxy;
+  return (
+    <span className="gisila-catalog__icon">
+      <Icon size={20} />
+    </span>
+  );
+}
 
 /** Pull the most useful config key-values to surface on the card, driven by the
  *  catalog [def] (its summaryKeys + field labels). Falls back to the first few
@@ -115,141 +146,105 @@ export default function ServicesPage() {
   const defsByType = new Map(catalog.map((d) => [d.type, d]));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6">
-      {/* ── Installed ────────────────────────────────────────────────────────── */}
-      <section>
-        <header className="mb-4">
-          <h1 className="text-xl font-semibold">Services</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Host-level services managed by your panel.
-          </p>
-        </header>
+    <Page>
+      <PageHeader
+        title="Services"
+        description="Host-level services managed by your panel."
+      />
 
+      <PageSection>
         {isLoading ? (
-          <SkeletonRow />
+          <SkeletonTiles />
         ) : installed.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No services installed yet — pick one from the catalog below.
-            </CardContent>
-          </Card>
+          <Tile className="gisila-empty">
+            No services installed yet — pick one from the catalog below.
+          </Tile>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <Grid fullWidth withRowGap>
             {installed.map((svc) => (
-              <InstalledCard key={svc.id} svc={svc} def={defsByType.get(svc.serviceType)} />
+              <Column key={svc.id} sm={4} md={4} lg={8}>
+                <InstalledTile
+                  svc={svc}
+                  def={defsByType.get(svc.serviceType)}
+                />
+              </Column>
             ))}
-          </div>
+          </Grid>
         )}
-      </section>
+      </PageSection>
 
-      {/* ── Catalog ──────────────────────────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground/80">
-          <ServerCog className="h-4 w-4 text-muted-foreground" />
-          Available services
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+      <PageSection title="Available services">
+        <Grid fullWidth withRowGap>
           {catalog.map((def) => (
-            <CatalogCard
-              key={def.type}
-              def={def}
-              installed={installedByType.get(def.type)}
-            />
+            <Column key={def.type} sm={4} md={4} lg={8}>
+              <CatalogTile def={def} installed={installedByType.get(def.type)} />
+            </Column>
           ))}
-        </div>
-      </section>
-    </div>
+        </Grid>
+      </PageSection>
+    </Page>
   );
 }
 
-// ── Installed card ────────────────────────────────────────────────────────────
+// ── Installed tile ────────────────────────────────────────────────────────────
 
-function InstalledCard({ svc, def }: { svc: ManagedService; def?: ServiceDef }) {
+function InstalledTile({ svc, def }: { svc: ManagedService; def?: ServiceDef }) {
   const config: Record<string, string> = (() => {
     try { return JSON.parse(svc.config) as Record<string, string>; }
     catch { return {}; }
   })();
 
   const details = summaryFields(config, def);
-  const statusLabel = STATUS_LABEL[svc.status] ?? svc.status;
   const category = def?.category ?? SERVICE_CATEGORY[svc.serviceType] ?? "";
 
   return (
-    <Link
-      href={`/services/${svc.id}`}
-      className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/30"
-    >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-            CATEGORY_COLOR[category] ?? "bg-muted text-muted-foreground",
-          )}>
-            {CATEGORY_ICON[category] ?? <ServerCog className="h-4 w-4" />}
-          </div>
-          <div>
-            <p className="text-sm font-medium leading-tight">{svc.displayName}</p>
-            <p className="text-[11px] text-muted-foreground font-mono">{svc.serviceType}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          {STATUS_ICON[svc.status] ?? null}
-          <span className={cn(
-            "text-xs font-medium",
-            svc.status === "running" || svc.status === "config_only"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : svc.status === "failed"
-              ? "text-red-500"
-              : svc.status === "stopped"
-              ? "text-amber-500"
-              : "text-muted-foreground",
-          )}>
-            {statusLabel}
-          </span>
-        </div>
-      </div>
-
-      {/* Config summary */}
-      {details.length > 0 && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md bg-muted/50 px-3 py-2">
-          {details.map(({ label, value }) => (
-            <div key={label} className="flex items-baseline gap-1.5 min-w-0">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">
-                {label}
-              </span>
-              <span className="text-xs font-mono font-medium truncate">{value}</span>
+    <RouterTile as={RouterLink} href={`/services/${svc.id}`}>
+      <Stack gap={4}>
+        <div className="gisila-catalog__row">
+          <div className="gisila-catalog__ident">
+            <CategoryIcon category={category} />
+            <div>
+              <p className="gisila-catalog__name">{svc.displayName}</p>
+              <p className="gisila-catalog__key">{svc.serviceType}</p>
             </div>
-          ))}
+          </div>
+          <StatusIndicator status={svc.status} />
         </div>
-      )}
 
-      {svc.errorMessage && (
-        <p className="truncate text-xs text-red-500">{svc.errorMessage}</p>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-0.5">
-        {svc.installedAt ? (
-          <span className="text-[10px] text-muted-foreground">
-            Installed {new Date(svc.installedAt).toLocaleDateString()}
-          </span>
-        ) : (
-          <span />
+        {details.length > 0 && (
+          <div className="gisila-catalog__summary">
+            {details.map(({ label, value }) => (
+              <div key={label} className="gisila-catalog__summary-item">
+                <span className="gisila-catalog__summary-label">{label}</span>
+                <span className="gisila-catalog__summary-value">{value}</span>
+              </div>
+            ))}
+          </div>
         )}
-        <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-          Configure
-          <ArrowRight className="h-3 w-3" />
-        </span>
-      </div>
-    </Link>
+
+        {svc.errorMessage && (
+          <p className="gisila-catalog__error">{svc.errorMessage}</p>
+        )}
+
+        <div className="gisila-catalog__row">
+          <span className="gisila-catalog__meta">
+            {svc.installedAt
+              ? `Installed ${new Date(svc.installedAt).toLocaleDateString()}`
+              : ""}
+          </span>
+          <span className="gisila-catalog__cta">
+            Configure
+            <ArrowRight size={16} />
+          </span>
+        </div>
+      </Stack>
+    </RouterTile>
   );
 }
 
-// ── Catalog card ──────────────────────────────────────────────────────────────
+// ── Catalog tile ──────────────────────────────────────────────────────────────
 
-function CatalogCard({
+function CatalogTile({
   def,
   installed,
 }: {
@@ -284,91 +279,90 @@ function CatalogCard({
   }
 
   return (
-    <div className={cn(
-      "flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-colors",
-      isInstalled && "border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/[0.03]",
-    )}>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-            CATEGORY_COLOR[def.category] ?? "bg-muted text-muted-foreground",
-          )}>
-            {CATEGORY_ICON[def.category]}
+    <Tile
+      className={isInstalled ? "gisila-catalog__tile--installed" : undefined}
+    >
+      <Stack gap={4}>
+        <div className="gisila-catalog__row">
+          <div className="gisila-catalog__ident">
+            <CategoryIcon category={def.category} />
+            <div>
+              <p className="gisila-catalog__name">{def.name}</p>
+              <Tag type="cool-gray" size="sm">
+                {def.category}
+              </Tag>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium">{def.name}</p>
-            <Badge variant="secondary" className="mt-0.5 text-[10px] capitalize font-normal">
-              {def.category}
-            </Badge>
-          </div>
+
+          {def.docsUrl && (
+            <CarbonLink
+              href={def.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              renderIcon={Launch}
+              size="sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Docs
+            </CarbonLink>
+          )}
         </div>
 
-        {def.docsUrl && (
-          <a
-            href={def.docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+        <p className="gisila-catalog__desc">{def.description}</p>
+
+        {error && (
+          <InlineNotification
+            kind="error"
+            lowContrast
+            hideCloseButton
+            title={error}
+          />
         )}
-      </div>
 
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        {def.description}
-      </p>
+        <div className="gisila-catalog__row">
+          <span className="gisila-catalog__summary-label">
+            {def.requiresInstall ? "apt + systemd" : "config only"}
+          </span>
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-0.5">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-          {def.requiresInstall ? "apt + systemd" : "config only"}
-        </span>
-
-        {isInstalled ? (
-          <Link
-            href={`/services/${installed.id}`}
-            className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
-          >
-            <CheckCircle className="h-3 w-3" />
-            Installed · View
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        ) : isSuperuser ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            disabled={installing}
-            onClick={quickInstall}
-          >
-            {installing ? (
-              <Loader className="h-3 w-3 animate-spin" />
+          {isInstalled ? (
+            <CarbonLink
+              as={RouterLink}
+              href={`/services/${installed.id}`}
+              renderIcon={ArrowRight}
+              size="sm"
+            >
+              Installed · View
+            </CarbonLink>
+          ) : isSuperuser ? (
+            installing ? (
+              <InlineLoading status="active" />
             ) : (
-              <Plus className="h-3 w-3" />
-            )}
-            {def.requiresInstall ? "Install" : "Configure"}
-          </Button>
-        ) : null}
-      </div>
-    </div>
+              <Button
+                size="sm"
+                kind="tertiary"
+                renderIcon={Add}
+                onClick={quickInstall}
+              >
+                {def.requiresInstall ? "Install" : "Configure"}
+              </Button>
+            )
+          ) : null}
+        </div>
+      </Stack>
+    </Tile>
   );
 }
 
-function SkeletonRow() {
+function SkeletonTiles() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <Grid fullWidth withRowGap>
       {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-28 animate-pulse rounded-lg border border-border bg-card/40"
-        />
+        <Column key={i} sm={4} md={4} lg={8}>
+          <Tile>
+            <SkeletonText paragraph lineCount={3} />
+          </Tile>
+        </Column>
       ))}
-    </div>
+    </Grid>
   );
 }

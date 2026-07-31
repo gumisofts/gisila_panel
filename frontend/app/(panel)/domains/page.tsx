@@ -1,59 +1,66 @@
 "use client";
 
-import Link from "@/compat/link";
+import type { ComponentProps, ElementType } from "react";
+import RouterLink from "@/compat/link";
 import useSWR from "swr";
-import { Globe } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Earth } from "@carbon/icons-react";
+import { ClickableTile, Stack, Tag, Tile } from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import type { App, Domain, ListResponse } from "@/lib/types";
+import "../_batch-a.scss";
 
 interface AppWithDomains extends App {
   domains?: Domain[];
 }
 
+// ClickableTile forwards unrecognised props to Carbon's polymorphic Link, so
+// `as` works at runtime even though the prop type omits it.
+const LinkTile = ClickableTile as React.ComponentType<
+  ComponentProps<typeof ClickableTile> & { as?: ElementType }
+>;
+
 export default function DomainsPage() {
   const apps = useSWR<ListResponse<App>>("/apps/", fetcher);
 
   return (
-    <div className="container space-y-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Domains</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage custom hostnames + automatic Let&rsquo;s Encrypt certificates.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Domains"
+        description="Manage custom hostnames + automatic Let’s Encrypt certificates."
+      />
 
-      <div className="space-y-3">
+      <Stack gap={3}>
         {apps.data?.results.map((app) => (
-          <Card key={app.id}>
-            <CardContent className="p-5">
-              <Link
-                href={`/apps/${app.id}#domains`}
-                className="flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{app.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {app.runtime} · port {app.internalPort}
-                    </p>
-                  </div>
+          <LinkTile
+            key={app.id}
+            as={RouterLink}
+            href={`/apps/${app.id}#domains`}
+          >
+            <div className="gisila-row">
+              <div className="gisila-row__main">
+                <span className="gisila-status-icon gisila-status-icon--brand">
+                  <Earth size={16} />
+                </span>
+                <div>
+                  <p className="gisila-card__title">{app.name}</p>
+                  <p className="gisila-card__meta">
+                    {app.runtime} · port {app.internalPort}
+                  </p>
                 </div>
-                <Badge variant="muted">manage</Badge>
-              </Link>
-            </CardContent>
-          </Card>
+              </div>
+              <Tag type="cool-gray" size="sm">
+                manage
+              </Tag>
+            </div>
+          </LinkTile>
         ))}
         {apps.data?.results.length === 0 && (
-          <Card>
-            <CardContent className="py-12 text-center text-sm text-muted-foreground">
-              You don&rsquo;t have any apps yet.
-            </CardContent>
-          </Card>
+          <Tile className="gisila-empty">
+            You don&rsquo;t have any apps yet.
+          </Tile>
         )}
-      </div>
-    </div>
+      </Stack>
+    </Page>
   );
 }

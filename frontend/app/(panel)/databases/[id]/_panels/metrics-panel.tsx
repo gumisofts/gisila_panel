@@ -1,9 +1,22 @@
 "use client";
 
 import useSWR from "swr";
-import { Activity, Cpu, MemoryStick, Loader } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Activity, Chip } from "@carbon/icons-react";
+import {
+  Column,
+  Grid,
+  InlineLoading,
+  Stack,
+  StructuredListBody,
+  StructuredListCell,
+  StructuredListHead,
+  StructuredListRow,
+  StructuredListWrapper,
+  Tile,
+} from "@carbon/react";
+import { PageSection } from "@/components/page";
 import { fetcher } from "@/lib/api";
+import "../../_databases.scss";
 
 interface DbMetrics {
   status: "ok" | "initializing" | "not_running" | "error";
@@ -49,13 +62,22 @@ function fmtUptime(s?: number): string {
 
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card/40 p-3">
-      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
+    <Column sm={2} md={2} lg={4}>
+      <Tile className="gisila-db__stat">
+        <p className="gisila-db__stat-label">{label}</p>
+        <p className="gisila-db__stat-value">{value}</p>
+        {sub && <p className="gisila-db__stat-sub">{sub}</p>}
+      </Tile>
+    </Column>
   );
 }
+
+const HEADING = (
+  <span className="gisila-db__icon-title">
+    <Activity size={16} />
+    Metrics
+  </span>
+);
 
 export function MetricsPanel({ id, running }: { id: string; running: boolean }) {
   const { data } = useSWR<DbMetrics>(
@@ -68,32 +90,21 @@ export function MetricsPanel({ id, running }: { id: string; running: boolean }) 
 
   if (!data || data.status === "initializing") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4 text-muted-foreground" /> Metrics
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-          <Loader className="h-4 w-4 animate-spin" />
-          Setting up the monitoring role… metrics will appear shortly.
-        </CardContent>
-      </Card>
+      <PageSection title={HEADING}>
+        <Tile>
+          <InlineLoading description="Setting up the monitoring role… metrics will appear shortly." />
+        </Tile>
+      </PageSection>
     );
   }
 
   if (data.status !== "ok") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4 text-muted-foreground" /> Metrics
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="py-6 text-sm text-muted-foreground">
-          Metrics unavailable. {data.detail ?? ""}
-        </CardContent>
-      </Card>
+      <PageSection title={HEADING}>
+        <Tile>
+          <p className="gisila-db__note">Metrics unavailable. {data.detail ?? ""}</p>
+        </Tile>
+      </PageSection>
     );
   }
 
@@ -103,14 +114,9 @@ export function MetricsPanel({ id, running }: { id: string; running: boolean }) 
   const cpuPct = data.host ? (data.host.cpuPercent / 100).toFixed(1) : null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Activity className="h-4 w-4 text-muted-foreground" /> Metrics
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <PageSection title={HEADING}>
+      <Stack gap={5}>
+        <Grid condensed className="gisila-db__stats">
           <Stat
             label="Connections"
             value={`${c.total} / ${c.max}`}
@@ -121,10 +127,10 @@ export function MetricsPanel({ id, running }: { id: string; running: boolean }) 
             label="CPU"
             value={
               cpuPct !== null ? (
-                <span className="flex items-center gap-1">
-                  <Cpu className="h-4 w-4 text-muted-foreground" />
+                <>
+                  <Chip size={16} />
                   {cpuPct}%
-                </span>
+                </>
               ) : (
                 "—"
               )
@@ -135,40 +141,47 @@ export function MetricsPanel({ id, running }: { id: string; running: boolean }) 
             label="Memory"
             value={
               data.host ? (
-                <span className="flex items-center gap-1">
-                  <MemoryStick className="h-4 w-4 text-muted-foreground" />
+                <>
+                  <Chip size={16} />
                   {fmtBytes(data.host.memBytes)}
-                </span>
+                </>
               ) : (
                 "—"
               )
             }
           />
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Cache hit" value={`${((data.cacheHitRatio ?? 0) * 100).toFixed(1)}%`} />
           <Stat label="Commits" value={t.commits.toLocaleString()} />
           <Stat label="Rollbacks" value={t.rollbacks.toLocaleString()} sub={`${t.deadlocks} deadlocks`} />
           <Stat label="Uptime" value={fmtUptime(data.uptimeSeconds)} />
-        </div>
+        </Grid>
 
         {data.databases && data.databases.length > 0 && (
-          <div className="rounded-lg border border-border/60">
-            <p className="border-b border-border/60 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
-              Database sizes
-            </p>
-            <div className="divide-y divide-border/60">
+          <StructuredListWrapper aria-label="Database sizes" isCondensed>
+            <StructuredListHead>
+              <StructuredListRow head>
+                <StructuredListCell head>Database</StructuredListCell>
+                <StructuredListCell head className="gisila-db__size-value">
+                  Size
+                </StructuredListCell>
+              </StructuredListRow>
+            </StructuredListHead>
+            <StructuredListBody>
               {data.databases.map((d) => (
-                <div key={d.name} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="font-mono">{d.name}</span>
-                  <span className="tabular-nums text-muted-foreground">{fmtBytes(d.sizeBytes)}</span>
-                </div>
+                <StructuredListRow key={d.name}>
+                  <StructuredListCell>
+                    <span className="gisila-db__mono">{d.name}</span>
+                  </StructuredListCell>
+                  <StructuredListCell className="gisila-db__size-value">
+                    {fmtBytes(d.sizeBytes)}
+                  </StructuredListCell>
+                </StructuredListRow>
               ))}
-            </div>
-          </div>
+            </StructuredListBody>
+          </StructuredListWrapper>
         )}
-      </CardContent>
-    </Card>
+      </Stack>
+    </PageSection>
   );
 }

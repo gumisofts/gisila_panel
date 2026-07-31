@@ -1,0 +1,312 @@
+// App detail screen (shell + its nine tabs).
+//
+// Carbon covers every control these tabs use, so what is left here is the two
+// things it has no component for: the streaming log/console panes, which are
+// scrolling monospaced surfaces rather than static code blocks, and the small
+// type/flex treatments that arrange values inside tiles. Tokens are referenced
+// by name so every rule follows the active theme zone.
+
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+@use '@carbon/react/scss/breakpoint';
+
+// ── Type treatments ──────────────────────────────────────────────────────────
+
+// Paths, ports, commands and git URLs: values compared character by character,
+// so they keep the code face.
+.gisila-app__mono {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-app__hint {
+  @include type.type-style('label-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-app__label {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+}
+
+// Tile headings. Carbon's Tile is an unopinionated surface with no header
+// slot, so the cards on Overview and Settings label themselves.
+.gisila-app__tile-title {
+  @include type.type-style('productive-heading-02');
+
+  margin-block-end: spacing.$spacing-05;
+  color: theme.$text-primary;
+}
+
+.gisila-app__stat {
+  @include type.type-style('productive-heading-03');
+
+  color: theme.$text-primary;
+}
+
+// An env var name or an injected variable rendered inline as a chip.
+.gisila-app__chip {
+  @include type.type-style('code-01');
+
+  padding-block: spacing.$spacing-01;
+  padding-inline: spacing.$spacing-02;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-primary;
+}
+
+// ── Layout helpers ───────────────────────────────────────────────────────────
+
+.gisila-app__breadcrumb {
+  margin-block-end: spacing.$spacing-05;
+}
+
+.gisila-app__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app__inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: spacing.$spacing-04;
+}
+
+// Icon above the message inside a .gisila-empty tile.
+.gisila-app__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: spacing.$spacing-04;
+}
+
+.gisila-app__row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-app__form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-app__form-field {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+.gisila-app__form-field--narrow {
+  flex: 0 0 auto;
+}
+
+// Carbon's Grid only gutters horizontally; cards that wrap onto a second row
+// need the vertical rhythm supplied here.
+.gisila-app__col {
+  margin-block-end: spacing.$spacing-05;
+}
+
+.gisila-app__value {
+  text-align: end;
+}
+
+// The chart body inside a metrics tile. Recharts' ResponsiveContainer measures
+// its parent, so the height has to be declared somewhere.
+.gisila-app__chart {
+  block-size: 14rem;
+}
+
+.gisila-app__narrow {
+  max-inline-size: 48rem;
+}
+
+// ── Connection status ────────────────────────────────────────────────────────
+// A bare tinted dot next to a stream's state. Carbon's Tag is too heavy beside
+// a one-word label, and its status icons all carry a glyph.
+
+.gisila-app__pulse {
+  display: inline-block;
+  flex-shrink: 0;
+  inline-size: spacing.$spacing-02;
+  block-size: spacing.$spacing-02;
+  border-radius: 50%;
+  background-color: theme.$support-warning;
+}
+
+.gisila-app__pulse--live {
+  background-color: theme.$support-success;
+}
+
+.gisila-app__pulse--live,
+.gisila-app__pulse--waiting {
+  animation: gisila-app-pulse 2s ease-in-out infinite;
+}
+
+@keyframes gisila-app-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+// ── Terminal panes ───────────────────────────────────────────────────────────
+// Build logs, runtime logs and console output. CodeSnippet is built for a
+// finished block of text with a copy affordance; these are append-only streams
+// that scroll themselves, so they are a plain scroll surface on Carbon's first
+// layer rather than a component. Colours come from the support tokens so the
+// pane reads correctly in both the light and dark theme zones.
+
+.gisila-term {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border: 1px solid theme.$border-subtle-01;
+  background-color: theme.$layer-01;
+}
+
+.gisila-term__bar {
+  @include type.type-style('label-01');
+
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  padding-block: spacing.$spacing-03;
+  padding-inline: spacing.$spacing-05;
+  border-block-end: 1px solid theme.$border-subtle-01;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-secondary;
+}
+
+.gisila-term__live {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-02;
+  margin-inline-start: auto;
+  color: theme.$support-success;
+}
+
+.gisila-term__body {
+  @include type.type-style('code-01');
+
+  flex: 1;
+  block-size: 26.25rem;
+  overflow-y: auto;
+  padding: spacing.$spacing-05;
+  color: theme.$text-primary;
+}
+
+.gisila-term__body--tall {
+  block-size: 30rem;
+}
+
+.gisila-term__placeholder {
+  color: theme.$text-secondary;
+}
+
+.gisila-term__line {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.gisila-term__line--stderr {
+  color: theme.$support-error;
+}
+
+.gisila-term__line--system {
+  color: theme.$support-info;
+}
+
+// Timestamps are scannable context, never part of the copied output.
+.gisila-term__ts {
+  margin-inline-end: spacing.$spacing-03;
+  color: theme.$text-placeholder;
+  user-select: none;
+}
+
+.gisila-term__stream {
+  margin-inline-end: spacing.$spacing-02;
+  opacity: 0.7;
+}
+
+// ── Deployments tab ──────────────────────────────────────────────────────────
+// History on the left, the selected build's stepper and log on the right.
+
+.gisila-deploy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: spacing.$spacing-05;
+
+  @include breakpoint.breakpoint('md') {
+    grid-template-columns: 15rem minmax(0, 1fr);
+  }
+}
+
+.gisila-deploy__list {
+  max-block-size: 35rem;
+  overflow-y: auto;
+}
+
+.gisila-deploy__item {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-deploy__item-head {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-deploy__panel {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-05;
+  min-inline-size: 0;
+}
+
+// ── Settings tab ─────────────────────────────────────────────────────────────
+// A checkbox whose consequences need a sentence of explanation sits above its
+// own hint rather than inside Carbon's single-line helper text.
+
+.gisila-app__choice {
+  padding: spacing.$spacing-05;
+  border: 1px solid theme.$border-subtle-01;
+}
+
+.gisila-app__note {
+  @include type.type-style('body-01');
+
+  padding: spacing.$spacing-05;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-secondary;
+}
+
+.gisila-app__note-list {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-02;
+  margin-block-start: spacing.$spacing-03;
+}

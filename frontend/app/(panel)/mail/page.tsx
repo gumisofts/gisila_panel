@@ -3,42 +3,49 @@
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
-  Mail,
-  Plus,
-  Globe,
-  Trash2,
-  Loader,
-  AtSign,
-  KeyRound,
+  Add,
+  At,
+  BareMetalServer,
+  Checkmark,
   ChevronDown,
   ChevronRight,
-  ShieldCheck,
-  Server,
-  Copy,
-  Check,
-  Settings2,
-  RefreshCw,
   Download,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+  Earth,
+  Email,
+  Password,
+  Renew,
+  Security,
+  SettingsAdjust,
+  TrashCan,
+} from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
+  Button,
+  CodeSnippet,
+  DataTableSkeleton,
+  InlineLoading,
+  InlineNotification,
+  Modal,
+  NumberInput,
+  PasswordInput,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  SkeletonText,
+  Stack,
+  StructuredListBody,
+  StructuredListCell,
+  StructuredListRow,
+  StructuredListWrapper,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import type {
   ListResponse,
@@ -48,37 +55,7 @@ import type {
   MailConnectionSettings,
   MailStatus,
 } from "@/lib/types";
-
-// ── Copy-to-clipboard button ─────────────────────────────────────────────────
-
-function CopyButton({ value, className }: { value: string; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={
-        "shrink-0 text-muted-foreground transition-colors hover:text-foreground " +
-        (className ?? "")
-      }
-      title="Copy"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          /* clipboard unavailable */
-        }
-      }}
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
-  );
-}
+import "../_storage-mail.scss";
 
 export default function MailPage() {
   // Gate the whole mail UI behind the tooling install check. While the tooling
@@ -144,117 +121,121 @@ export default function MailPage() {
   const domains = data?.results ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Mail</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+    <Page>
+      <PageHeader
+        title="Mail"
+        description={
+          <>
             Host email for your domains. Each domain can have multiple mailboxes
             (Postfix&nbsp;+&nbsp;Dovecot).
-          </p>
-        </div>
-        {installed && (
-          <Button size="sm" onClick={() => setShowAdd(true)}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Add domain
-          </Button>
-        )}
-      </div>
+          </>
+        }
+        actions={
+          installed && (
+            <Button size="sm" renderIcon={Add} onClick={() => setShowAdd(true)}>
+              Add domain
+            </Button>
+          )
+        }
+      />
 
       {statusLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <SkeletonText paragraph lineCount={3} />
       ) : !installed ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <Mail className="h-10 w-10 text-muted-foreground/40" />
+        <Tile className="gisila-empty">
+          <Stack gap={4}>
+            <Email size={32} style={{ opacity: 0.4 }} />
             <div>
-              <p className="font-medium">Email tools not installed</p>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              <p className="gisila-sm__title">Email tools not installed</p>
+              <p className="gisila-sm__note" style={{ marginBlockStart: "0.25rem" }}>
                 Installs Postfix, Dovecot and OpenDKIM on this server so you can
                 host mailboxes for your domains. This runs once and may take a
                 minute.
               </p>
             </div>
-            <Button size="sm" onClick={handleInstall} disabled={installing}>
+            <div style={{ display: "flex", justifyContent: "center" }}>
               {installing ? (
-                <>
-                  <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  Installing email tools…
-                </>
+                <InlineLoading
+                  status="active"
+                  description="Installing email tools…"
+                />
               ) : (
-                <>
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                <Button size="sm" renderIcon={Download} onClick={handleInstall}>
                   Install email tools
-                </>
+                </Button>
               )}
-            </Button>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </CardContent>
-        </Card>
+            </div>
+            {error && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                hideCloseButton
+                title={error}
+              />
+            )}
+          </Stack>
+        </Tile>
       ) : isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <SkeletonText paragraph lineCount={3} />
       ) : domains.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <Mail className="h-10 w-10 text-muted-foreground/40" />
+        <Tile className="gisila-empty">
+          <Stack gap={4}>
+            <Email size={32} style={{ opacity: 0.4 }} />
             <div>
-              <p className="font-medium">No mail domains yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="gisila-sm__title">No mail domains yet</p>
+              <p className="gisila-sm__note" style={{ marginBlockStart: "0.25rem" }}>
                 Add a domain to start hosting mailboxes. Point its MX record at
                 this server once configured.
               </p>
             </div>
-            <Button size="sm" onClick={() => setShowAdd(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Add domain
-            </Button>
-          </CardContent>
-        </Card>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Button size="sm" renderIcon={Add} onClick={() => setShowAdd(true)}>
+                Add domain
+              </Button>
+            </div>
+          </Stack>
+        </Tile>
       ) : (
-        <div className="space-y-3">
+        <Stack gap={4}>
           {domains.map((d) => (
             <DomainCard key={d.id} domain={d} />
           ))}
-        </div>
+        </Stack>
       )}
 
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add mail domain</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Domain</Label>
-              <Input
-                placeholder="example.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
-              />
-              <p className="text-xs text-muted-foreground">
-                Set an MX record pointing at this host and a matching A record so
-                mail can be delivered.
-              </p>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddDomain} disabled={busy || !domain.trim()}>
-              {busy ? (
-                <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <Modal
+        open={showAdd}
+        onRequestClose={() => setShowAdd(false)}
+        modalHeading="Add mail domain"
+        primaryButtonText="Add"
+        primaryButtonDisabled={busy || !domain.trim()}
+        secondaryButtonText="Cancel"
+        loadingStatus={busy ? "active" : "inactive"}
+        loadingDescription="Adding domain…"
+        onRequestSubmit={handleAddDomain}
+        size="sm"
+      >
+        <Stack gap={5}>
+          <TextInput
+            id="mail-new-domain"
+            labelText="Domain"
+            placeholder="example.com"
+            helperText="Set an MX record pointing at this host and a matching A record so mail can be delivered."
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
+          />
+          {error && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={error}
+            />
+          )}
+        </Stack>
+      </Modal>
+    </Page>
   );
 }
 
@@ -375,296 +356,301 @@ function DomainCard({ domain }: { domain: MailDomain }) {
   }
 
   return (
-    <Card>
-      <CardContent className="py-0">
-        <div className="flex items-center gap-4 py-4">
-          <button
-            className="flex flex-1 items-center gap-4 text-left min-w-0"
-            onClick={() => setOpen((o) => !o)}
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10">
-              <Globe className="h-5 w-5 text-indigo-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className="font-medium truncate">{domain.domain}</span>
-              <p className="text-sm text-muted-foreground">
-                {open
-                  ? `${accounts.length} mailbox${accounts.length === 1 ? "" : "es"}`
-                  : "Click to manage mailboxes"}
-              </p>
-            </div>
-            {open ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
+    <Tile>
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <button
+          type="button"
+          className="gisila-mail__toggle"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="gisila-status-icon gisila-status-icon--brand">
+            <Earth size={20} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span className="gisila-mail__domain">{domain.domain}</span>
+            <span className="gisila-sm__note" style={{ display: "block" }}>
+              {open
+                ? `${accounts.length} mailbox${accounts.length === 1 ? "" : "es"}`
+                : "Click to manage mailboxes"}
+            </span>
+          </span>
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {removing ? (
+          <InlineLoading status="active" description="Removing…" />
+        ) : (
           <Button
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-destructive"
+            kind="danger--ghost"
+            size="sm"
+            hasIconOnly
+            renderIcon={TrashCan}
+            iconDescription="Remove domain"
             onClick={handleRemoveDomain}
-            disabled={removing}
-          >
-            {removing ? (
-              <Loader className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+          />
+        )}
+      </div>
 
-        {open && (
-          <div className="border-t py-4 space-y-6">
+      {open && (
+        <div className="gisila-mail__panel">
+          <Stack gap={7}>
             {/* ── Settings: hostname + DMARC ─────────────────────────────── */}
-            <div className="space-y-3">
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <Stack gap={5}>
+              <p className="gisila-sm__title gisila-sm__title-row">
+                <SettingsAdjust size={16} />
                 Settings
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Mail hostname</Label>
-                  <Input
-                    value={hostname}
-                    placeholder={`mail.${domain.domain}`}
-                    onChange={(e) => setHostname(e.target.value)}
+              <div
+                style={{
+                  display: "grid",
+                  gap: "1rem",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))",
+                }}
+              >
+                <TextInput
+                  id={`mail-hostname-${domain.id}`}
+                  labelText="Mail hostname"
+                  value={hostname}
+                  placeholder={`mail.${domain.domain}`}
+                  helperText="The host MX / A records point at. Needs a real or self-signed TLS cert for clients to connect securely."
+                  onChange={(e) => setHostname(e.target.value)}
+                />
+                <Select
+                  id={`mail-dmarc-${domain.id}`}
+                  labelText="DMARC policy"
+                  helperText="How receivers treat mail that fails SPF/DKIM."
+                  value={dmarc}
+                  onChange={(e) =>
+                    setDmarc(e.target.value as MailDomain["dmarcPolicy"])
+                  }
+                >
+                  <SelectItem value="none" text="none — monitor only" />
+                  <SelectItem
+                    value="quarantine"
+                    text="quarantine — send failures to spam"
                   />
-                  <p className="text-[11px] text-muted-foreground">
-                    The host MX / A records point at. Needs a real or self-signed
-                    TLS cert for clients to connect securely.
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">DMARC policy</Label>
-                  <Select
-                    value={dmarc}
-                    onValueChange={(v) =>
-                      setDmarc(v as MailDomain["dmarcPolicy"])
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">none — monitor only</SelectItem>
-                      <SelectItem value="quarantine">
-                        quarantine — send failures to spam
-                      </SelectItem>
-                      <SelectItem value="reject">
-                        reject — block failures
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    How receivers treat mail that fails SPF/DKIM.
-                  </p>
-                </div>
+                  <SelectItem value="reject" text="reject — block failures" />
+                </Select>
               </div>
               {settingsDirty && (
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    onClick={handleSaveSettings}
-                    disabled={savingSettings}
-                  >
-                    {savingSettings ? (
-                      <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Check className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    Save settings
-                  </Button>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  {savingSettings ? (
+                    <InlineLoading status="active" description="Saving…" />
+                  ) : (
+                    <Button
+                      size="sm"
+                      renderIcon={Checkmark}
+                      onClick={handleSaveSettings}
+                    >
+                      Save settings
+                    </Button>
+                  )}
                 </div>
               )}
-            </div>
+            </Stack>
 
             {/* ── DNS records ────────────────────────────────────────────── */}
             <DnsPanel domain={domain} />
 
             {/* ── Mailboxes ──────────────────────────────────────────────── */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Mailboxes</p>
-                <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Stack gap={5}>
+              <div className="gisila-sm__bar">
+                <p className="gisila-sm__title">Mailboxes</p>
+                <Button
+                  kind="tertiary"
+                  size="sm"
+                  renderIcon={Add}
+                  onClick={() => setShowAdd(true)}
+                >
                   New mailbox
                 </Button>
               </div>
 
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No mailboxes yet for this domain.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {accounts.map((acc) => (
-                  <div
-                    key={acc.id}
-                    className="flex items-center gap-3 rounded-md border px-3 py-2"
-                  >
-                    <AtSign className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium truncate">
-                        {acc.address}
-                      </span>
-                      <p className="text-xs text-muted-foreground">
-                        {acc.quotaMb ? `${acc.quotaMb} MB quota` : "Unlimited"}
-                      </p>
-                    </div>
-                    {!acc.isActive && (
-                      <Badge variant="secondary" className="text-xs">
-                        Disabled
-                      </Badge>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      title="Connection settings (SMTP / IMAP / POP3)"
-                      onClick={() => setConnAccount(acc)}
-                    >
-                      <Server className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      title="Reset password"
-                      onClick={() => {
-                        setPwAccount(acc);
-                        setNewPw("");
-                        setError("");
-                      }}
-                    >
-                      <KeyRound className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      title="Delete mailbox"
-                      onClick={() => handleDeleteAccount(acc)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            </div>
-          </div>
-        )}
-      </CardContent>
+              {isLoading ? (
+                <DataTableSkeleton
+                  columnCount={3}
+                  rowCount={3}
+                  showHeader={false}
+                  showToolbar={false}
+                />
+              ) : accounts.length === 0 ? (
+                <p className="gisila-sm__note">
+                  No mailboxes yet for this domain.
+                </p>
+              ) : (
+                <Table size="sm">
+                  <TableHead>
+                    <TableRow>
+                      <TableHeader>Mailbox</TableHeader>
+                      <TableHeader>Quota</TableHeader>
+                      <TableHeader aria-label="Actions" />
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {accounts.map((acc) => (
+                      <TableRow key={acc.id}>
+                        <TableCell>
+                          <span className="gisila-sm__title-row">
+                            <At size={16} />
+                            <span className="gisila-sm__code">
+                              {acc.address}
+                            </span>
+                            {!acc.isActive && (
+                              <Tag size="sm" type="gray">
+                                Disabled
+                              </Tag>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {acc.quotaMb ? `${acc.quotaMb} MB quota` : "Unlimited"}
+                        </TableCell>
+                        <TableCell>
+                          <div
+                            className="gisila-sm__actions"
+                            style={{ justifyContent: "flex-end" }}
+                          >
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={BareMetalServer}
+                              iconDescription="Connection settings (SMTP / IMAP / POP3)"
+                              onClick={() => setConnAccount(acc)}
+                            />
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={Password}
+                              iconDescription="Reset password"
+                              onClick={() => {
+                                setPwAccount(acc);
+                                setNewPw("");
+                                setError("");
+                              }}
+                            />
+                            <Button
+                              kind="danger--ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={TrashCan}
+                              iconDescription="Delete mailbox"
+                              onClick={() => handleDeleteAccount(acc)}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </Stack>
+          </Stack>
+        </div>
+      )}
 
       {/* New mailbox dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New mailbox</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Address</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="info"
-                  value={localPart}
-                  onChange={(e) => setLocalPart(e.target.value)}
-                />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  @{domain.domain}
-                </span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Password</Label>
-              <Input
-                type="password"
-                placeholder="At least 6 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+      <Modal
+        open={showAdd}
+        onRequestClose={() => setShowAdd(false)}
+        modalHeading="New mailbox"
+        primaryButtonText="Create"
+        primaryButtonDisabled={busy || !localPart.trim() || password.length < 6}
+        secondaryButtonText="Cancel"
+        loadingStatus={busy ? "active" : "inactive"}
+        loadingDescription="Creating mailbox…"
+        onRequestSubmit={handleAddAccount}
+        size="sm"
+      >
+        <Stack gap={5}>
+          <div
+            style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem" }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <TextInput
+                id={`mailbox-local-part-${domain.id}`}
+                labelText="Address"
+                placeholder="info"
+                value={localPart}
+                onChange={(e) => setLocalPart(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Quota (MB)</Label>
-              <Input
-                type="number"
-                placeholder="Leave empty for unlimited"
-                value={quota}
-                onChange={(e) => setQuota(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAddAccount}
-              disabled={busy || !localPart.trim() || password.length < 6}
+            <span
+              className="gisila-sm__note"
+              style={{ whiteSpace: "nowrap", paddingBlockEnd: "0.5rem" }}
             >
-              {busy ? (
-                <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              @{domain.domain}
+            </span>
+          </div>
+          <PasswordInput
+            id={`mailbox-password-${domain.id}`}
+            labelText="Password"
+            placeholder="At least 6 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <NumberInput
+            id={`mailbox-quota-${domain.id}`}
+            label="Quota (MB)"
+            placeholder="Leave empty for unlimited"
+            allowEmpty
+            hideSteppers
+            value={quota}
+            onChange={(_, { value }) => setQuota(String(value))}
+          />
+          {error && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={error}
+            />
+          )}
+        </Stack>
+      </Modal>
 
       {/* Reset password dialog */}
-      <Dialog open={!!pwAccount} onOpenChange={(o) => !o && setPwAccount(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset password</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              Set a new password for{" "}
-              <span className="font-medium text-foreground">
-                {pwAccount?.address}
-              </span>
-              .
-            </p>
-            <div className="space-y-1.5">
-              <Label>New password</Label>
-              <Input
-                type="password"
-                placeholder="At least 6 characters"
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPwAccount(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSetPassword} disabled={busy || newPw.length < 6}>
-              {busy ? (
-                <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <KeyRound className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={!!pwAccount}
+        onRequestClose={() => setPwAccount(null)}
+        modalHeading="Reset password"
+        primaryButtonText="Save"
+        primaryButtonDisabled={busy || newPw.length < 6}
+        secondaryButtonText="Cancel"
+        loadingStatus={busy ? "active" : "inactive"}
+        loadingDescription="Saving password…"
+        onRequestSubmit={handleSetPassword}
+        size="sm"
+      >
+        <Stack gap={5}>
+          <p className="gisila-sm__note">
+            Set a new password for{" "}
+            <span className="gisila-sm__code">{pwAccount?.address}</span>.
+          </p>
+          <PasswordInput
+            id={`mailbox-new-password-${domain.id}`}
+            labelText="New password"
+            placeholder="At least 6 characters"
+            value={newPw}
+            onChange={(e) => setNewPw(e.target.value)}
+          />
+          {error && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              hideCloseButton
+              title={error}
+            />
+          )}
+        </Stack>
+      </Modal>
 
       {/* Connection settings dialog */}
       <ConnectionDialog
         account={connAccount}
         onClose={() => setConnAccount(null)}
       />
-    </Card>
+    </Tile>
   );
 }
 
@@ -699,94 +685,122 @@ function DnsPanel({ domain }: { domain: MailDomain }) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-sm font-medium">
-          <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
+    <Stack gap={5}>
+      <div className="gisila-sm__bar">
+        <p className="gisila-sm__title gisila-sm__title-row">
+          <Security size={16} />
           DNS records
         </p>
-        <div className="flex items-center gap-2">
+        <div className="gisila-sm__actions">
           {dkimReady ? (
-            <Badge variant="secondary" className="text-[10px] text-emerald-600">
-              <Check className="mr-1 h-3 w-3" />
+            <Tag size="sm" type="green" renderIcon={Checkmark}>
               DKIM configured
-            </Badge>
+            </Tag>
           ) : (
-            <Badge variant="secondary" className="text-[10px]">
-              <Loader className="mr-1 h-3 w-3 animate-spin" />
-              Waiting for DKIM key…
-            </Badge>
+            <InlineLoading status="active" description="Waiting for DKIM key…" />
           )}
-          <button
-            type="button"
-            title="Trigger sync now"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            onClick={handleSync}
-            disabled={syncing}
-          >
-            <RefreshCw
-              className={"h-3.5 w-3.5" + (syncing ? " animate-spin" : "")}
+          {syncing ? (
+            <InlineLoading status="active" description="Syncing…" />
+          ) : (
+            <Button
+              kind="ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={Renew}
+              iconDescription="Trigger sync now"
+              onClick={handleSync}
             />
-          </button>
+          )}
         </div>
       </div>
 
       {!dkimReady && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-          The DKIM signing key is generated on the first sync after the agent
-          provisions OpenDKIM. Click the refresh icon to trigger one now, or
-          wait — this panel polls automatically every 5 s.
-        </div>
+        <InlineNotification
+          kind="warning"
+          lowContrast
+          hideCloseButton
+          title=""
+          subtitle="The DKIM signing key is generated on the first sync after the agent provisions OpenDKIM. Click the refresh icon to trigger one now, or wait — this panel polls automatically every 5 s."
+        />
       )}
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="gisila-sm__note">
         Publish these records at your DNS provider so mail delivers and passes
         SPF, DKIM, and DMARC. Also set reverse DNS (PTR) for the server IP.
       </p>
 
       {isLoading && records.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <DataTableSkeleton
+          columnCount={3}
+          rowCount={4}
+          showHeader={false}
+          showToolbar={false}
+        />
       ) : (
-        <div className="space-y-2">
-          {records.map((r, i) => (
-            <div key={i} className="rounded-md border bg-muted/30 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="font-mono text-[10px] uppercase shrink-0"
-                >
-                  {r.label ?? r.type}
-                </Badge>
-                <code className="text-xs text-muted-foreground truncate">
-                  {r.host}
-                </code>
-                {typeof r.priority === "number" && (
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    pri {r.priority}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1.5 flex items-start gap-2">
-                <code
-                  className={
-                    "flex-1 break-all text-xs font-mono" +
-                    (r.value.startsWith("<") ? " text-muted-foreground italic" : "")
-                  }
-                >
-                  {r.value}
-                </code>
-                {!r.value.startsWith("<") && (
-                  <CopyButton value={r.value} className="mt-0.5" />
-                )}
-              </div>
-              {r.note && (
-                <p className="mt-1 text-[11px] text-muted-foreground">{r.note}</p>
-              )}
-            </div>
-          ))}
-        </div>
+        <Table size="sm">
+          <TableHead>
+            <TableRow>
+              <TableHeader>Type</TableHeader>
+              <TableHeader>Host</TableHeader>
+              <TableHeader>Value</TableHeader>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {records.map((r, i) => {
+              // Values the backend could not resolve yet come back as a
+              // "<placeholder>" hint rather than something copyable.
+              const isPlaceholder = r.value.startsWith("<");
+              return (
+                <TableRow key={i}>
+                  <TableCell>
+                    <div className="gisila-sm__title-row">
+                      <Tag size="sm" type="outline">
+                        {r.label ?? r.type}
+                      </Tag>
+                      {typeof r.priority === "number" && (
+                        <span className="gisila-sm__note">
+                          pri {r.priority}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <code className="gisila-sm__meta">{r.host}</code>
+                  </TableCell>
+                  <TableCell>
+                    <Stack gap={2}>
+                      <CodeSnippet
+                        type="multi"
+                        wrapText
+                        // No collapse threshold and a one-row floor: the
+                        // snippet grows to the full record, so a ~400-character
+                        // DKIM key is never truncated behind a "show more".
+                        maxCollapsedNumberOfRows={0}
+                        minCollapsedNumberOfRows={1}
+                        // Copy the record straight from the API payload rather
+                        // than from the rendered text.
+                        copyText={r.value}
+                        hideCopyButton={isPlaceholder}
+                        className={
+                          isPlaceholder
+                            ? "gisila-dns__value gisila-dns__value--placeholder"
+                            : "gisila-dns__value"
+                        }
+                        feedback="Copied"
+                        aria-label={`${r.label ?? r.type} record value`}
+                      >
+                        {r.value}
+                      </CodeSnippet>
+                      {r.note && <p className="gisila-sm__note">{r.note}</p>}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
-    </div>
+    </Stack>
   );
 }
 
@@ -805,13 +819,21 @@ function ConnectionRow({
 }) {
   const summary = `${host}:${port} (${security})`;
   return (
-    <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-      <span className="w-28 shrink-0 text-xs font-medium">{label}</span>
-      <code className="flex-1 truncate text-xs font-mono text-muted-foreground">
-        {summary}
-      </code>
-      <CopyButton value={`${host}:${port}`} />
-    </div>
+    <StructuredListRow>
+      <StructuredListCell noWrap>{label}</StructuredListCell>
+      <StructuredListCell>
+        {/* The row shows the security mode too, but only host:port is worth
+            pasting into a mail client, so that is what the copy button takes. */}
+        <CodeSnippet
+          type="single"
+          copyText={`${host}:${port}`}
+          feedback="Copied"
+          aria-label={`Copy ${label} host and port`}
+        >
+          {summary}
+        </CodeSnippet>
+      </StructuredListCell>
+    </StructuredListRow>
   );
 }
 
@@ -824,88 +846,95 @@ function ConnectionDialog({
 }) {
   const c: MailConnectionSettings | undefined = account?.connection;
   return (
-    <Dialog open={!!account} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Connection settings</DialogTitle>
-        </DialogHeader>
-        {c && account && (
-          <div className="space-y-4 py-2">
-            <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Username</span>
-                <span className="flex items-center gap-2 font-mono text-xs">
-                  {account.address}
-                  <CopyButton value={account.address} />
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Password is the mailbox password you set. Use STARTTLS or SSL/TLS
-                depending on your client; both ports are open.
-              </p>
+    <Modal
+      open={!!account}
+      onRequestClose={onClose}
+      modalHeading="Connection settings"
+      primaryButtonText="Close"
+      onRequestSubmit={onClose}
+      size="md"
+    >
+      {c && account && (
+        <Stack gap={6}>
+          <Stack gap={3}>
+            <div className="gisila-sm__kv-row">
+              <span className="gisila-sm__kv-key">Username</span>
+              <CodeSnippet
+                type="single"
+                copyText={account.address}
+                feedback="Copied"
+                aria-label="Copy username"
+              >
+                {account.address}
+              </CodeSnippet>
             </div>
+            <p className="gisila-sm__note">
+              Password is the mailbox password you set. Use STARTTLS or SSL/TLS
+              depending on your client; both ports are open.
+            </p>
+          </Stack>
 
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Outgoing (SMTP)
-              </p>
-              <ConnectionRow
-                label="STARTTLS"
-                host={c.smtp.host}
-                port={c.smtp.starttls.port}
-                security={c.smtp.starttls.security}
-              />
-              <ConnectionRow
-                label="SSL/TLS"
-                host={c.smtp.host}
-                port={c.smtp.ssl.port}
-                security={c.smtp.ssl.security}
-              />
-            </div>
+          <Stack gap={3}>
+            <p className="gisila-sm__label">Outgoing (SMTP)</p>
+            <StructuredListWrapper aria-label="Outgoing (SMTP)" isCondensed>
+              <StructuredListBody>
+                <ConnectionRow
+                  label="STARTTLS"
+                  host={c.smtp.host}
+                  port={c.smtp.starttls.port}
+                  security={c.smtp.starttls.security}
+                />
+                <ConnectionRow
+                  label="SSL/TLS"
+                  host={c.smtp.host}
+                  port={c.smtp.ssl.port}
+                  security={c.smtp.ssl.security}
+                />
+              </StructuredListBody>
+            </StructuredListWrapper>
+          </Stack>
 
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Incoming (IMAP)
-              </p>
-              <ConnectionRow
-                label="SSL/TLS"
-                host={c.imap.host}
-                port={c.imap.ssl.port}
-                security={c.imap.ssl.security}
-              />
-              <ConnectionRow
-                label="STARTTLS"
-                host={c.imap.host}
-                port={c.imap.starttls.port}
-                security={c.imap.starttls.security}
-              />
-            </div>
+          <Stack gap={3}>
+            <p className="gisila-sm__label">Incoming (IMAP)</p>
+            <StructuredListWrapper aria-label="Incoming (IMAP)" isCondensed>
+              <StructuredListBody>
+                <ConnectionRow
+                  label="SSL/TLS"
+                  host={c.imap.host}
+                  port={c.imap.ssl.port}
+                  security={c.imap.ssl.security}
+                />
+                <ConnectionRow
+                  label="STARTTLS"
+                  host={c.imap.host}
+                  port={c.imap.starttls.port}
+                  security={c.imap.starttls.security}
+                />
+              </StructuredListBody>
+            </StructuredListWrapper>
+          </Stack>
 
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Incoming (POP3)
-              </p>
-              <ConnectionRow
-                label="SSL/TLS"
-                host={c.pop3.host}
-                port={c.pop3.ssl.port}
-                security={c.pop3.ssl.security}
-              />
-              <ConnectionRow
-                label="STARTTLS"
-                host={c.pop3.host}
-                port={c.pop3.starttls.port}
-                security={c.pop3.starttls.security}
-              />
-            </div>
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <Stack gap={3}>
+            <p className="gisila-sm__label">Incoming (POP3)</p>
+            <StructuredListWrapper aria-label="Incoming (POP3)" isCondensed>
+              <StructuredListBody>
+                <ConnectionRow
+                  label="SSL/TLS"
+                  host={c.pop3.host}
+                  port={c.pop3.ssl.port}
+                  security={c.pop3.ssl.security}
+                />
+                <ConnectionRow
+                  label="STARTTLS"
+                  host={c.pop3.host}
+                  port={c.pop3.starttls.port}
+                  security={c.pop3.starttls.security}
+                />
+              </StructuredListBody>
+            </StructuredListWrapper>
+          </Stack>
+        </Stack>
+      )}
+    </Modal>
   );
 }

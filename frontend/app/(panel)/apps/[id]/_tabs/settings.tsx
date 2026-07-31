@@ -2,21 +2,24 @@
 
 import { useState, useEffect } from "react";
 import useSWR from "swr";
-import { toast } from "@/lib/toast";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
+  Button,
+  Checkbox,
+  Form,
+  InlineNotification,
+  RadioTile,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Stack,
+  Tag,
+  TextInput,
+  Tile,
+  TileGroup,
+} from "@carbon/react";
+import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type { App, SshKey } from "@/lib/types";
+import "../_app-detail.scss";
 
 const PYTHON_VERSIONS = [
   "3.13.2", "3.13.1", "3.13.0",
@@ -53,6 +56,38 @@ const RUST_VERSIONS = [
 const BUN_VERSIONS = [
   "1.1.38", "1.1.34", "1.1.30", "1.1.21", "1.1.13", "1.0.36",
 ];
+
+/// A pinned toolchain version. The list is long enough that a Carbon Select
+/// beats a wall of radio tiles, and the value is a plain string either way.
+function VersionSelect({
+  id,
+  labelText,
+  versions,
+  value,
+  onChange,
+  helperText,
+}: {
+  id: string;
+  labelText: string;
+  versions: string[];
+  value: string;
+  onChange: (value: string) => void;
+  helperText?: React.ReactNode;
+}) {
+  return (
+    <Select
+      id={id}
+      labelText={labelText}
+      helperText={helperText}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {versions.map((v) => (
+        <SelectItem key={v} value={v} text={v} />
+      ))}
+    </Select>
+  );
+}
 
 export function SettingsTab({
   app,
@@ -235,762 +270,541 @@ export function SettingsTab({
   }
 
   return (
-    <form onSubmit={save} className="space-y-6 max-w-2xl">
-      {/* General */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">General</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="s-name">App name</Label>
-            <Input
+    <Form onSubmit={save} className="gisila-app__narrow">
+      <Stack gap={6}>
+        {/* General */}
+        <Tile>
+          <h3 className="gisila-app__tile-title">General</h3>
+          <Stack gap={5}>
+            <TextInput
               id="s-name"
-              className="mt-1"
+              labelText="App name"
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               required
             />
-          </div>
-          <div>
-            <Label htmlFor="s-port">Internal port</Label>
-            <Input
+            <TextInput
               id="s-port"
-              className="mt-1"
+              labelText="Internal port"
               type="number"
               min={1024}
               max={65535}
               value={form.internalPort}
               onChange={(e) => set("internalPort", e.target.value)}
               placeholder="e.g. 8080"
+              helperText="The port your app listens on. Changing this requires a redeploy."
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              The port your app listens on. Changing this requires a redeploy.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </Stack>
+        </Tile>
 
-      {/* Source */}
-      {!isBinary && !isStatic && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Source
-              <span className="ml-2 text-xs font-normal text-muted-foreground capitalize">
-                ({app.sourceType})
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isGit && (
-              <>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="s-git-url">Git URL</Label>
-                    <Input
-                      id="s-git-url"
-                      className="mt-1 font-mono text-sm"
-                      placeholder="git@github.com:you/repo.git"
-                      value={form.gitUrl}
-                      onChange={(e) => set("gitUrl", e.target.value)}
-                    />
+        {/* Source */}
+        {!isBinary && !isStatic && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">
+              Source{" "}
+              <Tag type="cool-gray" size="sm">
+                {app.sourceType}
+              </Tag>
+            </h3>
+            <Stack gap={5}>
+              {isGit && (
+                <>
+                  <div className="gisila-app__form-row">
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-git-url"
+                        labelText="Git URL"
+                        placeholder="git@github.com:you/repo.git"
+                        value={form.gitUrl}
+                        onChange={(e) => set("gitUrl", e.target.value)}
+                      />
+                    </div>
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-git-branch"
+                        labelText="Branch"
+                        value={form.gitBranch}
+                        onChange={(e) => set("gitBranch", e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="s-git-branch">Branch</Label>
-                    <Input
-                      id="s-git-branch"
-                      className="mt-1 font-mono text-sm"
-                      value={form.gitBranch}
-                      onChange={(e) => set("gitBranch", e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="s-source-subdir">
-                    Directory
-                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
-                      (optional — for monorepos)
-                    </span>
-                  </Label>
-                  <Input
+                  <TextInput
                     id="s-source-subdir"
-                    className="mt-1 font-mono text-sm"
+                    labelText="Directory (optional — for monorepos)"
                     placeholder="e.g. apps/api"
                     value={form.sourceSubdir}
                     onChange={(e) => set("sourceSubdir", e.target.value)}
+                    helperText="If this repo contains multiple projects, set the path to the one to build and run. Leave blank to use the repo root. Takes effect on the next deploy."
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    If this repo contains multiple projects, set the path to
-                    the one to build and run. Leave blank to use the repo
-                    root. Takes effect on the next deploy.
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="s-deploy-key">
-                    Deploy key
-                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
-                      (optional — for private repos)
-                    </span>
-                  </Label>
                   <Select
+                    id="s-deploy-key"
+                    labelText="Deploy key (optional — for private repos)"
                     value={form.deployKeyId || "none"}
-                    onValueChange={(v) => set("deployKeyId", v === "none" ? "" : v)}
+                    onChange={(e) =>
+                      set("deployKeyId", e.target.value === "none" ? "" : e.target.value)
+                    }
                   >
-                    <SelectTrigger id="s-deploy-key" className="mt-1">
-                      <SelectValue placeholder="None (public repo / HTTPS)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None (public repo / HTTPS)</SelectItem>
-                      {(sshKeys.data?.results ?? []).map((k) => (
-                        <SelectItem key={k.id} value={String(k.id)}>
-                          {k.name}
-                          {k.algorithm && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({k.algorithm})
-                            </span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectItem value="none" text="None (public repo / HTTPS)" />
+                    {(sshKeys.data?.results ?? []).map((k) => (
+                      <SelectItem
+                        key={k.id}
+                        value={String(k.id)}
+                        text={k.algorithm ? `${k.name} (${k.algorithm})` : k.name}
+                      />
+                    ))}
                   </Select>
+                </>
+              )}
+              <div className="gisila-app__form-row">
+                <div className="gisila-app__form-field">
+                  <TextInput
+                    id="s-build"
+                    labelText="Build command (optional)"
+                    placeholder={
+                      isPython || isCelery
+                        ? "pip install -r requirements.txt"
+                        : "dart compile exe bin/server.dart -o build/app"
+                    }
+                    value={form.buildCommand}
+                    onChange={(e) => set("buildCommand", e.target.value)}
+                    helperText={
+                      isPython || isCelery
+                        ? "Leave blank — dependencies from requirements.txt are installed automatically."
+                        : undefined
+                    }
+                  />
                 </div>
-              </>
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="s-build">
-                  Build command
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-build"
-                  className="mt-1 font-mono text-sm"
-                  placeholder={
-                    isPython || isCelery
-                      ? "pip install -r requirements.txt"
-                      : "dart compile exe bin/server.dart -o build/app"
-                  }
-                  value={form.buildCommand}
-                  onChange={(e) => set("buildCommand", e.target.value)}
-                />
-                {(isPython || isCelery) && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Leave blank — dependencies from <code className="font-mono">requirements.txt</code> are installed automatically.
-                  </p>
-                )}
+                <div className="gisila-app__form-field">
+                  <TextInput
+                    id="s-start"
+                    labelText="Start command (optional)"
+                    placeholder={
+                      isPython
+                        ? "Auto-generated gunicorn command"
+                        : isCelery
+                          ? "Auto-generated from Celery settings below"
+                          : "./current/app"
+                    }
+                    disabled={isCelery}
+                    value={form.startCommand}
+                    onChange={(e) => set("startCommand", e.target.value)}
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="s-start">
-                  Start command
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-start"
-                  className="mt-1 font-mono text-sm"
-                  placeholder={
-                    isPython
-                      ? "Auto-generated gunicorn command"
-                      : isCelery
-                        ? "Auto-generated from Celery settings below"
-                        : "./current/app"
-                  }
-                  disabled={isCelery}
-                  value={form.startCommand}
-                  onChange={(e) => set("startCommand", e.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="s-health">
-                Health check path
-                <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
+              <TextInput
                 id="s-health"
-                className="mt-1 font-mono text-sm"
+                labelText="Health check path (optional)"
                 placeholder="/health"
                 value={form.healthCheckPath}
                 onChange={(e) => set("healthCheckPath", e.target.value)}
               />
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </Stack>
+          </Tile>
+        )}
 
-      {/* Python */}
-      {isPython && (
-        <Card className="border-blue-500/30 bg-blue-500/5">
-          <CardHeader>
-            <CardTitle className="text-base">Python / WSGI · ASGI</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div>
-              <Label className="mb-2 block">Python version</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {PYTHON_VERSIONS.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => set("pythonVersion", v)}
-                    className={cn(
-                      "rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
-                      form.pythonVersion === v
-                        ? "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                        : "border-border bg-card text-muted-foreground hover:border-blue-500/40"
-                    )}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label className="mb-2 block">Server mode</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: "wsgi", label: "WSGI", desc: "Django, Flask — synchronous" },
-                  { id: "asgi", label: "ASGI", desc: "FastAPI, Starlette — async" },
-                ].map(({ id, label, desc }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => set("pythonMode", id as "wsgi" | "asgi")}
-                    className={cn(
-                      "flex flex-col items-start rounded-md border p-3 text-left transition-colors",
-                      form.pythonMode === id
-                        ? "border-blue-500 bg-blue-500/10"
-                        : "border-border bg-card hover:border-blue-500/40"
-                    )}
-                  >
-                    <span className="text-sm font-medium">{label}</span>
-                    <span className="mt-0.5 text-xs text-muted-foreground">{desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="s-wsgi">Application target</Label>
-              <Input
+        {/* Python */}
+        {isPython && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">Python / WSGI · ASGI</h3>
+            <Stack gap={6}>
+              <VersionSelect
+                id="s-python-version"
+                labelText="Python version"
+                versions={PYTHON_VERSIONS}
+                value={form.pythonVersion}
+                onChange={(v) => set("pythonVersion", v)}
+              />
+
+              <TileGroup
+                name="s-python-mode"
+                legend="Server mode"
+                valueSelected={form.pythonMode}
+                onChange={(v) => set("pythonMode", v)}
+              >
+                <RadioTile id="s-mode-wsgi" value="wsgi">
+                  <strong>WSGI</strong>
+                  <p className="gisila-app__hint">Django, Flask — synchronous</p>
+                </RadioTile>
+                <RadioTile id="s-mode-asgi" value="asgi">
+                  <strong>ASGI</strong>
+                  <p className="gisila-app__hint">FastAPI, Starlette — async</p>
+                </RadioTile>
+              </TileGroup>
+
+              <TextInput
                 id="s-wsgi"
-                className="mt-1 font-mono text-sm"
-                placeholder={form.pythonMode === "asgi" ? "myapp.asgi:application" : "myapp.wsgi:application"}
+                labelText="Application target"
+                placeholder={
+                  form.pythonMode === "asgi"
+                    ? "myapp.asgi:application"
+                    : "myapp.wsgi:application"
+                }
                 value={form.wsgiApp}
                 onChange={(e) => set("wsgiApp", e.target.value)}
               />
-            </div>
 
-            {/* Gunicorn tuning */}
-            <div className="space-y-4 rounded-md border border-border/60 bg-background/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Gunicorn
+              {/* Gunicorn tuning */}
+              <div className="gisila-app__choice">
+                <Stack gap={5}>
+                  <p className="gisila-app__label">Gunicorn</p>
+                  <div className="gisila-app__form-row">
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-gworkers"
+                        labelText="Workers"
+                        type="number"
+                        min={1}
+                        max={64}
+                        placeholder="4"
+                        value={form.gunicornWorkers}
+                        onChange={(e) => set("gunicornWorkers", e.target.value)}
+                      />
+                    </div>
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-gthreads"
+                        labelText="Threads / worker"
+                        type="number"
+                        min={1}
+                        max={64}
+                        placeholder="1"
+                        value={form.gunicornThreads}
+                        onChange={(e) => set("gunicornThreads", e.target.value)}
+                      />
+                    </div>
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-gtimeout"
+                        labelText="Timeout (s)"
+                        type="number"
+                        min={1}
+                        max={3600}
+                        placeholder="120"
+                        value={form.gunicornTimeout}
+                        onChange={(e) => set("gunicornTimeout", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <TextInput
+                    id="s-gbind"
+                    labelText="Bind address (optional)"
+                    placeholder={`0.0.0.0:${app.internalPort} (internal port)`}
+                    value={form.gunicornBind}
+                    onChange={(e) => set("gunicornBind", e.target.value)}
+                    helperText={`Defaults to 0.0.0.0:$PORT (the app's internal port ${app.internalPort}). Only override if you keep the same port so the nginx proxy still resolves.`}
+                  />
+                  <TextInput
+                    id="s-gextra"
+                    labelText="Extra arguments (optional)"
+                    placeholder="--max-requests 1000 --graceful-timeout 30"
+                    value={form.gunicornExtraArgs}
+                    onChange={(e) => set("gunicornExtraArgs", e.target.value)}
+                  />
+                </Stack>
+              </div>
+            </Stack>
+          </Tile>
+        )}
+
+        {/* Runtime version */}
+        {(isNode || isBun || isDart || isGo || isRust) && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">Runtime version</h3>
+            <Stack gap={5}>
+              <p className="gisila-app__label">
+                Changing the version takes effect on the next deployment.
               </p>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div>
-                  <Label htmlFor="s-gworkers">Workers</Label>
-                  <Input
-                    id="s-gworkers"
-                    type="number"
-                    min={1}
-                    max={64}
-                    className="mt-1"
-                    placeholder="4"
-                    value={form.gunicornWorkers}
-                    onChange={(e) => set("gunicornWorkers", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="s-gthreads">Threads / worker</Label>
-                  <Input
-                    id="s-gthreads"
-                    type="number"
-                    min={1}
-                    max={64}
-                    className="mt-1"
-                    placeholder="1"
-                    value={form.gunicornThreads}
-                    onChange={(e) => set("gunicornThreads", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="s-gtimeout">Timeout (s)</Label>
-                  <Input
-                    id="s-gtimeout"
-                    type="number"
-                    min={1}
-                    max={3600}
-                    className="mt-1"
-                    placeholder="120"
-                    value={form.gunicornTimeout}
-                    onChange={(e) => set("gunicornTimeout", e.target.value)}
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="s-gbind">
-                  Bind address
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-gbind"
-                  className="mt-1 font-mono text-sm"
-                  placeholder={`0.0.0.0:${app.internalPort} (internal port)`}
-                  value={form.gunicornBind}
-                  onChange={(e) => set("gunicornBind", e.target.value)}
+
+              {isNode && (
+                <VersionSelect
+                  id="s-node-version"
+                  labelText="Node.js version"
+                  versions={NODE_VERSIONS}
+                  value={form.nodeVersion}
+                  onChange={(v) => set("nodeVersion", v)}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Defaults to <code className="font-mono">0.0.0.0:$PORT</code>{" "}
-                  (the app&apos;s internal port {app.internalPort}). Only override
-                  if you keep the same port so the nginx proxy still resolves.
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="s-gextra">
-                  Extra arguments
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-gextra"
-                  className="mt-1 font-mono text-sm"
-                  placeholder="--max-requests 1000 --graceful-timeout 30"
-                  value={form.gunicornExtraArgs}
-                  onChange={(e) => set("gunicornExtraArgs", e.target.value)}
+              )}
+
+              {isBun && (
+                <VersionSelect
+                  id="s-bun-version"
+                  labelText="Bun version"
+                  versions={BUN_VERSIONS}
+                  value={form.bunVersion}
+                  onChange={(v) => set("bunVersion", v)}
                 />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              )}
 
-      {/* Runtime version */}
-      {(isNode || isBun || isDart || isGo || isRust) && (
-        <Card className="border-sky-500/30 bg-sky-500/5">
-          <CardHeader>
-            <CardTitle className="text-base">Runtime version</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Changing the version takes effect on the next deployment.
-            </p>
+              {isDart && (
+                <VersionSelect
+                  id="s-dart-version"
+                  labelText="Dart SDK version"
+                  versions={DART_VERSIONS}
+                  value={form.dartVersion}
+                  onChange={(v) => set("dartVersion", v)}
+                />
+              )}
 
-            {isNode && (
-              <div className="space-y-1.5">
-                <Label>Node.js version</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {NODE_VERSIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => set("nodeVersion", v)}
-                      className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
-                        ${form.nodeVersion === v
-                          ? "bg-sky-500 text-white border-sky-500"
-                          : "border-border bg-background hover:bg-muted"}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+              {isGo && (
+                <VersionSelect
+                  id="s-go-version"
+                  labelText="Go version"
+                  versions={GO_VERSIONS}
+                  value={form.goVersion}
+                  onChange={(v) => set("goVersion", v)}
+                />
+              )}
 
-            {isBun && (
-              <div className="space-y-1.5">
-                <Label>Bun version</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {BUN_VERSIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => set("bunVersion", v)}
-                      className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
-                        ${form.bunVersion === v
-                          ? "bg-sky-500 text-white border-sky-500"
-                          : "border-border bg-background hover:bg-muted"}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+              {isRust && (
+                <VersionSelect
+                  id="s-rust-version"
+                  labelText="Rust toolchain"
+                  versions={RUST_VERSIONS}
+                  value={form.rustVersion}
+                  onChange={(v) => set("rustVersion", v)}
+                  helperText="stable is recommended. nightly enables unstable features."
+                />
+              )}
+            </Stack>
+          </Tile>
+        )}
 
-            {isDart && (
-              <div className="space-y-1.5">
-                <Label>Dart SDK version</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {DART_VERSIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => set("dartVersion", v)}
-                      className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
-                        ${form.dartVersion === v
-                          ? "bg-sky-500 text-white border-sky-500"
-                          : "border-border bg-background hover:bg-muted"}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* Celery */}
+        {isCelery && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">Celery / Task queue</h3>
+            <Stack gap={6}>
+              <VersionSelect
+                id="s-celery-python-version"
+                labelText="Python version"
+                versions={PYTHON_VERSIONS}
+                value={form.pythonVersion}
+                onChange={(v) => set("pythonVersion", v)}
+              />
 
-            {isGo && (
-              <div className="space-y-1.5">
-                <Label>Go version</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {GO_VERSIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => set("goVersion", v)}
-                      className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
-                        ${form.goVersion === v
-                          ? "bg-sky-500 text-white border-sky-500"
-                          : "border-border bg-background hover:bg-muted"}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {isRust && (
-              <div className="space-y-1.5">
-                <Label>Rust toolchain</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {RUST_VERSIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => set("rustVersion", v)}
-                      className={`rounded px-2 py-0.5 text-xs font-mono border transition-colors
-                        ${form.rustVersion === v
-                          ? "bg-sky-500 text-white border-sky-500"
-                          : "border-border bg-background hover:bg-muted"}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-mono">stable</span> is recommended. <span className="font-mono">nightly</span> enables unstable features.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Celery */}
-      {isCelery && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardHeader>
-            <CardTitle className="text-base">Celery / Task queue</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Python version */}
-            <div>
-              <Label className="mb-2 block">Python version</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {PYTHON_VERSIONS.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => set("pythonVersion", v)}
-                    className={cn(
-                      "rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
-                      form.pythonVersion === v
-                        ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        : "border-border bg-card text-muted-foreground hover:border-amber-500/40"
-                    )}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="s-celery-app">Celery application</Label>
-              <Input
+              <TextInput
                 id="s-celery-app"
-                className="mt-1 font-mono text-sm"
+                labelText="Celery application"
                 placeholder="myproject.celery:app"
                 value={form.celeryApp}
                 onChange={(e) => set("celeryApp", e.target.value)}
+                helperText="e.g. proj.celery:app or myproject for auto-discovery."
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                e.g. <code className="font-mono">proj.celery:app</code> or{" "}
-                <code className="font-mono">myproject</code> for auto-discovery.
-              </p>
-            </div>
 
-            <div className="space-y-4 rounded-md border border-border/60 bg-background/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Workers
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="s-cwcount">Worker processes</Label>
-                  <Input
-                    id="s-cwcount"
-                    type="number"
-                    min={1}
-                    max={32}
-                    className="mt-1"
-                    placeholder="2"
-                    value={form.celeryWorkerCount}
-                    onChange={(e) => set("celeryWorkerCount", e.target.value)}
+              <div className="gisila-app__choice">
+                <Stack gap={5}>
+                  <p className="gisila-app__label">Workers</p>
+                  <div className="gisila-app__form-row">
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-cwcount"
+                        labelText="Worker processes"
+                        type="number"
+                        min={1}
+                        max={32}
+                        placeholder="2"
+                        value={form.celeryWorkerCount}
+                        onChange={(e) => set("celeryWorkerCount", e.target.value)}
+                        helperText="Each worker is a separate systemd service."
+                      />
+                    </div>
+                    <div className="gisila-app__form-field">
+                      <TextInput
+                        id="s-cconc"
+                        labelText="Concurrency / worker"
+                        type="number"
+                        min={1}
+                        max={64}
+                        placeholder="4"
+                        value={form.celeryConcurrency}
+                        onChange={(e) => set("celeryConcurrency", e.target.value)}
+                        helperText="Passed as -c to each worker."
+                      />
+                    </div>
+                  </div>
+                  <TextInput
+                    id="s-cqueues"
+                    labelText="Queues (optional)"
+                    placeholder="celery,high-priority"
+                    value={form.celeryQueues}
+                    onChange={(e) => set("celeryQueues", e.target.value)}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Each worker is a separate systemd service.
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="s-cconc">Concurrency / worker</Label>
-                  <Input
-                    id="s-cconc"
-                    type="number"
-                    min={1}
-                    max={64}
-                    className="mt-1"
-                    placeholder="4"
-                    value={form.celeryConcurrency}
-                    onChange={(e) => set("celeryConcurrency", e.target.value)}
+                  <TextInput
+                    id="s-cextra"
+                    labelText="Extra arguments (optional)"
+                    placeholder="--max-tasks-per-child=1000"
+                    value={form.celeryExtraArgs}
+                    onChange={(e) => set("celeryExtraArgs", e.target.value)}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Passed as <code className="font-mono">-c</code> to each worker.
-                  </p>
-                </div>
+                </Stack>
               </div>
-              <div>
-                <Label htmlFor="s-cqueues">
-                  Queues
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-cqueues"
-                  className="mt-1 font-mono text-sm"
-                  placeholder="celery,high-priority"
-                  value={form.celeryQueues}
-                  onChange={(e) => set("celeryQueues", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="s-cextra">
-                  Extra arguments
-                  <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="s-cextra"
-                  className="mt-1 font-mono text-sm"
-                  placeholder="--max-tasks-per-child=1000"
-                  value={form.celeryExtraArgs}
-                  onChange={(e) => set("celeryExtraArgs", e.target.value)}
-                />
-              </div>
-            </div>
 
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-amber-500/20 bg-background/40 p-3">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border"
-                checked={form.celeryBeatEnabled}
-                onChange={(e) => set("celeryBeatEnabled", e.target.checked)}
-              />
-              <div>
-                <p className="text-sm font-medium">Enable Celery Beat scheduler</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Launches a <code className="font-mono">celery beat</code> process alongside
-                  the workers for periodic task scheduling.
+              <div className="gisila-app__choice">
+                <Checkbox
+                  id="s-celery-beat"
+                  labelText="Enable Celery Beat scheduler"
+                  checked={form.celeryBeatEnabled}
+                  onChange={(_, { checked }) => set("celeryBeatEnabled", checked)}
+                />
+                <p className="gisila-app__hint">
+                  Launches a <code>celery beat</code> process alongside the
+                  workers for periodic task scheduling.
                 </p>
               </div>
-            </label>
 
-            <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-              Flower monitoring UI is automatically deployed on this app&apos;s port ({app.internalPort}) and
-              proxied via Nginx. No extra configuration needed.
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              <InlineNotification
+                kind="info"
+                lowContrast
+                hideCloseButton
+                title="Flower"
+                subtitle={`Monitoring UI is automatically deployed on this app's port (${app.internalPort}) and proxied via Nginx. No extra configuration needed.`}
+              />
+            </Stack>
+          </Tile>
+        )}
 
-      {/* Static */}
-      {isStatic && (
-        <Card className="border-green-500/30 bg-green-500/5">
-          <CardHeader>
-            <CardTitle className="text-base">Static site</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div>
-              <Label htmlFor="s-build">
-                Build command
-                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="s-build"
-                className="mt-1 font-mono text-sm"
+        {/* Static */}
+        {isStatic && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">Static site</h3>
+            <Stack gap={6}>
+              <TextInput
+                id="s-static-build"
+                labelText="Build command (optional)"
                 placeholder="npm ci && npm run build"
                 value={form.buildCommand}
                 onChange={(e) => set("buildCommand", e.target.value)}
+                helperText="Run a build step before Nginx serves the files (e.g. Vite, CRA, Hugo). Leave blank for plain HTML/CSS/JS repos."
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Run a build step before Nginx serves the files (e.g. Vite, CRA, Hugo).
-                Leave blank for plain HTML/CSS/JS repos.
-              </p>
-            </div>
 
-            <div>
-              <Label htmlFor="s-static-root">
-                Static files directory
-                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
+              <TextInput
                 id="s-static-root"
-                className="mt-1 font-mono text-sm"
+                labelText="Static files directory (optional)"
                 placeholder="dist"
                 value={form.staticRoot}
                 onChange={(e) => set("staticRoot", e.target.value)}
+                helperText="Path relative to the repository root that Nginx serves, e.g. dist or build/public. Leave blank for the repo root."
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Path relative to the repository root that Nginx serves, e.g.{" "}
-                <code className="font-mono">dist</code> or{" "}
-                <code className="font-mono">build/public</code>. Leave blank for the repo root.
-              </p>
-            </div>
 
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-green-500/20 bg-background/40 p-3">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border"
-                checked={form.staticSpa}
-                onChange={(e) => set("staticSpa", e.target.checked)}
-              />
-              <div>
-                <p className="text-sm font-medium">SPA mode</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Falls back to <code className="font-mono">index.html</code> for all routes.
-                  Required for React, Vue, Angular, and other client-side routers.
-                </p>
-              </div>
-            </label>
-
-            <div className="rounded-md border border-green-500/20 bg-background/40 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Nginx behavior
-              </p>
-              <ul className="space-y-1 text-xs text-muted-foreground">
-                <li>• Files are served directly — no application process runs.</li>
-                <li>• CSS/JS/image assets receive a 1-year <code className="font-mono">Cache-Control: immutable</code> header.</li>
-                <li>• Attach a domain to get an automatic Let&apos;s Encrypt certificate.</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Media (local disk) */}
-      {!isStatic && (
-        <Card className="border-violet-500/30 bg-violet-500/5">
-          <CardHeader>
-            <CardTitle className="text-base">Media storage (local disk)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-violet-500/20 bg-background/40 p-3">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border"
-                checked={form.mediaEnabled}
-                onChange={(e) => set("mediaEnabled", e.target.checked)}
-              />
-              <div>
-                <p className="text-sm font-medium">Enable file uploads on disk</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Creates a persistent <code className="font-mono">shared/media</code>{" "}
-                  directory and exposes <code className="font-mono">MEDIA_ROOT</code> to
-                  your app. Nginx serves it at <code className="font-mono">/media/</code>{" "}
-                  and offers an internal <code className="font-mono">/_protected/</code>{" "}
-                  location for auth-gated downloads via{" "}
-                  <code className="font-mono">X-Accel-Redirect</code>.
-                </p>
-              </div>
-            </label>
-            {form.mediaEnabled && (
-              <div>
-                <Label htmlFor="s-media-max">Max upload size (MB)</Label>
-                <Input
-                  id="s-media-max"
-                  type="number"
-                  min={1}
-                  max={5120}
-                  className="mt-1 max-w-[12rem]"
-                  value={form.mediaMaxUploadMb}
-                  onChange={(e) => set("mediaMaxUploadMb", e.target.value)}
+              <div className="gisila-app__choice">
+                <Checkbox
+                  id="s-static-spa"
+                  labelText="SPA mode"
+                  checked={form.staticSpa}
+                  onChange={(_, { checked }) => set("staticSpa", checked)}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Sets nginx <code className="font-mono">client_max_body_size</code> for
-                  this app. <code className="font-mono">MEDIA_ROOT</code> takes effect on
-                  the next deploy.
+                <p className="gisila-app__hint">
+                  Falls back to <code>index.html</code> for all routes. Required
+                  for React, Vue, Angular, and other client-side routers.
                 </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Resources */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Resource limits</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <Label htmlFor="s-mem">Memory (MB)</Label>
-            <Input
-              id="s-mem"
-              type="number"
-              min={64}
-              max={32768}
-              className="mt-1"
-              value={form.memoryMbLimit}
-              onChange={(e) => set("memoryMbLimit", Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <Label htmlFor="s-cpu">CPU quota (%)</Label>
-            <Input
-              id="s-cpu"
-              type="number"
-              min={1}
-              max={400}
-              className="mt-1"
-              value={form.cpuQuotaPercent}
-              onChange={(e) => set("cpuQuotaPercent", Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <Label htmlFor="s-tasks">Tasks max</Label>
-            <Input
-              id="s-tasks"
-              type="number"
-              min={10}
-              max={4096}
-              className="mt-1"
-              value={form.tasksLimit}
-              onChange={(e) => set("tasksLimit", Number(e.target.value))}
-            />
-          </div>
-        </CardContent>
-      </Card>
+              <div className="gisila-app__note">
+                <p className="gisila-app__label">Nginx behavior</p>
+                <div className="gisila-app__note-list">
+                  <span>
+                    • Files are served directly — no application process runs.
+                  </span>
+                  <span>
+                    • CSS/JS/image assets receive a 1-year{" "}
+                    <code>Cache-Control: immutable</code> header.
+                  </span>
+                  <span>
+                    • Attach a domain to get an automatic Let&apos;s Encrypt
+                    certificate.
+                  </span>
+                </div>
+              </div>
+            </Stack>
+          </Tile>
+        )}
 
-      <div className="flex justify-end gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
-    </form>
+        {/* Media (local disk) */}
+        {!isStatic && (
+          <Tile>
+            <h3 className="gisila-app__tile-title">
+              Media storage (local disk)
+            </h3>
+            <Stack gap={5}>
+              <div className="gisila-app__choice">
+                <Checkbox
+                  id="s-media-enabled"
+                  labelText="Enable file uploads on disk"
+                  checked={form.mediaEnabled}
+                  onChange={(_, { checked }) => set("mediaEnabled", checked)}
+                />
+                <p className="gisila-app__hint">
+                  Creates a persistent <code>shared/media</code> directory and
+                  exposes <code>MEDIA_ROOT</code> to your app. Nginx serves it at{" "}
+                  <code>/media/</code> and offers an internal{" "}
+                  <code>/_protected/</code> location for auth-gated downloads via{" "}
+                  <code>X-Accel-Redirect</code>.
+                </p>
+              </div>
+              {form.mediaEnabled && (
+                <div style={{ maxInlineSize: "12rem" }}>
+                  <TextInput
+                    id="s-media-max"
+                    labelText="Max upload size (MB)"
+                    type="number"
+                    min={1}
+                    max={5120}
+                    value={form.mediaMaxUploadMb}
+                    onChange={(e) => set("mediaMaxUploadMb", e.target.value)}
+                    helperText="Sets nginx client_max_body_size for this app. MEDIA_ROOT takes effect on the next deploy."
+                  />
+                </div>
+              )}
+            </Stack>
+          </Tile>
+        )}
+
+        {/* Resources */}
+        <Tile>
+          <h3 className="gisila-app__tile-title">Resource limits</h3>
+          <div className="gisila-app__form-row">
+            <div className="gisila-app__form-field">
+              <TextInput
+                id="s-mem"
+                labelText="Memory (MB)"
+                type="number"
+                min={64}
+                max={32768}
+                value={form.memoryMbLimit}
+                onChange={(e) => set("memoryMbLimit", Number(e.target.value))}
+              />
+            </div>
+            <div className="gisila-app__form-field">
+              <TextInput
+                id="s-cpu"
+                labelText="CPU quota (%)"
+                type="number"
+                min={1}
+                max={400}
+                value={form.cpuQuotaPercent}
+                onChange={(e) => set("cpuQuotaPercent", Number(e.target.value))}
+              />
+            </div>
+            <div className="gisila-app__form-field">
+              <TextInput
+                id="s-tasks"
+                labelText="Tasks max"
+                type="number"
+                min={10}
+                max={4096}
+                value={form.tasksLimit}
+                onChange={(e) => set("tasksLimit", Number(e.target.value))}
+              />
+            </div>
+          </div>
+        </Tile>
+
+        <div className="gisila-app__row-actions">
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </Stack>
+    </Form>
   );
 }

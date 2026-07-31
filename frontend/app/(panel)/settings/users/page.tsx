@@ -4,30 +4,42 @@ import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
 import {
-  Shield,
-  Plus,
-  Trash2,
-  UserX,
-  UserCheck,
-  Loader,
-  ShieldAlert,
-  Users,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+  Add,
+  Security,
+  SecurityServices,
+  TrashCan,
+  UserFollow,
+  UserMinus,
+  UserMultiple,
+} from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  Button,
+  ComposedModal,
+  Form,
+  InlineLoading,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  PasswordInput,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+  Toggle,
+} from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type { ListResponse, User } from "@/lib/types";
+import "../_settings.scss";
+
+const CREATE_FORM_ID = "new-user-form";
 
 export default function UsersPage() {
   const { data: me } = useSWR<User>("/auth/me", fetcher);
@@ -49,17 +61,19 @@ export default function UsersPage() {
 
   if (me && !me.isSuperuser) {
     return (
-      <div className="container py-16">
-        <div className="mx-auto flex max-w-md flex-col items-center gap-4 text-center">
-          <ShieldAlert className="h-12 w-12 text-muted-foreground/40" />
-          <div>
-            <h2 className="text-lg font-semibold">Superuser access required</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Only superusers can manage user accounts.
-            </p>
+      <Page>
+        <Tile className="gisila-empty">
+          <div className="gisila-settings__empty">
+            <SecurityServices size={32} />
+            <div>
+              <h2 className="gisila-settings__empty-title">
+                Superuser access required
+              </h2>
+              <p>Only superusers can manage user accounts.</p>
+            </div>
           </div>
-        </div>
-      </div>
+        </Tile>
+      </Page>
     );
   }
 
@@ -115,209 +129,190 @@ export default function UsersPage() {
   const users = data?.results ?? [];
 
   return (
-    <div className="container space-y-6 py-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage who has access to this panel.
-          </p>
-        </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4" /> New user
-        </Button>
-      </header>
+    <Page>
+      <PageHeader
+        title="Users"
+        description="Manage who has access to this panel."
+        actions={
+          <Button renderIcon={Add} onClick={() => setShowCreate(true)}>
+            New user
+          </Button>
+        }
+      />
 
       {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader className="h-4 w-4 animate-spin" /> Loading…
-        </div>
+        <InlineLoading description="Loading…" />
       ) : users.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <Users className="h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No users yet.</p>
-          </CardContent>
-        </Card>
+        <Tile className="gisila-empty">
+          <div className="gisila-settings__empty">
+            <UserMultiple size={32} />
+            <p>No users yet.</p>
+          </div>
+        </Tile>
       ) : (
-        <div className="space-y-2">
-          {users.map((user) => {
-            const isSelf = user.id === me?.id;
-            const busy = busyId === user.id;
-            return (
-              <Card key={user.id}>
-                <CardContent className="flex items-center justify-between gap-4 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {user.firstName || user.lastName
-                          ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
-                          : user.email}
-                      </span>
-                      {user.isSuperuser && (
-                        <Badge
-                          variant="outline"
-                          className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        >
-                          <Shield className="h-3 w-3" />
-                          Superuser
-                        </Badge>
-                      )}
-                      {!user.isActive && (
-                        <Badge variant="secondary">Inactive</Badge>
-                      )}
-                      {isSelf && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          you
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {user.email}
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    {!isSelf && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className={cn(
-                            "h-7 px-2 text-xs",
-                            user.isActive
-                              ? "text-muted-foreground"
-                              : "text-emerald-600 hover:text-emerald-700",
-                          )}
-                          disabled={busy}
-                          onClick={() => toggleActive(user)}
-                          title={user.isActive ? "Deactivate" : "Activate"}
-                        >
-                          {busy ? (
-                            <Loader className="h-3.5 w-3.5 animate-spin" />
-                          ) : user.isActive ? (
-                            <UserX className="h-3.5 w-3.5" />
-                          ) : (
-                            <UserCheck className="h-3.5 w-3.5" />
-                          )}
-                          {user.isActive ? "Deactivate" : "Activate"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-destructive hover:text-destructive"
-                          disabled={busy}
-                          onClick={() => handleDelete(user)}
-                        >
-                          {busy ? (
-                            <Loader className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <TableContainer>
+          <Table size="sm">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Name</TableHeader>
+                <TableHeader>Email</TableHeader>
+                <TableHeader />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {users.map((user) => {
+                const isSelf = user.id === me?.id;
+                const busy = busyId === user.id;
+                return (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <div className="gisila-settings__name">
+                        <span>
+                          {user.firstName || user.lastName
+                            ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+                            : user.email}
+                        </span>
+                        {user.isSuperuser && (
+                          <Tag type="purple" size="sm" renderIcon={Security}>
+                            Superuser
+                          </Tag>
+                        )}
+                        {!user.isActive && (
+                          <Tag type="gray" size="sm">
+                            Inactive
+                          </Tag>
+                        )}
+                        {isSelf && (
+                          <Tag type="outline" size="sm">
+                            you
+                          </Tag>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>
+                      <div className="gisila-settings__row-actions">
+                        {!isSelf && (
+                          <>
+                            {busy && <InlineLoading />}
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              renderIcon={user.isActive ? UserMinus : UserFollow}
+                              disabled={busy}
+                              onClick={() => toggleActive(user)}
+                            >
+                              {user.isActive ? "Deactivate" : "Activate"}
+                            </Button>
+                            <Button
+                              kind="danger--ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={TrashCan}
+                              iconDescription="Delete user"
+                              disabled={busy}
+                              onClick={() => handleDelete(user)}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
       {/* Create user dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New user</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4 py-1">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="u-first">First name</Label>
-                <Input
-                  id="u-first"
-                  value={form.firstName}
-                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                  placeholder="Alice"
-                />
+      <ComposedModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        size="sm"
+      >
+        <ModalHeader title="New user" />
+        <ModalBody hasForm>
+          {/* The submit button lives in the footer, outside the form element, so
+              it is wired back to it by id — that keeps the browser's own
+              required/minLength/email validation in charge of submission. */}
+          <Form id={CREATE_FORM_ID} onSubmit={handleCreate}>
+            <Stack gap={5}>
+              <div className="gisila-settings__form-row">
+                <div className="gisila-settings__form-field">
+                  <TextInput
+                    id="u-first"
+                    labelText="First name"
+                    value={form.firstName}
+                    onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                    placeholder="Alice"
+                  />
+                </div>
+                <div className="gisila-settings__form-field">
+                  <TextInput
+                    id="u-last"
+                    labelText="Last name"
+                    value={form.lastName}
+                    onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                    placeholder="Smith"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="u-last">Last name</Label>
-                <Input
-                  id="u-last"
-                  value={form.lastName}
-                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                  placeholder="Smith"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="u-email">Email</Label>
-              <Input
+              <TextInput
                 id="u-email"
+                labelText="Email"
                 type="email"
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="alice@example.com"
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="u-password">Password</Label>
-              <Input
+              <PasswordInput
                 id="u-password"
-                type="password"
+                labelText="Password"
                 required
                 minLength={8}
+                helperText="At least 8 characters."
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
-              <p className="text-xs text-muted-foreground">At least 8 characters.</p>
-            </div>
-            <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={form.isSuperuser}
-                onClick={() => setForm({ ...form, isSuperuser: !form.isSuperuser })}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors",
-                  form.isSuperuser ? "bg-amber-500" : "bg-border",
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                    form.isSuperuser && "translate-x-4",
-                  )}
-                />
-              </button>
               <div>
-                <p className="text-sm font-medium leading-none">
-                  Grant superuser access
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <Toggle
+                  id="u-superuser"
+                  labelText="Grant superuser access"
+                  labelA="Off"
+                  labelB="On"
+                  toggled={form.isSuperuser}
+                  onToggle={(checked) => setForm({ ...form, isSuperuser: checked })}
+                />
+                <p className="gisila-settings__hint">
                   Superusers can manage all users and settings.
                 </p>
               </div>
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowCreate(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating && <Loader className="h-3.5 w-3.5 animate-spin" />}
-                Create account
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+            </Stack>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button kind="secondary" onClick={() => setShowCreate(false)}>
+            Cancel
+          </Button>
+          <Button
+            kind="primary"
+            type="submit"
+            form={CREATE_FORM_ID}
+            disabled={creating}
+          >
+            {creating ? (
+              <InlineLoading
+                className="cds--inline-loading--btn"
+                description="Creating…"
+              />
+            ) : (
+              "Create account"
+            )}
+          </Button>
+        </ModalFooter>
+      </ComposedModal>
+    </Page>
   );
 }

@@ -1,0 +1,233 @@
+// Presentation for the Applications and Services routes.
+//
+// Only Carbon's token modules are loaded here. The root '@carbon/react' entry is
+// emitted once from app/carbon.scss; pulling it in again would duplicate the
+// whole stylesheet into this route's bundle.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+@use '@carbon/react/scss/breakpoint';
+
+// ── Catalog tiles ────────────────────────────────────────────────────────────
+// Both catalogs show the same shape: an identity block on the left, a status on
+// the right, then tags, an optional error and a footer.
+
+.gisila-catalog__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-catalog__ident {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  min-inline-size: 0;
+}
+
+.gisila-catalog__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: spacing.$spacing-07;
+  block-size: spacing.$spacing-07;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-secondary;
+}
+
+.gisila-catalog__name {
+  @include type.type-style('heading-compact-01');
+
+  color: theme.$text-primary;
+}
+
+.gisila-catalog__key {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-catalog__desc {
+  @include type.type-style('body-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-catalog__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-catalog__meta {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-catalog__error {
+  @include type.type-style('label-01');
+
+  overflow: hidden;
+  color: theme.$text-error;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gisila-catalog__cta {
+  @include type.type-style('label-01');
+
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: spacing.$spacing-02;
+  color: theme.$link-primary;
+}
+
+// Installed entries in the catalog keep a success accent so the pair of lists
+// stays scannable without re-colouring the whole tile.
+.gisila-catalog__tile--installed {
+  box-shadow: inset spacing.$spacing-01 0 0 0 theme.$support-success;
+}
+
+.gisila-catalog__summary {
+  display: grid;
+  gap: spacing.$spacing-02 spacing.$spacing-05;
+  padding: spacing.$spacing-03;
+  background-color: theme.$layer-02;
+
+  @include breakpoint.breakpoint('md') {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.gisila-catalog__summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: spacing.$spacing-02;
+  min-inline-size: 0;
+}
+
+.gisila-catalog__summary-label {
+  @include type.type-style('label-01');
+
+  flex-shrink: 0;
+  color: theme.$text-secondary;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gisila-catalog__summary-value {
+  @include type.type-style('code-01');
+
+  overflow: hidden;
+  color: theme.$text-primary;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── Detail pages ─────────────────────────────────────────────────────────────
+
+// Carbon's Breadcrumb carries no trailing space, and the page header only owns
+// the gap below itself.
+.gisila-breadcrumb {
+  margin-block-end: spacing.$spacing-05;
+}
+
+.gisila-detail__key {
+  @include type.type-style('code-02');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-detail__note {
+  @include type.type-style('body-01');
+
+  color: theme.$text-secondary;
+}
+
+// Versions, hosts and commands read better monospaced. TextInput applies its
+// className to the <input> itself.
+.gisila-field--mono {
+  @include type.type-style('code-02');
+}
+
+// Config editors pack a variable number of short fields per row rather than
+// committing to a fixed Carbon column span for every schema.
+.gisila-fields {
+  display: grid;
+  gap: spacing.$spacing-05;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.gisila-label {
+  display: inline-flex;
+  align-items: center;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-required {
+  color: theme.$text-error;
+}
+
+// Two dependent dropdowns living in a section header, where Carbon's form items
+// would otherwise stretch to fill the row.
+.gisila-picker {
+  display: flex;
+  gap: spacing.$spacing-03;
+
+  > * {
+    inline-size: 12rem;
+  }
+}
+
+.gisila-row-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.gisila-table__actions {
+  inline-size: spacing.$spacing-09;
+}
+
+// ── Live service logs ────────────────────────────────────────────────────────
+// A plain scroll pane: the stream is appended to by a WebSocket and scrolled to
+// the end on every batch, so it must not be a component that re-flows content.
+
+.gisila-logs {
+  @include type.type-style('code-01');
+
+  block-size: 16rem;
+  overflow-y: auto;
+  padding: spacing.$spacing-03;
+  border: 1px solid theme.$border-subtle-01;
+  background-color: theme.$layer-01;
+  color: theme.$text-primary;
+}
+
+.gisila-logs__empty {
+  color: theme.$text-secondary;
+}
+
+.gisila-logs__line {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+
+  &--stderr {
+    color: theme.$text-error;
+  }
+
+  &--system {
+    color: theme.$support-info;
+  }
+}
+
+.gisila-logs__ts {
+  margin-inline-end: spacing.$spacing-03;
+  color: theme.$text-secondary;
+  user-select: none;
+}

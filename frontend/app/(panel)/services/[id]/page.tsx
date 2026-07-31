@@ -1,30 +1,39 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR, { mutate } from "swr";
 import {
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Play,
-  Square,
-  Trash2,
+  Launch,
+  PlayFilled,
   Save,
-  ExternalLink,
-  ArrowLeft,
-  Eye,
-  EyeOff,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+  StopFilled,
+  TrashCan,
+} from "@carbon/icons-react";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  Button,
+  Form,
+  InlineLoading,
+  InlineNotification,
+  Link as CarbonLink,
+  Modal,
+  NumberInput,
+  PasswordInput,
+  Select,
+  SelectItem,
+  SkeletonText,
+  Stack,
+  Tag,
+  TextInput,
+  Tile,
+  Toggle,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import type {
   ManagedService,
   ServiceDef,
@@ -32,49 +41,40 @@ import type {
 } from "@/lib/types";
 import { toast } from "@/lib/toast";
 import { PgBouncerConfig } from "./_panels/pgbouncer-config";
+import "../_services.scss";
 
 // ── Status display ────────────────────────────────────────────────────────────
 
-const STATUS_META: Record<
-  string,
-  { icon: React.ReactNode; label: string; color: string }
-> = {
-  running: {
-    icon: <CheckCircle className="h-4 w-4" />,
-    label: "Running",
-    color: "text-emerald-500",
-  },
-  config_only: {
-    icon: <CheckCircle className="h-4 w-4" />,
-    label: "Configured",
-    color: "text-emerald-500",
-  },
-  stopped: {
-    icon: <Square className="h-4 w-4" />,
-    label: "Stopped",
-    color: "text-amber-500",
-  },
-  failed: {
-    icon: <AlertCircle className="h-4 w-4" />,
-    label: "Failed",
-    color: "text-red-500",
-  },
-  installing: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Installing…",
-    color: "text-blue-500",
-  },
-  pending: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Pending…",
-    color: "text-zinc-400",
-  },
-  uninstalling: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Uninstalling…",
-    color: "text-zinc-400",
-  },
+const STATUS_LABEL: Record<string, string> = {
+  running: "Running",
+  config_only: "Configured",
+  stopped: "Stopped",
+  failed: "Failed",
+  installing: "Installing…",
+  pending: "Pending…",
+  uninstalling: "Uninstalling…",
 };
+
+const IN_PROGRESS = ["installing", "pending", "uninstalling"];
+
+const STATUS_TAG: Record<string, "green" | "red" | "magenta"> = {
+  running: "green",
+  config_only: "green",
+  stopped: "magenta",
+  failed: "red",
+};
+
+function StatusIndicator({ status }: { status: string }) {
+  const label = STATUS_LABEL[status] ?? status;
+  if (IN_PROGRESS.includes(status)) {
+    return <InlineLoading status="active" description={label} />;
+  }
+  return (
+    <Tag type={STATUS_TAG[status] ?? "cool-gray"} size="md">
+      {label}
+    </Tag>
+  );
+}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -96,63 +96,53 @@ export default function ServiceDetailPage() {
   );
 
   const def = svc?._def as ServiceDef | undefined;
-  const statusMeta = STATUS_META[svc?.status ?? ""] ?? {
-    icon: null,
-    label: svc?.status ?? "unknown",
-    color: "text-muted-foreground",
-  };
 
   if (isLoading) return <PageSkeleton />;
   if (!svc) return null;
 
   return (
-    <div className="container max-w-2xl space-y-6 py-8">
-      {/* Header */}
-      <div>
-        <button
-          onClick={() => router.push("/services")}
-          className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Services
-        </button>
+    <Page>
+      <Breadcrumb noTrailingSlash className="gisila-breadcrumb">
+        <BreadcrumbItem>
+          <CarbonLink as={RouterLink} href="/services">
+            Services
+          </CarbonLink>
+        </BreadcrumbItem>
+        <BreadcrumbItem isCurrentPage>{svc.displayName}</BreadcrumbItem>
+      </Breadcrumb>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              {svc.displayName}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground font-mono">
-              {svc.serviceType}
-            </p>
-          </div>
+      <PageHeader
+        title={svc.displayName}
+        description={<span className="gisila-detail__key">{svc.serviceType}</span>}
+        actions={<StatusIndicator status={svc.status} />}
+      />
 
-          <div className={cn("flex items-center gap-1.5 mt-1", statusMeta.color)}>
-            {statusMeta.icon}
-            <span className="text-sm font-medium">{statusMeta.label}</span>
-          </div>
-        </div>
+      {(svc.errorMessage || def?.docsUrl) && (
+        <PageSection>
+          <Stack gap={5}>
+            {svc.errorMessage && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                hideCloseButton
+                title={svc.errorMessage}
+              />
+            )}
 
-        {svc.errorMessage && (
-          <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
-            {svc.errorMessage}
-          </div>
-        )}
-
-        {def?.docsUrl && (
-          <a
-            href={def.docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Documentation
-          </a>
-        )}
-      </div>
-
-      <Separator />
+            {def?.docsUrl && (
+              <CarbonLink
+                href={def.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                renderIcon={Launch}
+                size="sm"
+              >
+                Documentation
+              </CarbonLink>
+            )}
+          </Stack>
+        </PageSection>
+      )}
 
       {/* Config form — PgBouncer gets a dedicated editor for its repeating
           databases/users structures; everything else uses the generic form. */}
@@ -174,17 +164,11 @@ export default function ServiceDetailPage() {
 
       {/* Live install / lifecycle logs (only for services installed on the host) */}
       {def?.requiresInstall && (
-        <>
-          <Separator />
-          <ServiceLogPanel serviceId={svc.id} status={svc.status} />
-        </>
+        <ServiceLogPanel serviceId={svc.id} status={svc.status} />
       )}
 
-      <Separator />
-
-      {/* Actions */}
       <ServiceActions svc={svc} onDone={() => router.push("/services")} />
-    </div>
+    </Page>
   );
 }
 
@@ -281,44 +265,41 @@ function ServiceLogPanel({
   }, [lines]);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Install logs</h2>
-        {active && (
-          <span className="flex items-center gap-1.5 text-xs text-emerald-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+    <PageSection
+      title="Install logs"
+      actions={
+        active ? (
+          <Tag type="green" size="sm">
             live
-          </span>
-        )}
-      </div>
-      <div className="h-64 overflow-y-auto rounded-md border border-border/60 bg-[#0d1117] p-3 font-mono text-xs scrollbar-thin">
+          </Tag>
+        ) : undefined
+      }
+    >
+      <div className="gisila-logs">
         {lines.length === 0 ? (
-          <p className="text-white/40">
+          <p className="gisila-logs__empty">
             {active ? "Waiting for output…" : "No logs yet. Trigger an install or restart to see live output."}
           </p>
         ) : (
           lines.map((l, i) => (
             <div
               key={i}
-              className={cn(
-                "leading-5",
+              className={
                 l.stream === "stderr"
-                  ? "text-red-400"
+                  ? "gisila-logs__line gisila-logs__line--stderr"
                   : l.stream === "system"
-                    ? "text-fuchsia-400"
-                    : "text-[#e6edf3]",
-              )}
+                    ? "gisila-logs__line gisila-logs__line--system"
+                    : "gisila-logs__line"
+              }
             >
-              <span className="mr-2 select-none text-white/25">
-                {l.ts.slice(11, 19)}
-              </span>
+              <span className="gisila-logs__ts">{l.ts.slice(11, 19)}</span>
               {l.line}
             </div>
           ))
         )}
         <div ref={endRef} />
       </div>
-    </div>
+    </PageSection>
   );
 }
 
@@ -380,31 +361,52 @@ function ConfigForm({
   }
 
   return (
-    <div className="space-y-5">
-      <h2 className="text-sm font-semibold">Configuration</h2>
+    <PageSection title="Configuration">
+      <Form onSubmit={(e) => e.preventDefault()}>
+        <Stack gap={5}>
+          {def.configSchema.map((field) => (
+            <FieldRow
+              key={field.key}
+              field={field}
+              value={values[field.key] ?? ""}
+              isVisible={visible[field.key] ?? false}
+              onChange={(v) => set(field.key, v)}
+              onToggleVisible={() =>
+                setVisible((p) => ({ ...p, [field.key]: !p[field.key] }))
+              }
+            />
+          ))}
 
-      {def.configSchema.map((field) => (
-        <FieldRow
-          key={field.key}
-          field={field}
-          value={values[field.key] ?? ""}
-          isVisible={visible[field.key] ?? false}
-          onChange={(v) => set(field.key, v)}
-          onToggleVisible={() =>
-            setVisible((p) => ({ ...p, [field.key]: !p[field.key] }))
-          }
-        />
-      ))}
-
-      <Button size="sm" disabled={saving} onClick={save}>
-        {saving ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-        Save configuration
-      </Button>
-    </div>
+          {saving ? (
+            <InlineLoading status="active" description="Saving…" />
+          ) : (
+            <Button size="md" renderIcon={Save} onClick={save}>
+              Save configuration
+            </Button>
+          )}
+        </Stack>
+      </Form>
+    </PageSection>
   );
 }
 
 // ── Single config field ───────────────────────────────────────────────────────
+
+/// Carbon has no "required" or "secret" affordance on its inputs, so the label
+/// carries both markers.
+function FieldLabel({ field }: { field: ConfigField }) {
+  return (
+    <span className="gisila-label">
+      {field.label}
+      {field.required && <span className="gisila-required">*</span>}
+      {field.secret && (
+        <Tag as="span" type="cool-gray" size="sm">
+          secret
+        </Tag>
+      )}
+    </span>
+  );
+}
 
 function FieldRow({
   field,
@@ -419,88 +421,83 @@ function FieldRow({
   onChange: (v: string) => void;
   onToggleVisible: () => void;
 }) {
-  const isPassword = field.type === "password";
-  const isBoolean = field.type === "boolean";
-  const isSelect = field.type === "select";
+  const label = <FieldLabel field={field} />;
+
+  if (field.type === "boolean") {
+    return (
+      <Stack gap={2}>
+        <Toggle
+          id={field.key}
+          labelText={field.label}
+          labelA="Disabled"
+          labelB="Enabled"
+          toggled={value === "true"}
+          onToggle={(checked) => onChange(checked ? "true" : "false")}
+        />
+        {field.hint && <p className="gisila-detail__note">{field.hint}</p>}
+      </Stack>
+    );
+  }
+
+  if (field.type === "select") {
+    return (
+      <Select
+        id={field.key}
+        labelText={label}
+        helperText={field.hint}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {field.options?.map((opt) => (
+          <SelectItem key={opt} value={opt} text={opt} />
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "password") {
+    return (
+      <PasswordInput
+        id={field.key}
+        labelText={label}
+        helperText={field.hint}
+        // The eye toggle stays owned by the page so every secret on the form
+        // reveals through the same state.
+        type={isVisible ? "text" : "password"}
+        onTogglePasswordVisibility={onToggleVisible}
+        value={value}
+        placeholder={field.placeholder ?? field.default}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  if (field.type === "number") {
+    return (
+      <NumberInput
+        id={field.key}
+        label={label}
+        helperText={field.hint}
+        value={value}
+        min={field.min}
+        max={field.max}
+        allowEmpty
+        // Config is serialised as strings, so the numeric value is stringified
+        // straight back into the same shape the API expects.
+        onChange={(_event, { value: next }) => onChange(String(next))}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={field.key} className="flex items-center gap-1.5">
-        {field.label}
-        {field.required && <span className="text-red-500">*</span>}
-        {field.secret && (
-          <Badge variant="muted" className="text-[9px]">
-            secret
-          </Badge>
-        )}
-      </Label>
-
-      {isBoolean ? (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={value === "true"}
-            onClick={() => onChange(value === "true" ? "false" : "true")}
-            className={cn(
-              "relative inline-flex h-5 w-9 rounded-full transition-colors",
-              value === "true" ? "bg-primary" : "bg-border",
-            )}
-          >
-            <span
-              className={cn(
-                "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                value === "true" && "translate-x-4",
-              )}
-            />
-          </button>
-          <span className="text-sm text-muted-foreground">
-            {value === "true" ? "Enabled" : "Disabled"}
-          </span>
-        </div>
-      ) : isSelect ? (
-        <select
-          id={field.key}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {field.options?.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <div className="relative">
-          <Input
-            id={field.key}
-            type={isPassword && !isVisible ? "password" : "text"}
-            value={value}
-            placeholder={field.placeholder ?? field.default}
-            onChange={(e) => onChange(e.target.value)}
-            className={cn("h-8", isPassword && "pr-9")}
-          />
-          {isPassword && (
-            <button
-              type="button"
-              onClick={onToggleVisible}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {isVisible ? (
-                <EyeOff className="h-3.5 w-3.5" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
-              )}
-            </button>
-          )}
-        </div>
-      )}
-
-      {field.hint && (
-        <p className="text-xs text-muted-foreground">{field.hint}</p>
-      )}
-    </div>
+    <TextInput
+      id={field.key}
+      labelText={label}
+      helperText={field.hint}
+      value={value}
+      placeholder={field.placeholder ?? field.default}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 
@@ -514,6 +511,7 @@ function ServiceActions({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const { isSuperuser } = usePermissions();
 
   // Managed services are node-global infra — only superusers may control them.
@@ -543,62 +541,79 @@ function ServiceActions({
     svc.status,
   );
   const isConfigOnly = svc.status === "config_only";
+  const removeLabel = isConfigOnly ? "Remove" : "Uninstall";
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold">Actions</h2>
-      <div className="flex flex-wrap items-center gap-2">
+    <PageSection title="Actions">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
         {!isConfigOnly && (
           <>
-            {svc.status !== "running" && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isInProgress || !!busy}
-                onClick={() => act("start")}
-              >
-                {busy === "start" ? (
-                  <Loader className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Play className="h-3.5 w-3.5" />
-                )}
-                Start
-              </Button>
-            )}
-            {svc.status === "running" && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isInProgress || !!busy}
-                onClick={() => act("stop")}
-              >
-                {busy === "stop" ? (
-                  <Loader className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Square className="h-3.5 w-3.5" />
-                )}
-                Stop
-              </Button>
-            )}
+            {svc.status !== "running" &&
+              (busy === "start" ? (
+                <InlineLoading status="active" description="Starting…" />
+              ) : (
+                <Button
+                  size="md"
+                  kind="secondary"
+                  renderIcon={PlayFilled}
+                  disabled={isInProgress || !!busy}
+                  onClick={() => act("start")}
+                >
+                  Start
+                </Button>
+              ))}
+            {svc.status === "running" &&
+              (busy === "stop" ? (
+                <InlineLoading status="active" description="Stopping…" />
+              ) : (
+                <Button
+                  size="md"
+                  kind="secondary"
+                  renderIcon={StopFilled}
+                  disabled={isInProgress || !!busy}
+                  onClick={() => act("stop")}
+                >
+                  Stop
+                </Button>
+              ))}
           </>
         )}
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="text-red-500 hover:text-red-600 border-red-500/30 hover:bg-red-500/5"
-          disabled={isInProgress || !!busy}
-          onClick={() => act("uninstall")}
-        >
-          {busy === "uninstall" ? (
-            <Loader className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
-          {isConfigOnly ? "Remove" : "Uninstall"}
-        </Button>
+        {busy === "uninstall" ? (
+          <InlineLoading status="active" description={`${removeLabel}…`} />
+        ) : (
+          <Button
+            size="md"
+            kind="danger--tertiary"
+            renderIcon={TrashCan}
+            disabled={isInProgress || !!busy}
+            onClick={() => setConfirming(true)}
+          >
+            {removeLabel}
+          </Button>
+        )}
       </div>
-    </div>
+
+      <Modal
+        open={confirming}
+        danger
+        modalHeading={`${removeLabel} ${svc.displayName}?`}
+        modalLabel={svc.serviceType}
+        primaryButtonText={removeLabel}
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setConfirming(false)}
+        onRequestSubmit={() => {
+          setConfirming(false);
+          void act("uninstall");
+        }}
+      >
+        <p className="gisila-detail__note">
+          {isConfigOnly
+            ? "The stored configuration for this service is deleted."
+            : "The service is stopped and removed from the host."}
+        </p>
+      </Modal>
+    </PageSection>
   );
 }
 
@@ -606,15 +621,15 @@ function ServiceActions({
 
 function PageSkeleton() {
   return (
-    <div className="container max-w-2xl space-y-6 py-8">
-      <div className="h-16 animate-pulse rounded-md bg-card" />
-      <Card>
-        <CardContent className="space-y-4 py-6">
+    <Page>
+      <SkeletonText heading width="40%" />
+      <Tile>
+        <Stack gap={5}>
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-8 animate-pulse rounded bg-muted" />
+            <SkeletonText key={i} />
           ))}
-        </CardContent>
-      </Card>
-    </div>
+        </Stack>
+      </Tile>
+    </Page>
   );
 }

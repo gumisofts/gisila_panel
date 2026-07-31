@@ -1,0 +1,175 @@
+// Presentation helpers shared by the storage and mail pages.
+//
+// Only the bits Carbon has no component for live here: token-coloured meta
+// text, the flex rows that hold a Carbon component next to a label, and the
+// expander button on a mail domain tile. Everything with a Carbon equivalent
+// uses the Carbon component instead.
+//
+// The root `@carbon/react` entrypoint is deliberately not used — app/carbon.scss
+// already emits the full stylesheet once, and re-using it here would duplicate
+// it into the bundle. Only the token modules are loaded.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+
+// ── Shared primitives ────────────────────────────────────────────────────────
+
+.gisila-sm__tile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-sm__title-row {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-sm__title {
+  @include type.type-style('heading-compact-01');
+
+  color: theme.$text-primary;
+}
+
+.gisila-sm__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-sm__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: spacing.$spacing-04;
+}
+
+.gisila-sm__label {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gisila-sm__meta {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+  overflow-wrap: anywhere;
+}
+
+.gisila-sm__note {
+  @include type.type-style('helper-text-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-sm__note p + p {
+  margin-block-start: spacing.$spacing-03;
+}
+
+.gisila-sm__warning {
+  @include type.type-style('helper-text-01');
+
+  color: theme.$support-warning;
+}
+
+.gisila-sm__error {
+  @include type.type-style('helper-text-01');
+
+  color: theme.$text-error;
+  overflow-wrap: anywhere;
+}
+
+.gisila-sm__code {
+  @include type.type-style('code-01');
+}
+
+.gisila-sm__optional {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+}
+
+// Explanatory block inside a modal — Carbon's notifications are for outcomes,
+// this is static guidance, so it is a plain panel on the layer token.
+.gisila-sm__callout {
+  padding: spacing.$spacing-04;
+  background-color: theme.$layer-accent-01;
+}
+
+// Revealed bucket credentials: label on the left, copyable snippet on the right.
+.gisila-sm__kv {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-sm__kv-row {
+  display: grid;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  grid-template-columns: 7rem minmax(0, 1fr);
+}
+
+.gisila-sm__kv-key {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+}
+
+// ── Mail domain tile ─────────────────────────────────────────────────────────
+
+// The tile expands on click but also carries a delete button, so it cannot be
+// Carbon's ExpandableTile (which turns the whole tile into one button).
+.gisila-mail__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  gap: spacing.$spacing-05;
+  text-align: start;
+
+  &:focus-visible {
+    outline: 2px solid theme.$focus;
+    outline-offset: 2px;
+  }
+}
+
+.gisila-mail__domain {
+  @include type.type-style('heading-compact-01');
+
+  display: block;
+  overflow: hidden;
+  color: theme.$text-primary;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gisila-mail__panel {
+  padding-block-start: spacing.$spacing-05;
+  border-block-start: 1px solid theme.$border-subtle-01;
+  margin-block-start: spacing.$spacing-05;
+}
+
+// DNS values are copied verbatim into a zone file, so the full string has to
+// stay legible. Carbon fades the trailing edge of a snippet with a mask; on a
+// wrapped ~400-character DKIM key that dims the end of every line, so it is
+// removed for these snippets only.
+.gisila-dns__value .cds--snippet-container {
+  mask-image: none;
+}
+
+.gisila-dns__value--placeholder code {
+  color: theme.$text-secondary;
+  font-style: italic;
+}
