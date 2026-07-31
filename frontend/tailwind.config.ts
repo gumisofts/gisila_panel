@@ -1,7 +1,11 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: ["class"],
+  // next-themes now writes Carbon's theme-zone class onto <html> rather than
+  // "dark", so Tailwind has to watch for that instead or every page still on
+  // Tailwind stays light while the Carbon shell around it goes dark. Removed
+  // along with Tailwind once the last route is migrated.
+  darkMode: ["selector", ".cds--g100"],
   content: [
     "./src/**/*.{ts,tsx}",
     "./app/**/*.{ts,tsx}",

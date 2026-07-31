@@ -32,6 +32,11 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider
         attribute="class"
+        // Emit Carbon's theme-zone classes straight onto <html> instead of
+        // next-themes' own light/dark names. Carbon scopes every --cds-* token
+        // to these classes, so putting them at the root themes the document
+        // background too, which a nested <Theme> wrapper would not reach.
+        value={{ light: "cds--white", dark: "cds--g100" }}
         defaultTheme="system"
         enableSystem
         disableTransitionOnChange

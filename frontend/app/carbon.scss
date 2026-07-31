@@ -6,6 +6,11 @@
 @use '@carbon/react' with (
   $css--font-face: false
 );
+// Loaded again unconfigured so the shell rules below can reference Carbon's
+// tokens by name rather than hard-coding values.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
 
 // ── Brand palette ────────────────────────────────────────────────────────────
 //
@@ -60,4 +65,39 @@ html,
 body,
 #root {
   block-size: 100%;
+}
+
+// ── Shell adjustments ────────────────────────────────────────────────────────
+
+// Grouping headings in the side nav. Carbon has no component for these — its
+// own pattern for grouping is the collapsible SideNavMenu, which hides the
+// per-item icons the panel relies on — so they are plain list items styled to
+// match Carbon's label type style.
+.gisila-side-nav__section {
+  @include type.type-style('label-01');
+
+  padding-block: spacing.$spacing-04 spacing.$spacing-02;
+  padding-inline: spacing.$spacing-05;
+  color: theme.$text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+// OverflowMenu is not a HeaderGlobalAction, so it needs the header's own sizing
+// to sit flush in the global bar.
+.gisila-header__menu {
+  block-size: spacing.$spacing-09;
+  inline-size: spacing.$spacing-09;
+
+  &:hover {
+    background-color: theme.$background-hover;
+  }
+
+  svg {
+    fill: theme.$text-inverse;
+  }
+}
+
+.gisila-header__menu-options {
+  inline-size: 12rem;
 }

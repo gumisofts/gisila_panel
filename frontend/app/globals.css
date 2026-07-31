@@ -57,7 +57,11 @@
     --radius: 0.375rem;
   }
 
-  .dark {
+  /* Matches the Carbon theme-zone class next-themes now sets on <html>, since
+     these variables are plain CSS rather than Tailwind variants and so are not
+     covered by the darkMode selector in tailwind.config.ts. Both go away with
+     Tailwind once every route is on Carbon. */
+  .cds--g100 {
     --background: 240 6% 7%;
     --foreground: 240 5% 96%;
 

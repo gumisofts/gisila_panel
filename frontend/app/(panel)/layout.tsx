@@ -1,8 +1,17 @@
 "use client";
 
 import { Navigate, Outlet } from "react-router-dom";
-import { Sidebar } from "@/components/sidebar";
-import { Topbar } from "@/components/topbar";
+import Link from "@/compat/link";
+import {
+  Content,
+  Header,
+  HeaderContainer,
+  HeaderMenuButton,
+  HeaderName,
+  SkipToContent,
+} from "@carbon/react";
+import { PanelSideNav } from "@/components/sidebar";
+import { PanelHeaderActions } from "@/components/topbar";
 import { getToken } from "@/lib/api";
 
 export default function PanelLayout() {
@@ -11,15 +20,34 @@ export default function PanelLayout() {
   // never fire without a token.
   if (!getToken()) return <Navigate to="/login" replace />;
 
+  // HeaderContainer owns the side-nav expansion state, which the header's menu
+  // button and the nav itself both need. Carbon nests SideNav inside Header so
+  // the two share the shell's stacking and offset rules.
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-x-hidden bg-background/30">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    <HeaderContainer
+      render={({ isSideNavExpanded, onClickSideNavExpand }) => (
+        <>
+          <Header aria-label="Gisila Panel">
+            <SkipToContent />
+            <HeaderMenuButton
+              aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
+              onClick={onClickSideNavExpand}
+              isActive={isSideNavExpanded}
+            />
+            <HeaderName as={Link} href="/dashboard" prefix="Gisila">
+              Panel
+            </HeaderName>
+            <PanelHeaderActions />
+            <PanelSideNav
+              expanded={isSideNavExpanded}
+              onOverlayClick={onClickSideNavExpand}
+            />
+          </Header>
+          <Content>
+            <Outlet />
+          </Content>
+        </>
+      )}
+    />
   );
 }
