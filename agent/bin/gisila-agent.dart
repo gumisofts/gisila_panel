@@ -36,7 +36,7 @@ Future<void> main(List<String> args) async {
         break;
       case 'runtime':
         await _runtime(rest);
-        break;
+        return; // _runtime prints its own JSON line.
       case 'apply-unit':
         await _applyUnit(rest);
         break;
@@ -278,11 +278,26 @@ Future<void> _runtime(List<String> args) async {
       await plugin.removeToolchain(version: version);
       break;
     case 'status':
-      _ok({'key': key, 'installed': true});
+      final versions = await plugin.installedVersions();
+      _ok({
+        'key': key,
+        'versioned': plugin.versioned,
+        'versions': versions,
+        // Unversioned runtimes have nothing to enumerate, so presence on the
+        // host is the only thing status can honestly report for them.
+        'installed': plugin.versioned ? versions.isNotEmpty : true,
+      });
       return;
     default:
       throw ArgumentError('Unknown runtime action: $action');
   }
+
+  _ok({
+    'command': 'runtime',
+    'action': action,
+    'key': key,
+    if (version != null && version.isNotEmpty) 'version': version,
+  });
 }
 
 Future<void> _applyUnit(List<String> args) async {

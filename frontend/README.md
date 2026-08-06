@@ -39,7 +39,7 @@ pnpm dev
 
 | Route | What it does |
 |-------|--------------|
-| `/` | Marketing landing page |
+| `/` | Redirects to `/dashboard` or `/login` |
 | `/login`, `/register` | Auth |
 | `/dashboard` | Overview cards & recent apps |
 | `/apps` | All apps |

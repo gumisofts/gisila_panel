@@ -13,7 +13,7 @@ import "../_app-detail.scss";
 
 export function OverviewTab({ app }: { app: App }) {
   return (
-    <Grid condensed>
+    <Grid condensed className="gisila-app__overview">
       <Column sm={4} md={4} lg={8} className="gisila-app__col">
         <Tile>
           <h3 className="gisila-app__tile-title">Runtime</h3>
@@ -88,8 +88,10 @@ function Row({
   mono?: boolean;
 }) {
   return (
-    <StructuredListRow>
-      <StructuredListCell noWrap>{label}</StructuredListCell>
+    <StructuredListRow className="gisila-app__row">
+      <StructuredListCell className="gisila-app__row-label">
+        {label}
+      </StructuredListCell>
       <StructuredListCell
         className={
           mono ? "gisila-app__value gisila-app__mono" : "gisila-app__value"

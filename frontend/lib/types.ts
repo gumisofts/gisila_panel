@@ -202,12 +202,11 @@ export interface ListResponse<T> {
   results: T[];
 }
 
-// ── Applications (runtime/language stacks) ────────────────────────────────────
+// ── Runtimes (language stacks) ────────────────────────────────────────────────
 //
 // An Application is an installable runtime/language stack (Python, Dart,
-// Node, …) managed independently of the panel itself — see the
-// "Application Management" section. Apps pick one of the *installed*
-// Applications as their deployment target.
+// Node, …) managed independently of the panel itself — see the Runtimes
+// section. Apps pick one of the *installed* runtimes as their deployment target.
 
 export type DeployMode = "build_execute" | "direct_run" | "static_publish";
 
@@ -226,11 +225,38 @@ export interface ApplicationDef {
   description: string;
   deployModes: DeployMode[];
   defaultDeployMode: DeployMode;
+  /** Whether several versions can be installed side by side (Python via
+   *  pyenv, Node via fnm, …). False for static/binary/zig/celery. */
+  versioned: boolean;
+  /** Curated installable versions, newest first. Empty when not versioned. */
+  availableVersions: string[];
   defaultVersion?: string | null;
   defaultBuildCommand?: string | null;
   defaultStartCommand?: string | null;
   versionHint?: string | null;
   docsUrl?: string | null;
+}
+
+export type ApplicationVersionStatus =
+  | "pending"
+  | "installing"
+  | "installed"
+  | "removing"
+  | "failed";
+
+/** One installed toolchain version of an Application. Versioned Applications
+ *  can have several of these at once. */
+export interface ApplicationVersion {
+  id: ID;
+  applicationId: ID;
+  version: string;
+  status: ApplicationVersionStatus;
+  /** The version new apps get when they don't pin one themselves. */
+  isDefault: boolean;
+  errorMessage?: string | null;
+  installedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface Application {
@@ -239,6 +265,7 @@ export interface Application {
   displayName: string;
   deployModes: string; // csv, e.g. "build_execute,direct_run"
   defaultDeployMode: DeployMode;
+  /** Kept in sync with whichever version is marked default. */
   defaultVersion?: string | null;
   defaultBuildCommand?: string | null;
   defaultStartCommand?: string | null;
@@ -248,6 +275,9 @@ export interface Application {
   installedAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+  /** Installed versions, always present on list and retrieve. Empty for
+   *  unversioned Applications. */
+  versions: ApplicationVersion[];
   _def?: ApplicationDef; // injected by the retrieve endpoint
 }
 

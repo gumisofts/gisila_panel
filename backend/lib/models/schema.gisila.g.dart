@@ -110,6 +110,15 @@ class User with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<User, Team> ownedTeams = HasManyRelation<User, Team>(
     parentTable: 'users',
     childTable: 'teams',
@@ -339,6 +348,15 @@ class Team with Preloadable {
     createdAt: createdAt ?? this.createdAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<Team, User> owner = BelongsToRelation<Team, User>(
     parentTable: 'teams',
     childTable: 'users',
@@ -497,6 +515,15 @@ class TeamMember with Preloadable {
     acceptedAt: acceptedAt ?? this.acceptedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<TeamMember, Team> team =
       BelongsToRelation<TeamMember, Team>(
         parentTable: 'team_members',
@@ -652,6 +679,15 @@ class ApiToken with Preloadable {
     createdAt: createdAt ?? this.createdAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<ApiToken, User> user =
       BelongsToRelation<ApiToken, User>(
         parentTable: 'api_tokens',
@@ -802,6 +838,15 @@ class SshKey with Preloadable {
     createdAt: createdAt ?? this.createdAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<SshKey, User> user = BelongsToRelation<SshKey, User>(
     parentTable: 'ssh_keys',
     childTable: 'users',
@@ -950,6 +995,15 @@ class Project with Preloadable {
     description: description ?? this.description,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<Project, Team> team = BelongsToRelation<Project, Team>(
     parentTable: 'projects',
@@ -1133,6 +1187,24 @@ class Application with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<Application, ApplicationVersion> versions =
+      HasManyRelation<Application, ApplicationVersion>(
+        parentTable: 'applications',
+        childTable: 'application_versions',
+        name: 'versions',
+        childForeignKey: 'application_id',
+        childMeta: ApplicationVersionTable.metadata,
+      );
+
   static final Relation<Application, App> apps =
       HasManyRelation<Application, App>(
         parentTable: 'applications',
@@ -1141,6 +1213,10 @@ class Application with Preloadable {
         childForeignKey: 'application_id',
         childMeta: AppTable.metadata,
       );
+
+  /// Preloaded versions; empty list when not preloaded.
+  List<ApplicationVersion> get versionsList =>
+      preloaded<List<ApplicationVersion>>('versions') ?? const [];
 
   /// Preloaded apps; empty list when not preloaded.
   List<App> get appsList => preloaded<List<App>>('apps') ?? const [];
@@ -1230,6 +1306,182 @@ class ApplicationTable {
 
 Query<Application> applications() =>
     Query<Application>(ApplicationTable.metadata);
+
+class ApplicationVersion with Preloadable {
+  final int? id;
+  final int applicationId;
+  final String version;
+  final String? status;
+  final bool? isDefault;
+  final String? errorMessage;
+  final DateTime? installedAt;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  ApplicationVersion({
+    this.id,
+    required this.applicationId,
+    required this.version,
+    this.status,
+    this.isDefault,
+    this.errorMessage,
+    this.installedAt,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory ApplicationVersion.fromRow(Map<String, dynamic> row) =>
+      ApplicationVersion(
+        id: row['id'] as int?,
+        applicationId: row['application_id'] as int,
+        version: row['version'] as String,
+        status: row['status'] as String?,
+        isDefault: row['is_default'] as bool?,
+        errorMessage: row['error_message'] as String?,
+        installedAt: row['installed_at'] == null
+            ? null
+            : (row['installed_at'] is DateTime
+                  ? row['installed_at'] as DateTime
+                  : DateTime.parse(row['installed_at'].toString())),
+        createdAt: row['created_at'] is DateTime
+            ? row['created_at'] as DateTime
+            : DateTime.parse(row['created_at'].toString()),
+        updatedAt: row['updated_at'] == null
+            ? null
+            : (row['updated_at'] is DateTime
+                  ? row['updated_at'] as DateTime
+                  : DateTime.parse(row['updated_at'].toString())),
+      );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'application_id': applicationId,
+    'version': version,
+    'status': status,
+    'is_default': isDefault,
+    'error_message': errorMessage,
+    'installed_at': installedAt,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory ApplicationVersion.fromJson(Map<String, dynamic> json) =>
+      ApplicationVersion.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  ApplicationVersion copyWith({
+    int? id,
+    int? applicationId,
+    String? version,
+    String? status,
+    bool? isDefault,
+    String? errorMessage,
+    DateTime? installedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => ApplicationVersion(
+    id: id ?? this.id,
+    applicationId: applicationId ?? this.applicationId,
+    version: version ?? this.version,
+    status: status ?? this.status,
+    isDefault: isDefault ?? this.isDefault,
+    errorMessage: errorMessage ?? this.errorMessage,
+    installedAt: installedAt ?? this.installedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<ApplicationVersion, Application> application =
+      BelongsToRelation<ApplicationVersion, Application>(
+        parentTable: 'application_versions',
+        childTable: 'applications',
+        name: 'application',
+        parentForeignKey: 'application_id',
+        childMeta: ApplicationTable.metadata,
+      );
+
+  /// Preloaded application; null when not preloaded or absent.
+  Application? get applicationLoaded => preloaded<Application>('application');
+}
+
+class ApplicationVersionTable {
+  ApplicationVersionTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'application_versions',
+    column: 'id',
+  );
+  static const ColumnRef<int> applicationId = ColumnRef<int>(
+    table: 'application_versions',
+    column: 'application_id',
+  );
+  static const ColumnRef<String> version = ColumnRef<String>(
+    table: 'application_versions',
+    column: 'version',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'application_versions',
+    column: 'status',
+  );
+  static const ColumnRef<bool?> isDefault = ColumnRef<bool?>(
+    table: 'application_versions',
+    column: 'is_default',
+  );
+  static const ColumnRef<String?> errorMessage = ColumnRef<String?>(
+    table: 'application_versions',
+    column: 'error_message',
+  );
+  static const ColumnRef<DateTime?> installedAt = ColumnRef<DateTime?>(
+    table: 'application_versions',
+    column: 'installed_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'application_versions',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'application_versions',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<ApplicationVersion> metadata =
+      TableMeta<ApplicationVersion>(
+        tableName: 'application_versions',
+        primaryKey: 'id',
+        columnNames: [
+          'id',
+          'application_id',
+          'version',
+          'status',
+          'is_default',
+          'error_message',
+          'installed_at',
+          'created_at',
+          'updated_at',
+        ],
+        fromRow: ApplicationVersion.fromRow,
+      );
+}
+
+Query<ApplicationVersion> applicationVersions() =>
+    Query<ApplicationVersion>(ApplicationVersionTable.metadata);
 
 class App with Preloadable {
   final int? id;
@@ -1555,6 +1807,15 @@ class App with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<App, Project> project = BelongsToRelation<App, Project>(
     parentTable: 'apps',
@@ -1985,6 +2246,15 @@ class EnvVar with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<EnvVar, App> app = BelongsToRelation<EnvVar, App>(
     parentTable: 'env_vars',
     childTable: 'apps',
@@ -2143,6 +2413,15 @@ class Deployment with Preloadable {
     finishedAt: finishedAt ?? this.finishedAt,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<Deployment, App> app =
       BelongsToRelation<Deployment, App>(
@@ -2316,6 +2595,15 @@ class BuildLog with Preloadable {
     createdAt: createdAt ?? this.createdAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<BuildLog, Deployment> deployment =
       BelongsToRelation<BuildLog, Deployment>(
         parentTable: 'build_logs',
@@ -2454,6 +2742,15 @@ class Domain with Preloadable {
     sslIssuer: sslIssuer ?? this.sslIssuer,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<Domain, App> app = BelongsToRelation<Domain, App>(
     parentTable: 'domains',
@@ -2597,6 +2894,15 @@ class MetricSample with Preloadable {
     sampledAt: sampledAt ?? this.sampledAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<MetricSample, App> app =
       BelongsToRelation<MetricSample, App>(
         parentTable: 'metric_samples',
@@ -2726,6 +3032,15 @@ class AppEvent with Preloadable {
     data: data ?? this.data,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<AppEvent, App> app = BelongsToRelation<AppEvent, App>(
     parentTable: 'app_events',
@@ -2891,6 +3206,15 @@ class ManagedService with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 }
 
 class ManagedServiceTable {
@@ -3075,6 +3399,15 @@ class PostgresInstance with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<PostgresInstance, PostgresDatabase> databases =
       HasManyRelation<PostgresInstance, PostgresDatabase>(
@@ -3277,6 +3610,15 @@ class PostgresDatabase with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<PostgresDatabase, PostgresInstance> instance =
       BelongsToRelation<PostgresDatabase, PostgresInstance>(
         parentTable: 'postgres_databases',
@@ -3287,7 +3629,7 @@ class PostgresDatabase with Preloadable {
       );
 
   static final Relation<PostgresDatabase, PostgresBackupSchedule>
-  backupSchedule = HasManyRelation<PostgresDatabase, PostgresBackupSchedule>(
+  backupSchedule = HasOneRelation<PostgresDatabase, PostgresBackupSchedule>(
     parentTable: 'postgres_databases',
     childTable: 'postgres_backup_schedules',
     name: 'backupSchedule',
@@ -3308,9 +3650,9 @@ class PostgresDatabase with Preloadable {
   PostgresInstance? get instanceLoaded =>
       preloaded<PostgresInstance>('instance');
 
-  /// Preloaded backupSchedule; empty list when not preloaded.
-  List<PostgresBackupSchedule> get backupScheduleList =>
-      preloaded<List<PostgresBackupSchedule>>('backupSchedule') ?? const [];
+  /// Preloaded backupSchedule; null when not preloaded or absent.
+  PostgresBackupSchedule? get backupScheduleLoaded =>
+      preloaded<PostgresBackupSchedule>('backupSchedule');
 
   /// Preloaded backups; empty list when not preloaded.
   List<PostgresBackup> get backupsList =>
@@ -3498,6 +3840,15 @@ class PostgresBackupSchedule with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<PostgresBackupSchedule, PostgresDatabase> database =
       BelongsToRelation<PostgresBackupSchedule, PostgresDatabase>(
@@ -3698,6 +4049,15 @@ class PostgresBackup with Preloadable {
     completedAt: completedAt ?? this.completedAt,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<PostgresBackup, PostgresDatabase> database =
       BelongsToRelation<PostgresBackup, PostgresDatabase>(
@@ -3916,6 +4276,15 @@ class MongoInstance with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<MongoInstance, MongoDatabase> databases =
       HasManyRelation<MongoInstance, MongoDatabase>(
         parentTable: 'mongo_instances',
@@ -4114,6 +4483,15 @@ class MongoDatabase with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<MongoDatabase, MongoInstance> instance =
       BelongsToRelation<MongoDatabase, MongoInstance>(
         parentTable: 'mongo_databases',
@@ -4124,7 +4502,7 @@ class MongoDatabase with Preloadable {
       );
 
   static final Relation<MongoDatabase, MongoBackupSchedule> backupSchedule =
-      HasManyRelation<MongoDatabase, MongoBackupSchedule>(
+      HasOneRelation<MongoDatabase, MongoBackupSchedule>(
         parentTable: 'mongo_databases',
         childTable: 'mongo_backup_schedules',
         name: 'backupSchedule',
@@ -4144,9 +4522,9 @@ class MongoDatabase with Preloadable {
   /// Preloaded instance; null when not preloaded or absent.
   MongoInstance? get instanceLoaded => preloaded<MongoInstance>('instance');
 
-  /// Preloaded backupSchedule; empty list when not preloaded.
-  List<MongoBackupSchedule> get backupScheduleList =>
-      preloaded<List<MongoBackupSchedule>>('backupSchedule') ?? const [];
+  /// Preloaded backupSchedule; null when not preloaded or absent.
+  MongoBackupSchedule? get backupScheduleLoaded =>
+      preloaded<MongoBackupSchedule>('backupSchedule');
 
   /// Preloaded backups; empty list when not preloaded.
   List<MongoBackup> get backupsList =>
@@ -4328,6 +4706,15 @@ class MongoBackupSchedule with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<MongoBackupSchedule, MongoDatabase> database =
       BelongsToRelation<MongoBackupSchedule, MongoDatabase>(
@@ -4527,6 +4914,15 @@ class MongoBackup with Preloadable {
     completedAt: completedAt ?? this.completedAt,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<MongoBackup, MongoDatabase> database =
       BelongsToRelation<MongoBackup, MongoDatabase>(
@@ -4750,6 +5146,15 @@ class StorageProvider with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<StorageProvider, StorageBucket> buckets =
       HasManyRelation<StorageProvider, StorageBucket>(
         parentTable: 'storage_providers',
@@ -4953,6 +5358,15 @@ class StorageBucket with Preloadable {
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<StorageBucket, StorageProvider> provider =
       BelongsToRelation<StorageBucket, StorageProvider>(
         parentTable: 'storage_buckets',
@@ -5104,6 +5518,15 @@ class AppStorageLink with Preloadable {
     createdAt: createdAt ?? this.createdAt,
   );
 
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
   static final Relation<AppStorageLink, App> app =
       BelongsToRelation<AppStorageLink, App>(
         parentTable: 'app_storage_links',
@@ -5246,6 +5669,15 @@ class MailDomain with Preloadable {
     isActive: isActive ?? this.isActive,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<MailDomain, MailAccount> accounts =
       HasManyRelation<MailDomain, MailAccount>(
@@ -5401,6 +5833,15 @@ class MailAccount with Preloadable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<MailAccount, MailDomain> mailDomain =
       BelongsToRelation<MailAccount, MailDomain>(
@@ -5559,6 +6000,15 @@ class AuditLog with Preloadable {
     data: data ?? this.data,
     createdAt: createdAt ?? this.createdAt,
   );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
 
   static final Relation<AuditLog, User> actor =
       BelongsToRelation<AuditLog, User>(

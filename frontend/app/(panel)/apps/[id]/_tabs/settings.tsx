@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import useSWR from "swr";
 import {
   Button,
@@ -18,61 +18,33 @@ import {
 } from "@carbon/react";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
-import type { App, SshKey } from "@/lib/types";
+import type {
+  App,
+  Application,
+  ApplicationDef,
+  ListResponse,
+  SshKey,
+} from "@/lib/types";
+import { versionItems } from "../../_runtime-versions";
 import "../_app-detail.scss";
-
-const PYTHON_VERSIONS = [
-  "3.13.2", "3.13.1", "3.13.0",
-  "3.12.9", "3.12.8", "3.12.4",
-  "3.11.11", "3.11.9",
-  "3.10.16",
-];
-
-const NODE_VERSIONS = [
-  // Active LTS "Krypton" — recommended default
-  "24.16.0", "24.15.0", "24.14.1",
-  // LTS "Jod" (22.13+ is required by pnpm 11)
-  "22.22.3", "22.20.0", "22.13.0", "22.12.0",
-  // LTS "Iron"
-  "20.20.2", "20.19.6", "20.18.1",
-  // Current line — newest features, shorter support window
-  "26.3.0",
-  // Legacy (EOL upstream) — kept for older apps
-  "18.20.8",
-];
-
-const DART_VERSIONS = [
-  "3.5.4", "3.5.3", "3.4.4", "3.4.3", "3.3.4", "3.3.3", "3.2.6", "3.1.5",
-];
-
-const GO_VERSIONS = [
-  "1.23.4", "1.23.3", "1.23.2", "1.22.10", "1.22.9", "1.22.8", "1.21.13",
-];
-
-const RUST_VERSIONS = [
-  "stable", "1.83.0", "1.82.0", "1.81.0", "1.80.1", "1.79.0", "nightly",
-];
-
-const BUN_VERSIONS = [
-  "1.1.38", "1.1.34", "1.1.30", "1.1.21", "1.1.13", "1.0.36",
-];
 
 /// A pinned toolchain version. The list is long enough that a Carbon Select
 /// beats a wall of radio tiles, and the value is a plain string either way.
+/// Option lists come from the Application catalog via `versionItems`.
 function VersionSelect({
   id,
   labelText,
-  versions,
   value,
   onChange,
   helperText,
+  children,
 }: {
   id: string;
   labelText: string;
-  versions: string[];
   value: string;
   onChange: (value: string) => void;
   helperText?: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Select
@@ -82,9 +54,7 @@ function VersionSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
-      {versions.map((v) => (
-        <SelectItem key={v} value={v} text={v} />
-      ))}
+      {children}
     </Select>
   );
 }
@@ -97,6 +67,13 @@ export function SettingsTab({
   onSaved: () => void;
 }) {
   const sshKeys = useSWR<{ results: SshKey[] }>("/me/security/ssh-keys", fetcher);
+  const applications = useSWR<ListResponse<Application>>("/applications/", fetcher);
+  const catalog = useSWR<ListResponse<ApplicationDef>>(
+    "/applications/catalog",
+    fetcher,
+  );
+  const appsList = applications.data?.results;
+  const catalogList = catalog.data?.results;
 
   const [form, setForm] = useState({
     name: app.name,
@@ -117,12 +94,12 @@ export function SettingsTab({
     gunicornTimeout: app.gunicornTimeout != null ? String(app.gunicornTimeout) : "",
     gunicornBind: app.gunicornBind ?? "",
     gunicornExtraArgs: app.gunicornExtraArgs ?? "",
-    // Runtime version pins
-    nodeVersion: app.nodeVersion ?? NODE_VERSIONS[0],
-    dartVersion: app.dartVersion ?? DART_VERSIONS[0],
-    goVersion: app.goVersion ?? GO_VERSIONS[0],
-    rustVersion: app.rustVersion ?? RUST_VERSIONS[0],
-    bunVersion: app.bunVersion ?? BUN_VERSIONS[0],
+    // Runtime version pins. Option lists come from the Application catalog.
+    nodeVersion: app.nodeVersion ?? "24.16.0",
+    dartVersion: app.dartVersion ?? "3.5.4",
+    goVersion: app.goVersion ?? "1.23.4",
+    rustVersion: app.rustVersion ?? "stable",
+    bunVersion: app.bunVersion ?? "1.1.38",
     // Celery
     celeryApp: app.celeryApp ?? "",
     celeryWorkerCount: app.celeryWorkerCount != null ? String(app.celeryWorkerCount) : "2",
@@ -161,11 +138,11 @@ export function SettingsTab({
       gunicornTimeout: app.gunicornTimeout != null ? String(app.gunicornTimeout) : "",
       gunicornBind: app.gunicornBind ?? "",
       gunicornExtraArgs: app.gunicornExtraArgs ?? "",
-      nodeVersion: app.nodeVersion ?? NODE_VERSIONS[0],
-      dartVersion: app.dartVersion ?? DART_VERSIONS[0],
-      goVersion: app.goVersion ?? GO_VERSIONS[0],
-      rustVersion: app.rustVersion ?? RUST_VERSIONS[0],
-      bunVersion: app.bunVersion ?? BUN_VERSIONS[0],
+      nodeVersion: app.nodeVersion ?? "24.16.0",
+      dartVersion: app.dartVersion ?? "3.5.4",
+      goVersion: app.goVersion ?? "1.23.4",
+      rustVersion: app.rustVersion ?? "stable",
+      bunVersion: app.bunVersion ?? "1.1.38",
       celeryApp: app.celeryApp ?? "",
       celeryWorkerCount: app.celeryWorkerCount != null ? String(app.celeryWorkerCount) : "2",
       celeryConcurrency: app.celeryConcurrency != null ? String(app.celeryConcurrency) : "4",
@@ -270,7 +247,7 @@ export function SettingsTab({
   }
 
   return (
-    <Form onSubmit={save} className="gisila-app__narrow">
+    <Form onSubmit={save}>
       <Stack gap={6}>
         {/* General */}
         <Tile>
@@ -410,10 +387,11 @@ export function SettingsTab({
               <VersionSelect
                 id="s-python-version"
                 labelText="Python version"
-                versions={PYTHON_VERSIONS}
                 value={form.pythonVersion}
                 onChange={(v) => set("pythonVersion", v)}
-              />
+              >
+                {versionItems("python", form.pythonVersion, appsList, catalogList)}
+              </VersionSelect>
 
               <TileGroup
                 name="s-python-mode"
@@ -519,51 +497,56 @@ export function SettingsTab({
                 <VersionSelect
                   id="s-node-version"
                   labelText="Node.js version"
-                  versions={NODE_VERSIONS}
                   value={form.nodeVersion}
                   onChange={(v) => set("nodeVersion", v)}
-                />
+                >
+                  {versionItems("node", form.nodeVersion, appsList, catalogList)}
+                </VersionSelect>
               )}
 
               {isBun && (
                 <VersionSelect
                   id="s-bun-version"
                   labelText="Bun version"
-                  versions={BUN_VERSIONS}
                   value={form.bunVersion}
                   onChange={(v) => set("bunVersion", v)}
-                />
+                >
+                  {versionItems("bun", form.bunVersion, appsList, catalogList)}
+                </VersionSelect>
               )}
 
               {isDart && (
                 <VersionSelect
                   id="s-dart-version"
                   labelText="Dart SDK version"
-                  versions={DART_VERSIONS}
                   value={form.dartVersion}
                   onChange={(v) => set("dartVersion", v)}
-                />
+                >
+                  {versionItems("dart", form.dartVersion, appsList, catalogList)}
+                </VersionSelect>
               )}
 
               {isGo && (
                 <VersionSelect
                   id="s-go-version"
                   labelText="Go version"
-                  versions={GO_VERSIONS}
                   value={form.goVersion}
                   onChange={(v) => set("goVersion", v)}
-                />
+                >
+                  {versionItems("go", form.goVersion, appsList, catalogList)}
+                </VersionSelect>
               )}
 
               {isRust && (
                 <VersionSelect
                   id="s-rust-version"
                   labelText="Rust toolchain"
-                  versions={RUST_VERSIONS}
                   value={form.rustVersion}
                   onChange={(v) => set("rustVersion", v)}
                   helperText="stable is recommended. nightly enables unstable features."
-                />
+                >
+                  {versionItems("rust", form.rustVersion, appsList, catalogList)}
+                </VersionSelect>
               )}
             </Stack>
           </Tile>
@@ -577,10 +560,11 @@ export function SettingsTab({
               <VersionSelect
                 id="s-celery-python-version"
                 labelText="Python version"
-                versions={PYTHON_VERSIONS}
                 value={form.pythonVersion}
                 onChange={(v) => set("pythonVersion", v)}
-              />
+              >
+                {versionItems("python", form.pythonVersion, appsList, catalogList)}
+              </VersionSelect>
 
               <TextInput
                 id="s-celery-app"

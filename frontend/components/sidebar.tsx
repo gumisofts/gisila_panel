@@ -48,7 +48,7 @@ const NAV_SECTIONS = [
   {
     label: "Infrastructure",
     items: [
-      { href: "/applications", label: "Applications", icon: Catalog },
+      { href: "/runtimes", label: "Runtimes", icon: Catalog },
       { href: "/services", label: "Services", icon: Layers },
       { href: "/databases", label: "Databases", icon: DataBase },
       { href: "/storage", label: "Storage", icon: ObjectStorage },

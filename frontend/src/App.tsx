@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useParams } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/lib/toast";
 
@@ -29,6 +29,11 @@ import TokensPage from "../app/(panel)/settings/tokens/page";
 import SshKeysPage from "../app/(panel)/settings/ssh-keys/page";
 import UsersPage from "../app/(panel)/settings/users/page";
 
+function LegacyRuntimeRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/runtimes/${id}`} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -58,8 +63,24 @@ export default function App() {
             <Route path="/apps/new" element={<NewAppPage />} />
             <Route path="/apps/:id" element={<AppDetailPage />} />
             <Route path="/domains" element={<DomainsPage />} />
-            <Route path="/applications" element={<ApplicationsPage />} />
-            <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+            <Route path="/runtimes" element={<ApplicationsPage />} />
+            <Route path="/runtimes/:id" element={<ApplicationDetailPage />} />
+            <Route
+              path="/runtime"
+              element={<Navigate to="/runtimes" replace />}
+            />
+            <Route
+              path="/runtime/:id"
+              element={<LegacyRuntimeRedirect />}
+            />
+            <Route
+              path="/applications"
+              element={<Navigate to="/runtimes" replace />}
+            />
+            <Route
+              path="/applications/:id"
+              element={<LegacyRuntimeRedirect />}
+            />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/:id" element={<ServiceDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />

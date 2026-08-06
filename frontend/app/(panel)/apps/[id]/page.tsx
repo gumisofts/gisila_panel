@@ -137,152 +137,154 @@ export default function AppDetailPage() {
 
   return (
     <Page>
-      <Breadcrumb
-        noTrailingSlash
-        aria-label="Breadcrumb"
-        className="gisila-app__breadcrumb"
-      >
-        <BreadcrumbItem>
-          <CarbonLink as={RouterLink} href="/apps">
-            Apps
-          </CarbonLink>
-        </BreadcrumbItem>
-        <BreadcrumbItem isCurrentPage>{app.name}</BreadcrumbItem>
-      </Breadcrumb>
+      <div className="gisila-app">
+        <Breadcrumb
+          noTrailingSlash
+          aria-label="Breadcrumb"
+          className="gisila-app__breadcrumb"
+        >
+          <BreadcrumbItem>
+            <CarbonLink as={RouterLink} href="/apps">
+              Apps
+            </CarbonLink>
+          </BreadcrumbItem>
+          <BreadcrumbItem isCurrentPage>{app.name}</BreadcrumbItem>
+        </Breadcrumb>
 
-      <PageHeader
-        title={
-          <span className="gisila-app__title">
-            {app.name}
-            <Tag type="cool-gray" size="sm">
-              {app.runtime}
-            </Tag>
-            <Tag type={statusTagType(app.status)} size="sm">
-              {app.status}
-            </Tag>
-          </span>
-        }
-        description={
-          <span className="gisila-app__mono">
-            {app.linuxUser} · 127.0.0.1:{app.internalPort} · deployed{" "}
-            {formatRelative(app.lastDeployedAt)}
-          </span>
-        }
-        actions={
-          <ButtonSet>
-            {canDeploy && (
-              <Button
-                kind="secondary"
-                size="sm"
-                renderIcon={PlayFilled}
-                onClick={() => lifecycle("start")}
-              >
-                Start
-              </Button>
-            )}
-            {canDeploy && (
-              <Button
-                kind="secondary"
-                size="sm"
-                renderIcon={Renew}
-                onClick={() => lifecycle("restart")}
-              >
-                Restart
-              </Button>
-            )}
-            {canStop && (
-              <Button
-                kind="secondary"
-                size="sm"
-                renderIcon={StopFilled}
-                onClick={() => lifecycle("stop")}
-              >
-                Stop
-              </Button>
-            )}
-            {canDeploy && (
-              <Button
-                kind="primary"
-                size="sm"
-                renderIcon={Rocket}
-                onClick={deployNow}
-              >
-                Deploy now
-              </Button>
-            )}
-            {canRemove && (
-              <Button
-                kind="danger"
-                size="sm"
-                renderIcon={TrashCan}
-                onClick={() => setConfirmRemove(true)}
-              >
-                Remove
-              </Button>
-            )}
-            {app.status === "deleting" && (
-              <Button kind="danger" size="sm" renderIcon={TrashCan} disabled>
-                Removing…
-              </Button>
-            )}
-          </ButtonSet>
-        }
-      />
+        <PageHeader
+          title={
+            <span className="gisila-app__title">
+              {app.name}
+              <Tag type="cool-gray" size="sm">
+                {app.runtime}
+              </Tag>
+              <Tag type={statusTagType(app.status)} size="sm">
+                {app.status}
+              </Tag>
+            </span>
+          }
+          description={
+            <span className="gisila-app__mono">
+              {app.linuxUser} · 127.0.0.1:{app.internalPort} · deployed{" "}
+              {formatRelative(app.lastDeployedAt)}
+            </span>
+          }
+          actions={
+            <ButtonSet>
+              {canDeploy && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={PlayFilled}
+                  onClick={() => lifecycle("start")}
+                >
+                  Start
+                </Button>
+              )}
+              {canDeploy && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={Renew}
+                  onClick={() => lifecycle("restart")}
+                >
+                  Restart
+                </Button>
+              )}
+              {canStop && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={StopFilled}
+                  onClick={() => lifecycle("stop")}
+                >
+                  Stop
+                </Button>
+              )}
+              {canDeploy && (
+                <Button
+                  kind="primary"
+                  size="sm"
+                  renderIcon={Rocket}
+                  onClick={deployNow}
+                >
+                  Deploy now
+                </Button>
+              )}
+              {canRemove && (
+                <Button
+                  kind="danger"
+                  size="sm"
+                  renderIcon={TrashCan}
+                  onClick={() => setConfirmRemove(true)}
+                >
+                  Remove
+                </Button>
+              )}
+              {app.status === "deleting" && (
+                <Button kind="danger" size="sm" renderIcon={TrashCan} disabled>
+                  Removing…
+                </Button>
+              )}
+            </ButtonSet>
+          }
+        />
 
-      <Modal
-        open={confirmRemove}
-        danger
-        size="sm"
-        modalHeading={`Remove ${app.name}?`}
-        modalLabel="Danger zone"
-        primaryButtonText={removing ? "Removing…" : "Remove app"}
-        primaryButtonDisabled={removing}
-        secondaryButtonText="Cancel"
-        onRequestClose={() => setConfirmRemove(false)}
-        onRequestSubmit={removeApp}
-      >
-        <p>
-          This permanently deletes the app and all of its resources — the
-          systemd service, AppArmor profile, nginx vhost, TLS certificates, the
-          Linux user, and every file under its work directory. Env vars, domains
-          and deployment history are removed too. This cannot be undone.
-        </p>
-      </Modal>
+        <Modal
+          open={confirmRemove}
+          danger
+          size="sm"
+          modalHeading={`Remove ${app.name}?`}
+          modalLabel="Danger zone"
+          primaryButtonText={removing ? "Removing…" : "Remove app"}
+          primaryButtonDisabled={removing}
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmRemove(false)}
+          onRequestSubmit={removeApp}
+        >
+          <p>
+            This permanently deletes the app and all of its resources — the
+            systemd service, AppArmor profile, nginx vhost, TLS certificates, the
+            Linux user, and every file under its work directory. Env vars, domains
+            and deployment history are removed too. This cannot be undone.
+          </p>
+        </Modal>
 
-      {/* Carbon renders every TabPanel and only hides the inactive ones, so the
-          body of each tab is gated on the selected index. Several tabs open a
-          WebSocket or start polling the moment they mount. */}
-      <Tabs
-        selectedIndex={tabIndex}
-        onChange={({ selectedIndex }) => setTabIndex(selectedIndex)}
-      >
-        <TabList aria-label="App sections" contained>
-          <Tab>Overview</Tab>
-          <Tab>Deployments</Tab>
-          <Tab>Environment</Tab>
-          <Tab>Domains</Tab>
-          <Tab>Logs</Tab>
-          <Tab>Console</Tab>
-          <Tab>Metrics</Tab>
-          <Tab>Storage</Tab>
-          <Tab>Settings</Tab>
-        </TabList>
-        <TabPanels>
-          <TabPanel>{tabIndex === 0 && <OverviewTab app={app} />}</TabPanel>
-          <TabPanel>
-            {tabIndex === 1 && <DeploymentsTab appId={appId} />}
-          </TabPanel>
-          <TabPanel>{tabIndex === 2 && <EnvsTab appId={appId} />}</TabPanel>
-          <TabPanel>{tabIndex === 3 && <DomainsTab appId={appId} />}</TabPanel>
-          <TabPanel>{tabIndex === 4 && <LogsTab appId={appId} />}</TabPanel>
-          <TabPanel>{tabIndex === 5 && <ConsoleTab appId={appId} />}</TabPanel>
-          <TabPanel>{tabIndex === 6 && <MetricsTab appId={appId} />}</TabPanel>
-          <TabPanel>{tabIndex === 7 && <StorageTab appId={appId} />}</TabPanel>
-          <TabPanel>
-            {tabIndex === 8 && <SettingsTab app={app} onSaved={mutate} />}
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
+        {/* Carbon renders every TabPanel and only hides the inactive ones, so the
+            body of each tab is gated on the selected index. Several tabs open a
+            WebSocket or start polling the moment they mount. */}
+        <Tabs
+          selectedIndex={tabIndex}
+          onChange={({ selectedIndex }) => setTabIndex(selectedIndex)}
+        >
+          <TabList aria-label="App sections" contained>
+            <Tab>Overview</Tab>
+            <Tab>Deployments</Tab>
+            <Tab>Environment</Tab>
+            <Tab>Domains</Tab>
+            <Tab>Logs</Tab>
+            <Tab>Console</Tab>
+            <Tab>Metrics</Tab>
+            <Tab>Storage</Tab>
+            <Tab>Settings</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>{tabIndex === 0 && <OverviewTab app={app} />}</TabPanel>
+            <TabPanel>
+              {tabIndex === 1 && <DeploymentsTab appId={appId} />}
+            </TabPanel>
+            <TabPanel>{tabIndex === 2 && <EnvsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 3 && <DomainsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 4 && <LogsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 5 && <ConsoleTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 6 && <MetricsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 7 && <StorageTab appId={appId} />}</TabPanel>
+            <TabPanel>
+              {tabIndex === 8 && <SettingsTab app={app} onSaved={mutate} />}
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </div>
     </Page>
   );
 }

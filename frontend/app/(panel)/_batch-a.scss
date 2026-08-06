@@ -1,10 +1,10 @@
-// Page chrome for the landing, auth and overview screens.
+// Page chrome for the auth and overview screens.
 //
 // Carbon supplies the components; what is left here is the layout it has no
-// opinion about — the marketing hero, the split auth shell, and the type and
-// alignment details inside tiles. Rules that override a Carbon default are
-// qualified with the Carbon class, because this file is bundled ahead of the
-// main stylesheet and would otherwise lose the tie on specificity.
+// opinion about — the split auth shell, and the type and alignment details
+// inside tiles. Rules that override a Carbon default are qualified with the
+// Carbon class, because this file is bundled ahead of the main stylesheet and
+// would otherwise lose the tie on specificity.
 @use '@carbon/react/scss/theme';
 @use '@carbon/react/scss/type';
 @use '@carbon/react/scss/spacing';
@@ -154,7 +154,7 @@
   color: theme.$text-primary;
 }
 
-// ── Wordmark, shared by the landing page and the auth shell ──────────────────
+// ── Wordmark for the auth shell ──────────────────────────────────────────────
 
 .gisila-brand {
   @include type.type-style('heading-compact-02');
@@ -168,113 +168,6 @@
   svg {
     fill: theme.$link-primary;
   }
-}
-
-// ── Landing page ─────────────────────────────────────────────────────────────
-
-.gisila-landing {
-  min-block-size: 100%;
-}
-
-.gisila-landing__shell {
-  max-inline-size: 72rem;
-  margin-inline: auto;
-  padding-inline: spacing.$spacing-05;
-}
-
-.gisila-landing__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: spacing.$spacing-05;
-  padding-block: spacing.$spacing-06;
-}
-
-.gisila-landing__hero {
-  max-inline-size: 46rem;
-  margin-inline: auto;
-  padding-block: spacing.$spacing-09 spacing.$spacing-10;
-  text-align: center;
-}
-
-.gisila-landing__title {
-  @include type.type-style('fluid-heading-05', true);
-
-  margin-block-start: spacing.$spacing-06;
-  color: theme.$text-primary;
-}
-
-.gisila-landing__accent {
-  color: theme.$link-primary;
-}
-
-.gisila-landing__lede {
-  @include type.type-style('body-02');
-
-  margin-block-start: spacing.$spacing-06;
-  color: theme.$text-secondary;
-}
-
-.gisila-landing__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: spacing.$spacing-04;
-  margin-block-start: spacing.$spacing-08;
-}
-
-.gisila-landing__cta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: spacing.$spacing-05;
-  margin-block-start: spacing.$spacing-10;
-
-  @include breakpoint.breakpoint('md') {
-    flex-direction: row;
-    align-items: center;
-  }
-}
-
-.gisila-landing__cta-copy {
-  display: flex;
-  align-items: center;
-  gap: spacing.$spacing-05;
-}
-
-.gisila-landing__cta-title {
-  @include type.type-style('heading-compact-01');
-
-  color: theme.$text-primary;
-}
-
-.gisila-landing__cta-note {
-  @include type.type-style('body-01');
-
-  color: theme.$text-secondary;
-}
-
-.gisila-landing__footer {
-  @include type.type-style('label-01');
-
-  padding-block: spacing.$spacing-10;
-  color: theme.$text-secondary;
-  text-align: center;
-}
-
-.gisila-feature__title {
-  @include type.type-style('heading-compact-01');
-
-  margin-block-start: spacing.$spacing-05;
-  color: theme.$text-primary;
-}
-
-.gisila-feature__body {
-  @include type.type-style('body-01');
-
-  margin-block-start: spacing.$spacing-03;
-  color: theme.$text-secondary;
 }
 
 // ── Auth shell ───────────────────────────────────────────────────────────────

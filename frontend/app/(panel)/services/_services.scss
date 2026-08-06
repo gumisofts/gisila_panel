@@ -1,4 +1,4 @@
-// Presentation for the Applications and Services routes.
+// Presentation for the Runtimes and Services routes.
 //
 // Only Carbon's token modules are loaded here. The root '@carbon/react' entry is
 // emitted once from app/carbon.scss; pulling it in again would duplicate the
@@ -12,11 +12,33 @@
 // Both catalogs show the same shape: an identity block on the left, a status on
 // the right, then tags, an optional error and a footer.
 
+// Content already pads the page; Carbon's grid margin would shove the cards
+// left of the heading and leave a dead strip on the right.
+.cds--css-grid.gisila-catalog__grid {
+  max-inline-size: none;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+.gisila-catalog__grid > [class*='col'] {
+  margin-block-end: spacing.$spacing-05;
+  min-inline-size: 0;
+}
+
+.gisila-catalog__grid .cds--tile,
+.gisila-catalog__grid a.cds--tile {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .gisila-catalog__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: spacing.$spacing-03;
+  min-inline-size: 0;
 }
 
 .gisila-catalog__ident {
@@ -24,6 +46,7 @@
   align-items: center;
   gap: spacing.$spacing-03;
   min-inline-size: 0;
+  flex: 1 1 auto;
 }
 
 .gisila-catalog__icon {
@@ -114,7 +137,9 @@
 .gisila-catalog__summary-label {
   @include type.type-style('label-01');
 
-  flex-shrink: 0;
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
   color: theme.$text-secondary;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -127,6 +152,33 @@
   color: theme.$text-primary;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// Footer actions (Install / Install another version) sit beside the version
+// hint. On a narrow tile the hint must yield and the actions wrap under it
+// instead of escaping the card.
+.gisila-catalog__row > .gisila-versions__actions,
+.gisila-catalog__row > .cds--btn,
+.gisila-catalog__row > .cds--link,
+.gisila-catalog__row > .cds--inline-loading {
+  flex: 0 1 auto;
+  max-inline-size: 100%;
+}
+
+@media (max-width: 41.98rem) {
+  .gisila-catalog__row:has(.gisila-versions__actions),
+  .gisila-catalog__row:has(> .cds--btn) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gisila-catalog__row .gisila-versions__actions {
+    justify-content: flex-start;
+  }
+
+  .gisila-catalog__row .cds--btn {
+    max-inline-size: none;
+  }
 }
 
 // ── Detail pages ─────────────────────────────────────────────────────────────

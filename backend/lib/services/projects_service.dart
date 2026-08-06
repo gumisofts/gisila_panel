@@ -98,6 +98,8 @@ class ProjectsService extends Service {
   }
 
   Future<void> _ensureTeamAccess(User user, int teamId) async {
+    // Match [requireTeamRole]: platform superusers bypass team membership.
+    if (user.isSuperuser == true) return;
     final member = await Query<TeamMember>(TeamMemberTable.metadata)
         .where(TeamMemberTable.teamId.eq(teamId))
         .where(TeamMemberTable.userId.eq(user.id!))

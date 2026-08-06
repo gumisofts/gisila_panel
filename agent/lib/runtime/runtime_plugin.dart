@@ -60,6 +60,17 @@ abstract class RuntimePlugin {
   /// installed.
   Future<void> removeToolchain({String? version});
 
+  /// Whether several versions of this toolchain can be installed side by
+  /// side. Mirrors `ApplicationDef.versioned` on the panel.
+  bool get versioned => false;
+
+  /// Versions of this toolchain currently on disk, as the version manager
+  /// names them. Empty for unversioned runtimes and for hosts where nothing
+  /// is installed. Reported by `gisila-agent runtime status`, which lets the
+  /// panel reconcile against reality rather than only against what it
+  /// installed itself.
+  Future<List<String>> installedVersions() async => const [];
+
   /// Fetch dependencies and, for [DeployMode.buildExecute], compile/package
   /// the app. For [DeployMode.directRun] this only prepares the source
   /// in-place (installs dependencies) — no compile step.

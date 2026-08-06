@@ -7,7 +7,7 @@ export default function AuthLayout() {
   return (
     <div className="gisila-auth">
       <aside className="gisila-auth__aside">
-        <RouterLink href="/" className="gisila-brand">
+        <RouterLink href="/login" className="gisila-brand">
           <Rocket size={20} />
           <span>gisila panel</span>
         </RouterLink>

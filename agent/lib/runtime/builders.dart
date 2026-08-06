@@ -1550,6 +1550,61 @@ class Builders {
       'rm', ['-rf', version != null ? '$_bunBase/$version' : _bunBase],
       requireSuccess: false);
 
+  // ── Installed-version discovery ──────────────────────────────────────────
+  //
+  // What is actually on disk, which is not always what the panel believes:
+  // deploys install toolchains lazily, so a host can be running versions the
+  // panel never installed itself.
+
+  /// Immediate subdirectory names of [path], or an empty list when it does
+  /// not exist. Every version manager here lays its versions out this way.
+  static List<String> _versionDirs(String path, {String stripPrefix = ''}) {
+    final dir = Directory(path);
+    if (!dir.existsSync()) return const [];
+    final names = <String>[];
+    for (final entry in dir.listSync()) {
+      if (entry is! Directory) continue;
+      var name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (stripPrefix.isNotEmpty && name.startsWith(stripPrefix)) {
+        name = name.substring(stripPrefix.length);
+      }
+      names.add(name);
+    }
+    names.sort();
+    return names;
+  }
+
+  static List<String> listPythonVersions({String pyenvRoot = '/opt/pyenv'}) =>
+      _versionDirs('$pyenvRoot/versions');
+
+  static List<String> listNodeVersions() =>
+      _versionDirs('$_fnmDir/node-versions', stripPrefix: 'v');
+
+  static List<String> listDartVersions() => _versionDirs(_dartBase);
+
+  static List<String> listGoVersions() => _versionDirs(_goBase);
+
+  static List<String> listBunVersions() => _versionDirs(_bunBase);
+
+  /// rustup keeps toolchains in its own store rather than a plain directory
+  /// tree, and names them with a target triple suffix ("stable-x86_64-unknown-
+  /// linux-gnu") that is dropped here so the names round-trip with what the
+  /// panel asked to install.
+  static Future<List<String>> listRustToolchains() async {
+    final result = await Process.run('rustup', ['toolchain', 'list']);
+    if (result.exitCode != 0) return const [];
+    final names = <String>[];
+    for (final rawLine in (result.stdout as String? ?? '').split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty || line == 'no installed toolchains') continue;
+      // Entries look like "stable-x86_64-unknown-linux-gnu (default)".
+      final name = line.split(' ').first;
+      final triple = name.indexOf('-x86_64-');
+      names.add(triple > 0 ? name.substring(0, triple) : name);
+    }
+    return names;
+  }
+
   // ── Shared helpers ────────────────────────────────────────────────────────
 
   static Future<void> _runAsUser(String user, String cwd, String command) =>

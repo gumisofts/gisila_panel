@@ -20,6 +20,17 @@ class AppsService extends Service {
   Database get _db => db<Database>();
 
   Future<List<App>> listForUser(User user, {int? projectId}) async {
+    // Platform superusers bypass team membership for list reads — same
+    // privilege model as [requireTeamRole]. Without this, Application
+    // Management UI that filters `/apps/` client-side by `applicationId`
+    // stays empty for the operator even when apps in other teams pin the
+    // runtime (and correctly 409 version removals via a direct DB query).
+    if (user.isSuperuser == true) {
+      var q = Query<App>(AppTable.metadata);
+      if (projectId != null) q = q.where(AppTable.projectId.eq(projectId));
+      return q.all(_db.context());
+    }
+
     final projectsSvc = ProjectsService()..attach(ctx);
     final projects = await projectsSvc.listForUser(user);
     final projectIds = projects.map((p) => p.id).whereType<int>().toList();

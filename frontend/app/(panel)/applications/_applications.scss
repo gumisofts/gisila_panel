@@ -1,0 +1,42 @@
+// Presentation for the per-version controls on the Runtimes routes.
+//
+// Only Carbon's token modules are loaded here. The root '@carbon/react' entry is
+// emitted once from app/carbon.scss; pulling it in again would duplicate the
+// whole stylesheet into this route's bundle.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+
+// Tags carry no native tooltip of their own, so the wrapper holds the title
+// that explains which version is the default.
+.gisila-versions__tag {
+  display: inline-flex;
+}
+
+.gisila-versions__version {
+  @include type.type-style('code-02');
+
+  color: theme.$text-primary;
+}
+
+.gisila-versions__error {
+  @include type.type-style('label-01');
+
+  display: block;
+  color: theme.$text-error;
+}
+
+.gisila-versions__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: spacing.$spacing-02;
+  min-inline-size: 0;
+}
+
+.gisila-versions__muted {
+  @include type.type-style('body-01');
+
+  color: theme.$text-secondary;
+}

@@ -20,7 +20,7 @@ Redis lists used as work queues:
 | `gisila:queue:lifecycle` | `LifecycleService.{start,stop,restart}` | worker | `{appId, action}` |
 | `gisila:queue:vhosts` | `DomainsService` | worker | `{appId, reason}` |
 | `gisila:queue:ssl` | `DomainsService.issueCert` | worker | `{appId, domainId, hostname}` |
-| `gisila:queue:applications` | `ApplicationService.{install,remove}` | `ApplicationWorker` | `{action, applicationId, version?}` |
+| `gisila:queue:applications` | `ApplicationService.{install,remove}` | `ApplicationWorker` | `{action, applicationId, version?, applicationVersionId?, dropFamily?}` |
 
 Redis pubsub channels for live logs:
 
@@ -57,9 +57,9 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 | `issue-cert` | `certbot --nginx -d <host>` + reload nginx | ✓ (skip if cert exists & valid) |
 | `start` / `stop` / `restart` | `systemctl <action> gisila-<user>.service` | ✓ |
 | `uninstall` | Stop + disable unit, drop unit / profile / vhost | ✓ |
-| `runtime install --key <k> [--version <v>]` | Dispatch to `RuntimePlugin.installToolchain()` (pyenv/fnm/SDK setup) | ✓ |
-| `runtime remove --key <k>` | Dispatch to `RuntimePlugin.removeToolchain()` | ✓ |
-| `runtime status --key <k>` | Report whether the plugin's toolchain is present | ✓ |
+| `runtime install --key <k> [--version <v>]` | Dispatch to `RuntimePlugin.installToolchain()` (pyenv/fnm/SDK setup). Versioned runtimes reject a missing `--version` rather than succeeding without installing anything | ✓ |
+| `runtime remove --key <k> [--version <v>]` | Dispatch to `RuntimePlugin.removeToolchain()`. With `--version`, removes only that one | ✓ |
+| `runtime status --key <k>` | Report `{versioned, versions[], installed}` — the versions actually on disk, not what the panel believes | ✓ |
 
 ## Runtime plugin table
 
@@ -88,6 +88,24 @@ Modes are declared per-Application (`deploy_modes`) and enforced per-App
 modes); `build_execute` compiles/packages before running the artifact,
 `direct_run` runs the interpreter/pre-built binary against the source in
 place, and `static_publish` skips the process entirely.
+
+### Multiple versions side by side
+
+`dart`, `go`, `rust`, `node`, `bun` and `python` are **versioned**: several
+toolchain versions can be installed at once, so one app can pin Python 3.11
+while another runs 3.13. Each installed version is an `ApplicationVersion`
+row hanging off the `Application`, and one of them is marked default for
+apps that don't pin a version themselves. `celery` is not versioned in its
+own right — it runs on whichever Python its app pins — and `zig`, `static`
+and `binary` have no toolchain to install.
+
+On disk this was always possible: pyenv, fnm and rustup are version managers,
+and Dart/Go/Bun install under a per-version prefix
+(`/opt/dart-versions/<v>`, …). What changed is that the panel now models it
+instead of assuming one version per runtime.
+
+Removing a version is refused while any app still pins it. Removing the
+default promotes another installed version in its place.
 
 The build is always run as the **app's** Linux user via `runuser -u`, so
 even a compromised build step can only touch the app's own work-dir.

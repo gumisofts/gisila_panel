@@ -31,6 +31,7 @@ import { api, fetcher } from "@/lib/api";
 import type {
   App,
   Application,
+  ApplicationDef,
   DeployMode,
   ListResponse,
   Project,
@@ -38,46 +39,8 @@ import type {
   Team,
 } from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
+import { versionItems } from "../_runtime-versions";
 import "../_apps.scss";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-// Common CPython releases — the panel installs any of these via pyenv.
-const PYTHON_VERSIONS = [
-  "3.13.2", "3.13.1", "3.13.0",
-  "3.12.9", "3.12.8", "3.12.7", "3.12.4",
-  "3.11.11","3.11.10","3.11.9",
-  "3.10.16","3.10.15",
-];
-
-const NODE_VERSIONS = [
-  // Active LTS "Krypton" — recommended default
-  "24.16.0", "24.15.0", "24.14.1",
-  // LTS "Jod" (22.13+ is required by pnpm 11)
-  "22.22.3", "22.20.0", "22.13.0", "22.12.0",
-  // LTS "Iron"
-  "20.20.2", "20.19.6", "20.18.1",
-  // Current line — newest features, shorter support window
-  "26.3.0",
-  // Legacy (EOL upstream) — kept for older apps
-  "18.20.8",
-];
-
-const DART_VERSIONS = [
-  "3.5.4", "3.5.3", "3.4.4", "3.4.3", "3.3.4", "3.3.3", "3.2.6", "3.1.5",
-];
-
-const GO_VERSIONS = [
-  "1.23.4", "1.23.3", "1.23.2", "1.22.10", "1.22.9", "1.22.8", "1.21.13",
-];
-
-const RUST_VERSIONS = [
-  "stable", "1.83.0", "1.82.0", "1.81.0", "1.80.1", "1.79.0", "nightly",
-];
-
-const BUN_VERSIONS = [
-  "1.1.38", "1.1.34", "1.1.30", "1.1.21", "1.1.13", "1.0.36",
-];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -87,9 +50,15 @@ export default function NewAppPage() {
   const teams = useSWR<ListResponse<Team>>("/teams/", fetcher);
   const sshKeys = useSWR<{ results: SshKey[] }>("/me/security/ssh-keys", fetcher);
   const applications = useSWR<ListResponse<Application>>("/applications/", fetcher);
+  const catalog = useSWR<ListResponse<ApplicationDef>>(
+    "/applications/catalog",
+    fetcher,
+  );
   const installedApps = (applications.data?.results ?? []).filter(
     (a) => a.status === "installed",
   );
+  const appsList = applications.data?.results;
+  const catalogList = catalog.data?.results;
 
   // Quick project-create dialog state
   const [projDialog, setProjDialog] = useState(false);
@@ -119,12 +88,13 @@ export default function NewAppPage() {
     gunicornTimeout: "",
     gunicornBind: "",
     gunicornExtraArgs: "",
-    // Runtime version pins
-    nodeVersion: NODE_VERSIONS[0],
-    dartVersion: DART_VERSIONS[0],
-    goVersion: GO_VERSIONS[0],
-    rustVersion: RUST_VERSIONS[0],
-    bunVersion: BUN_VERSIONS[0],
+    // Runtime version pins. These are only the initial selection — the option
+    // lists themselves come from the Application catalog.
+    nodeVersion: "24.16.0",
+    dartVersion: "3.5.4",
+    goVersion: "1.23.4",
+    rustVersion: "stable",
+    bunVersion: "1.1.38",
     // Celery-specific
     celeryApp: "",
     celeryWorkerCount: "2",
@@ -321,17 +291,17 @@ export default function NewAppPage() {
                 onChange={(e) => set("name", e.target.value)}
               />
               {installedApps.length === 0 ? (
-                <FormGroup legendText="Application">
+                <FormGroup legendText="Runtime">
                   <p className="gisila-app-form__hint">
-                    No Applications installed yet.{" "}
-                    <CarbonLink href="/applications">Install one</CarbonLink>{" "}
-                    from Application Management first.
+                    No runtimes installed yet.{" "}
+                    <CarbonLink href="/runtimes">Install one</CarbonLink> from
+                    Runtimes first.
                   </p>
                 </FormGroup>
               ) : (
                 <RadioButtonGroup
                   name="application"
-                  legendText="Application"
+                  legendText="Runtime"
                   orientation="vertical"
                   valueSelected={form.applicationId}
                   onChange={(selection) => {
@@ -422,9 +392,7 @@ export default function NewAppPage() {
                       </>
                     }
                   >
-                    {PYTHON_VERSIONS.map((v) => (
-                      <SelectItem key={v} value={v} text={v} />
-                    ))}
+                    {versionItems("python", form.pythonVersion, appsList, catalogList)}
                   </Select>
 
                   {/* Server mode */}
@@ -565,9 +533,7 @@ export default function NewAppPage() {
                       value={form.nodeVersion}
                       onChange={(e) => set("nodeVersion", e.target.value)}
                     >
-                      {NODE_VERSIONS.map((v) => (
-                        <SelectItem key={v} value={v} text={v} />
-                      ))}
+                      {versionItems("node", form.nodeVersion, appsList, catalogList)}
                     </Select>
                   )}
 
@@ -578,9 +544,7 @@ export default function NewAppPage() {
                       value={form.bunVersion}
                       onChange={(e) => set("bunVersion", e.target.value)}
                     >
-                      {BUN_VERSIONS.map((v) => (
-                        <SelectItem key={v} value={v} text={v} />
-                      ))}
+                      {versionItems("bun", form.bunVersion, appsList, catalogList)}
                     </Select>
                   )}
 
@@ -591,9 +555,7 @@ export default function NewAppPage() {
                       value={form.dartVersion}
                       onChange={(e) => set("dartVersion", e.target.value)}
                     >
-                      {DART_VERSIONS.map((v) => (
-                        <SelectItem key={v} value={v} text={v} />
-                      ))}
+                      {versionItems("dart", form.dartVersion, appsList, catalogList)}
                     </Select>
                   )}
 
@@ -604,9 +566,7 @@ export default function NewAppPage() {
                       value={form.goVersion}
                       onChange={(e) => set("goVersion", e.target.value)}
                     >
-                      {GO_VERSIONS.map((v) => (
-                        <SelectItem key={v} value={v} text={v} />
-                      ))}
+                      {versionItems("go", form.goVersion, appsList, catalogList)}
                     </Select>
                   )}
 
@@ -625,9 +585,7 @@ export default function NewAppPage() {
                         </>
                       }
                     >
-                      {RUST_VERSIONS.map((v) => (
-                        <SelectItem key={v} value={v} text={v} />
-                      ))}
+                      {versionItems("rust", form.rustVersion, appsList, catalogList)}
                     </Select>
                   )}
                 </Stack>
@@ -652,9 +610,7 @@ export default function NewAppPage() {
                     value={form.pythonVersion}
                     onChange={(e) => set("pythonVersion", e.target.value)}
                   >
-                    {PYTHON_VERSIONS.map((v) => (
-                      <SelectItem key={v} value={v} text={v} />
-                    ))}
+                    {versionItems("python", form.pythonVersion, appsList, catalogList)}
                   </Select>
 
                   {/* Celery app path */}

@@ -160,7 +160,7 @@ export default function ServicesPage() {
             No services installed yet — pick one from the catalog below.
           </Tile>
         ) : (
-          <Grid fullWidth withRowGap>
+          <Grid fullWidth withRowGap className="gisila-catalog__grid">
             {installed.map((svc) => (
               <Column key={svc.id} sm={4} md={4} lg={8}>
                 <InstalledTile
@@ -174,7 +174,7 @@ export default function ServicesPage() {
       </PageSection>
 
       <PageSection title="Available services">
-        <Grid fullWidth withRowGap>
+        <Grid fullWidth withRowGap className="gisila-catalog__grid">
           {catalog.map((def) => (
             <Column key={def.type} sm={4} md={4} lg={8}>
               <CatalogTile def={def} installed={installedByType.get(def.type)} />
@@ -355,7 +355,7 @@ function CatalogTile({
 
 function SkeletonTiles() {
   return (
-    <Grid fullWidth withRowGap>
+    <Grid fullWidth withRowGap className="gisila-catalog__grid">
       {[0, 1, 2].map((i) => (
         <Column key={i} sm={4} md={4} lg={8}>
           <Tile>

@@ -49,6 +49,8 @@ class ApplicationDef {
     required this.description,
     required this.deployModes,
     required this.defaultDeployMode,
+    this.versioned = false,
+    this.availableVersions = const <String>[],
     this.defaultVersion,
     this.defaultBuildCommand,
     this.defaultStartCommand,
@@ -68,6 +70,24 @@ class ApplicationDef {
   /// Which of [deployModes] new Apps get unless the admin/user overrides it.
   final DeployMode defaultDeployMode;
 
+  /// Whether several versions of this Application can be installed side by
+  /// side. True where a version manager (pyenv, fnm, rustup) or per-version
+  /// install prefix makes that possible; false for stacks that either have no
+  /// toolchain to install at all (static, binary) or borrow another's
+  /// (celery runs on whichever Python its app pins).
+  ///
+  /// Versioned Applications keep one [ApplicationVersion] row per installed
+  /// version; unversioned ones are tracked by the [Application] row alone.
+  final bool versioned;
+
+  /// Curated list of installable versions, newest first. Offered in the
+  /// install dialog and the new-app wizard so both read the same list.
+  ///
+  /// Deliberately static: resolving live from `pyenv install --list` and
+  /// friends would mean a network round trip through the agent on every page
+  /// load, and these only need refreshing when a new release lands.
+  final List<String> availableVersions;
+
   final String? defaultVersion;
   final String? defaultBuildCommand;
   final String? defaultStartCommand;
@@ -83,6 +103,8 @@ class ApplicationDef {
         'description': description,
         'deployModes': deployModes.map((m) => m.value).toList(),
         'defaultDeployMode': defaultDeployMode.value,
+        'versioned': versioned,
+        'availableVersions': availableVersions,
         if (defaultVersion != null) 'defaultVersion': defaultVersion,
         if (defaultBuildCommand != null)
           'defaultBuildCommand': defaultBuildCommand,
@@ -95,6 +117,42 @@ class ApplicationDef {
 
 // ─────────────────────────── Catalog entries ─────────────────────────────────
 
+/// CPython releases installable through pyenv, newest first.
+const List<String> _kPythonVersions = [
+  '3.13.2', '3.13.1', '3.13.0', //
+  '3.12.9', '3.12.8', '3.12.7', '3.12.4', //
+  '3.11.11', '3.11.10', '3.11.9', //
+  '3.10.16', '3.10.15', //
+];
+
+/// Node releases installable through fnm. Active LTS first, then older LTS
+/// lines, the current line, and finally releases kept only for legacy apps.
+const List<String> _kNodeVersions = [
+  '24.16.0', '24.15.0', '24.14.1', // LTS "Krypton"
+  '22.22.3', '22.20.0', '22.13.0', '22.12.0', // LTS "Jod"
+  '20.20.2', '20.19.6', '20.18.1', // LTS "Iron"
+  '26.3.0', // current line — shorter support window
+  '18.20.8', // EOL upstream, kept for older apps
+];
+
+const List<String> _kDartVersions = [
+  '3.5.4', '3.5.3', '3.4.4', '3.4.3', '3.3.4', '3.3.3', '3.2.6', '3.1.5', //
+];
+
+const List<String> _kGoVersions = [
+  '1.23.4', '1.23.3', '1.23.2', '1.22.10', '1.22.9', '1.22.8', '1.21.13', //
+];
+
+/// rustup toolchains — the rolling channel names are versions in their own
+/// right here, and install side by side with the pinned releases.
+const List<String> _kRustVersions = [
+  'stable', '1.83.0', '1.82.0', '1.81.0', '1.80.1', '1.79.0', 'nightly', //
+];
+
+const List<String> _kBunVersions = [
+  '1.1.38', '1.1.34', '1.1.30', '1.1.21', '1.1.13', '1.0.36', //
+];
+
 const List<ApplicationDef> kApplicationCatalog = [
   ApplicationDef(
     key: 'dart',
@@ -103,6 +161,9 @@ const List<ApplicationDef> kApplicationCatalog = [
         '`dart compile exe`. Fast startup, no runtime dependency on the host.',
     deployModes: [DeployMode.buildExecute],
     defaultDeployMode: DeployMode.buildExecute,
+    versioned: true,
+    availableVersions: _kDartVersions,
+    defaultVersion: '3.5.4',
     defaultBuildCommand:
         'dart pub get && dart compile exe bin/server.dart -o build/app',
     versionHint: 'e.g. 3.4.4',
@@ -114,6 +175,9 @@ const List<ApplicationDef> kApplicationCatalog = [
     description: 'Compiles to a single static binary with `go build`.',
     deployModes: [DeployMode.buildExecute],
     defaultDeployMode: DeployMode.buildExecute,
+    versioned: true,
+    availableVersions: _kGoVersions,
+    defaultVersion: '1.23.4',
     defaultBuildCommand: 'go build -o build/app ./...',
     versionHint: 'e.g. 1.22.9',
     docsUrl: 'https://go.dev/',
@@ -124,6 +188,9 @@ const List<ApplicationDef> kApplicationCatalog = [
     description: 'Compiles a release binary with `cargo build --release`.',
     deployModes: [DeployMode.buildExecute],
     defaultDeployMode: DeployMode.buildExecute,
+    versioned: true,
+    availableVersions: _kRustVersions,
+    defaultVersion: 'stable',
     defaultBuildCommand: 'cargo build --release',
     versionHint: 'e.g. stable | 1.81.0 | nightly',
     docsUrl: 'https://www.rust-lang.org/',
@@ -144,6 +211,9 @@ const List<ApplicationDef> kApplicationCatalog = [
         'build step (bundling/transpiling) or running the source directly.',
     deployModes: [DeployMode.buildExecute, DeployMode.directRun],
     defaultDeployMode: DeployMode.buildExecute,
+    versioned: true,
+    availableVersions: _kBunVersions,
+    defaultVersion: '1.1.38',
     defaultBuildCommand: 'bun install',
     defaultStartCommand: 'bun run start',
     versionHint: 'e.g. 1.1.38',
@@ -157,6 +227,9 @@ const List<ApplicationDef> kApplicationCatalog = [
         'directly for plain JS apps.',
     deployModes: [DeployMode.buildExecute, DeployMode.directRun],
     defaultDeployMode: DeployMode.buildExecute,
+    versioned: true,
+    availableVersions: _kNodeVersions,
+    defaultVersion: '22.20.0',
     defaultBuildCommand: 'npm ci',
     defaultStartCommand: 'node dist/index.js',
     versionHint: 'e.g. 20.18.0 | 22.11.0',
@@ -170,6 +243,9 @@ const List<ApplicationDef> kApplicationCatalog = [
         'No compile step.',
     deployModes: [DeployMode.directRun],
     defaultDeployMode: DeployMode.directRun,
+    versioned: true,
+    availableVersions: _kPythonVersions,
+    defaultVersion: '3.12.8',
     defaultBuildCommand:
         'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt',
     versionHint: 'pyenv version string, e.g. 3.12.4',

@@ -239,6 +239,51 @@ Application:
       type: timestamp
       is_null: true
 
+# One installed version of an Application. Versioned Applications (Python via
+# pyenv, Node via fnm, Rust via rustup, and Dart/Go/Bun via per-version install
+# prefixes) can have several of these installed side by side, so an app pinned
+# to Python 3.11 and one pinned to 3.13 can run on the same host.
+#
+# Unversioned Applications (static, binary, zig, celery) have no rows here —
+# their install state lives on the Application row alone.
+ApplicationVersion:
+  columns:
+    application:
+      type: foreign_key
+      references: Application
+      is_null: false
+      reverse_name: versions
+      on_delete: cascade
+    # Toolchain version as the version manager names it: a pyenv/fnm/Dart/Go/Bun
+    # release string, or a rustup channel such as `stable`. Unique per
+    # Application — see the UNIQUE constraint in the migration.
+    version:
+      type: varchar
+      is_null: false
+      is_index: true
+    # pending | installing | installed | removing | failed
+    status:
+      type: varchar
+      default: pending
+    # The version new Apps get when they don't pin one themselves. Exactly one
+    # row per Application should carry this; the Application's default_version
+    # column is kept in sync with it for cheap denormalized reads.
+    is_default:
+      type: boolean
+      default: false
+    error_message:
+      type: text
+      is_null: true
+    installed_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
 App:
   columns:
     project:

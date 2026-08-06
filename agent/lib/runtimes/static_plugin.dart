@@ -5,7 +5,7 @@ import 'package:gisila_agent/runtime/runtime_plugin.dart';
 /// Static sites have no process unit — nginx serves the published files
 /// directly. No toolchain of its own; an optional Node build step is handled
 /// by [Builders.buildStatic] delegating to [Builders.buildNode].
-class StaticPlugin implements RuntimePlugin {
+class StaticPlugin extends RuntimePlugin {
   @override
   String get key => 'static';
 

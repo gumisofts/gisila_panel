@@ -62,11 +62,15 @@
 
 .gisila-app-tile__meta {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: spacing.$spacing-03;
   margin-block-start: spacing.$spacing-05;
   padding-block-start: spacing.$spacing-04;
   border-block-start: 1px solid theme.$border-subtle-01;
+}
+
+.gisila-app-tile__meta > * {
+  min-inline-size: 0;
 }
 
 .gisila-app-tile__meta-label {
@@ -80,6 +84,7 @@
 .gisila-app-tile__meta-value {
   @include type.type-style('body-compact-01');
 
+  overflow-wrap: anywhere;
   color: theme.$text-primary;
 }
 

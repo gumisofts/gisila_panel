@@ -9,6 +9,15 @@ class InstallApplicationForm extends Form {
   List<FormField<Object?>> collectFields() => [key, version];
 }
 
+/// `POST /applications/{id}/versions` — install an additional toolchain
+/// version of an already-installed Application, alongside the existing ones.
+class InstallApplicationVersionForm extends Form {
+  final version = StringField(name: 'version', required: true, maxLength: 64);
+
+  @override
+  List<FormField<Object?>> collectFields() => [version];
+}
+
 /// `PATCH /applications/{id}` — update an Application's deployment defaults.
 class UpdateApplicationForm extends Form {
   final defaultVersion = StringField(name: 'defaultVersion');
