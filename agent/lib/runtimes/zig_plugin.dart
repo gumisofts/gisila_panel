@@ -4,7 +4,7 @@ import 'package:gisila_agent/runtime/runtime_plugin.dart';
 /// Zig has no dedicated toolchain manager or build step today — build/start
 /// are entirely as specified by the app's own commands (preserves the
 /// pre-refactor behaviour of the `case 'zig':` no-op in the build switch).
-class ZigPlugin implements RuntimePlugin {
+class ZigPlugin extends RuntimePlugin {
   @override
   String get key => 'zig';
 

@@ -2,12 +2,15 @@ import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/deploy_mode.dart';
 import 'package:gisila_agent/runtime/runtime_plugin.dart';
 
-class RustPlugin implements RuntimePlugin {
+class RustPlugin extends RuntimePlugin {
   @override
   String get key => 'rust';
 
   @override
   List<DeployMode> get supportedModes => const [DeployMode.buildExecute];
+
+  @override
+  bool get versioned => true;
 
   @override
   Future<void> installToolchain({String? version}) =>
@@ -16,6 +19,9 @@ class RustPlugin implements RuntimePlugin {
   @override
   Future<void> removeToolchain({String? version}) =>
       Builders.removeRustToolchain(version: version);
+
+  @override
+  Future<List<String>> installedVersions() => Builders.listRustToolchains();
 
   @override
   Future<void> build(RuntimeBuildContext ctx) => Builders.buildRust(

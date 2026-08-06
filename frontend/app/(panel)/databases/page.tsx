@@ -1,11 +1,13 @@
 "use client";
 
 import useSWR from "swr";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tab, TabList, TabPanel, TabPanels, Tabs } from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import type { DatabaseEngineDescriptor, ListResponse } from "@/lib/types";
 import { PostgresInstances } from "./_components/postgres-instances";
 import { MongoInstances } from "./_components/mongo-instances";
+import "./_databases.scss";
 
 // Each engine key maps to the component that renders its instance list. Adding
 // an engine in the backend registry + a component here is all the UI needs.
@@ -32,29 +34,24 @@ export default function DatabasesPage() {
         ] as DatabaseEngineDescriptor[]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-semibold">Databases</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Manage your database engines. Pick an engine below to install and
-          administer instances.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Databases"
+        description="Manage your database engines. Pick an engine below to install and administer instances."
+      />
 
-      <Tabs defaultValue={tabs[0]?.key ?? "postgres"}>
-        <TabsList>
+      <Tabs>
+        <TabList aria-label="Database engines">
           {tabs.map((e) => (
-            <TabsTrigger key={e.key} value={e.key}>
-              {e.label}
-            </TabsTrigger>
+            <Tab key={e.key}>{e.label}</Tab>
           ))}
-        </TabsList>
-        {tabs.map((e) => (
-          <TabsContent key={e.key} value={e.key}>
-            {ENGINE_VIEWS[e.key]?.()}
-          </TabsContent>
-        ))}
+        </TabList>
+        <TabPanels>
+          {tabs.map((e) => (
+            <TabPanel key={e.key}>{ENGINE_VIEWS[e.key]?.()}</TabPanel>
+          ))}
+        </TabPanels>
       </Tabs>
-    </div>
+    </Page>
   );
 }

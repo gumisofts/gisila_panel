@@ -1,42 +1,53 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/compat/link";
+import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";
 import {
-  Blocks,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Plus,
-  ExternalLink,
+  Add,
+  Application as ApplicationIcon,
   ArrowRight,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+  Launch,
+} from "@carbon/icons-react";
+import {
+  Button,
+  ClickableTile,
+  Column,
+  Grid,
+  InlineLoading,
+  Link as CarbonLink,
+  Modal,
+  Select,
+  SelectItem,
+  SkeletonText,
+  Stack,
+  Tag,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import type {
   Application,
   ApplicationDef,
+  ApplicationVersion,
   DeployMode,
   ListResponse,
 } from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import "../services/_services.scss";
+import "./_applications.scss";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_ICON: Record<string, React.ReactNode> = {
-  installed: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />,
-  failed: <AlertCircle className="h-3.5 w-3.5 text-red-500" />,
-  installing: <Loader className="h-3.5 w-3.5 animate-spin text-blue-500" />,
-  updating: <Loader className="h-3.5 w-3.5 animate-spin text-blue-500" />,
-  removing: <Loader className="h-3.5 w-3.5 animate-spin text-zinc-400" />,
-  pending: <Loader className="h-3.5 w-3.5 animate-spin text-zinc-400" />,
-};
+/// ClickableTile renders Carbon's polymorphic Link and forwards unknown props to
+/// it, but its own props are typed against an anchor, so `as` — how the tile is
+/// handed to react-router instead of doing a document navigation — is declared
+/// here.
+const RouterTile = ClickableTile as React.ComponentType<
+  React.ComponentProps<typeof ClickableTile> & { as?: React.ElementType }
+>;
 
 const STATUS_LABEL: Record<string, string> = {
   installed: "Installed",
@@ -47,6 +58,54 @@ const STATUS_LABEL: Record<string, string> = {
   pending: "Pending…",
   disabled: "Disabled",
 };
+
+/// Statuses the backend is still working through — these poll and show a spinner
+/// rather than a settled tag.
+const IN_PROGRESS = ["installing", "updating", "removing", "pending"];
+
+const STATUS_TAG: Record<string, "green" | "red" | "gray"> = {
+  installed: "green",
+  failed: "red",
+  disabled: "gray",
+};
+
+function StatusIndicator({ status }: { status: string }) {
+  const label = STATUS_LABEL[status] ?? status;
+  if (IN_PROGRESS.includes(status)) {
+    return <InlineLoading status="active" description={label} />;
+  }
+  return (
+    <Tag type={STATUS_TAG[status] ?? "cool-gray"} size="sm">
+      {label}
+    </Tag>
+  );
+}
+
+/// One installed toolchain version of a versioned Application. Settled versions
+/// are a tag — blue for the one new apps get, red when the install failed —
+/// while a version the host is still working on shows the spinner instead.
+function VersionTag({ version: v }: { version: ApplicationVersion }) {
+  const label = STATUS_LABEL[v.status] ?? v.status;
+
+  if (IN_PROGRESS.includes(v.status)) {
+    return <InlineLoading status="active" description={`${v.version} · ${label}`} />;
+  }
+
+  const failed = v.status === "failed";
+  const title = failed
+    ? v.errorMessage ?? `${v.version} failed to install`
+    : v.isDefault
+      ? `${v.version} — the version new apps get`
+      : `${v.version} — installed`;
+
+  return (
+    <span className="gisila-versions__tag" title={title}>
+      <Tag as="span" size="sm" type={failed ? "red" : v.isDefault ? "blue" : "outline"}>
+        {v.version}
+      </Tag>
+    </span>
+  );
+}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -67,131 +126,102 @@ export default function ApplicationsPage() {
   const installedByKey = new Map(installed.map((a) => [a.key, a]));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6">
-      {/* ── Installed ────────────────────────────────────────────────────────── */}
-      <section>
-        <header className="mb-4">
-          <h1 className="text-xl font-semibold">Applications</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Runtime &amp; language stacks (Python, Dart, Node, …) managed
-            independently of the panel. Apps pick one of these as their
-            deployment target.
-          </p>
-        </header>
+    <Page>
+      <PageHeader
+        title="Runtimes"
+        description="Language & runtime stacks (Python, Dart, Node, …) managed independently of the panel. Apps pick one of these as their deployment target."
+      />
 
+      <PageSection>
         {isLoading ? (
-          <SkeletonRow />
+          <SkeletonTiles />
         ) : installed.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No Applications installed yet — pick one from the catalog below.
-            </CardContent>
-          </Card>
+          <Tile className="gisila-empty">
+            No runtimes installed yet — pick one from the catalog below.
+          </Tile>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <Grid fullWidth withRowGap className="gisila-catalog__grid">
             {installed.map((app) => (
-              <InstalledCard key={app.id} app={app} />
+              <Column key={app.id} sm={4} md={4} lg={8}>
+                <InstalledTile app={app} />
+              </Column>
             ))}
-          </div>
+          </Grid>
         )}
-      </section>
+      </PageSection>
 
-      {/* ── Catalog ──────────────────────────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground/80">
-          <Blocks className="h-4 w-4 text-muted-foreground" />
-          Available Applications
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+      <PageSection title="Available runtimes">
+        <Grid fullWidth withRowGap className="gisila-catalog__grid">
           {catalog.map((def) => (
-            <CatalogCard
-              key={def.key}
-              def={def}
-              installed={installedByKey.get(def.key)}
-            />
+            <Column key={def.key} sm={4} md={4} lg={8}>
+              <CatalogTile def={def} installed={installedByKey.get(def.key)} />
+            </Column>
           ))}
-        </div>
-      </section>
-    </div>
+        </Grid>
+      </PageSection>
+    </Page>
   );
 }
 
-// ── Installed card ────────────────────────────────────────────────────────────
+// ── Installed tile ────────────────────────────────────────────────────────────
 
-function InstalledCard({ app }: { app: Application }) {
-  const statusLabel = STATUS_LABEL[app.status] ?? app.status;
+function InstalledTile({ app }: { app: Application }) {
   const modes = app.deployModes.split(",").filter(Boolean) as DeployMode[];
 
   return (
-    <Link
-      href={`/applications/${app.id}`}
-      className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/30"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <Blocks className="h-4 w-4" />
+    <RouterTile as={RouterLink} href={`/runtimes/${app.id}`}>
+      <Stack gap={4}>
+        <div className="gisila-catalog__row">
+          <div className="gisila-catalog__ident">
+            <span className="gisila-catalog__icon">
+              <ApplicationIcon size={20} />
+            </span>
+            <div>
+              <p className="gisila-catalog__name">{app.displayName}</p>
+              <p className="gisila-catalog__key">{app.key}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium leading-tight">{app.displayName}</p>
-            <p className="text-[11px] text-muted-foreground font-mono">{app.key}</p>
-          </div>
+          <StatusIndicator status={app.status} />
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {STATUS_ICON[app.status] ?? null}
-          <span
-            className={cn(
-              "text-xs font-medium",
-              app.status === "installed"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : app.status === "failed"
-                  ? "text-red-500"
-                  : "text-muted-foreground",
-            )}
-          >
-            {statusLabel}
+        <div className="gisila-catalog__tags">
+          {modes.map((m) => (
+            <Tag key={m} type="cool-gray" size="sm">
+              {DEPLOY_MODE_LABEL[m] ?? m}
+            </Tag>
+          ))}
+          {app.versions.length > 0
+            ? app.versions.map((v) => <VersionTag key={v.id} version={v} />)
+            : app.defaultVersion && (
+                <Tag type="outline" size="sm">
+                  {app.defaultVersion}
+                </Tag>
+              )}
+        </div>
+
+        {app.errorMessage && (
+          <p className="gisila-catalog__error">{app.errorMessage}</p>
+        )}
+
+        <div className="gisila-catalog__row">
+          <span className="gisila-catalog__meta">
+            {app.installedAt
+              ? `Installed ${new Date(app.installedAt).toLocaleDateString()}`
+              : ""}
+          </span>
+          <span className="gisila-catalog__cta">
+            Configure
+            <ArrowRight size={16} />
           </span>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {modes.map((m) => (
-          <Badge key={m} variant="secondary" className="text-[10px] font-normal">
-            {DEPLOY_MODE_LABEL[m] ?? m}
-          </Badge>
-        ))}
-        {app.defaultVersion && (
-          <Badge variant="muted" className="text-[10px] font-mono font-normal">
-            {app.defaultVersion}
-          </Badge>
-        )}
-      </div>
-
-      {app.errorMessage && (
-        <p className="truncate text-xs text-red-500">{app.errorMessage}</p>
-      )}
-
-      <div className="flex items-center justify-between pt-0.5">
-        {app.installedAt ? (
-          <span className="text-[10px] text-muted-foreground">
-            Installed {new Date(app.installedAt).toLocaleDateString()}
-          </span>
-        ) : (
-          <span />
-        )}
-        <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-          Configure
-          <ArrowRight className="h-3 w-3" />
-        </span>
-      </div>
-    </Link>
+      </Stack>
+    </RouterTile>
   );
 }
 
-// ── Catalog card ──────────────────────────────────────────────────────────────
+// ── Catalog tile ──────────────────────────────────────────────────────────────
 
-function CatalogCard({
+function CatalogTile({
   def,
   installed,
 }: {
@@ -199,9 +229,24 @@ function CatalogCard({
   installed?: Application;
 }) {
   const [installing, setInstalling] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [version, setVersion] = useState("");
   const { isSuperuser } = usePermissions();
 
   const isInstalled = !!installed;
+
+  // Versions already on the host — offering one of those again would only earn
+  // a 409 from the backend.
+  const present = new Set((installed?.versions ?? []).map((v) => v.version));
+  const installable = def.availableVersions.filter((v) => !present.has(v));
+
+  function openInstall() {
+    const recommended = def.defaultVersion ?? "";
+    setVersion(
+      installable.includes(recommended) ? recommended : installable[0] ?? "",
+    );
+    setChoosing(true);
+  }
 
   async function quickInstall() {
     if (isInstalled || installing) return;
@@ -220,92 +265,176 @@ function CatalogCard({
     }
   }
 
+  /// Installs the chosen version: a first install creates the Application,
+  /// every later one is added alongside the versions already installed.
+  async function installVersion() {
+    if (!version) return;
+    setChoosing(false);
+    setInstalling(true);
+    try {
+      if (installed) {
+        await api(`/applications/${installed.id}/versions`, {
+          method: "POST",
+          body: JSON.stringify({ version }),
+        });
+      } else {
+        await api("/applications/", {
+          method: "POST",
+          body: JSON.stringify({ key: def.key, version }),
+        });
+      }
+      mutate("/applications/");
+      toast.success(`${def.displayName} ${version} install queued.`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Install failed.");
+    } finally {
+      setInstalling(false);
+    }
+  }
+
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition-colors",
-        isInstalled &&
-          "border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/[0.03]",
-      )}
+    <Tile
+      className={isInstalled ? "gisila-catalog__tile--installed" : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-            <Blocks className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-medium">{def.displayName}</p>
-            <div className="mt-0.5 flex flex-wrap gap-1">
-              {def.deployModes.map((m) => (
-                <Badge key={m} variant="secondary" className="text-[10px] font-normal">
-                  {DEPLOY_MODE_LABEL[m] ?? m}
-                </Badge>
-              ))}
+      <Stack gap={4}>
+        <div className="gisila-catalog__row">
+          <div className="gisila-catalog__ident">
+            <span className="gisila-catalog__icon">
+              <ApplicationIcon size={20} />
+            </span>
+            <div>
+              <p className="gisila-catalog__name">{def.displayName}</p>
+              <div className="gisila-catalog__tags">
+                {def.deployModes.map((m) => (
+                  <Tag key={m} type="cool-gray" size="sm">
+                    {DEPLOY_MODE_LABEL[m] ?? m}
+                  </Tag>
+                ))}
+              </div>
             </div>
           </div>
+
+          {def.docsUrl && (
+            <CarbonLink
+              href={def.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              renderIcon={Launch}
+              size="sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Docs
+            </CarbonLink>
+          )}
         </div>
 
-        {def.docsUrl && (
-          <a
-            href={def.docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        )}
-      </div>
+        <p className="gisila-catalog__desc">{def.description}</p>
 
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        {def.description}
-      </p>
+        <div className="gisila-catalog__row">
+          <span className="gisila-catalog__summary-label">
+            {def.versionHint ?? "no version pin"}
+          </span>
 
-      <div className="flex items-center justify-between pt-0.5">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-          {def.versionHint ?? "no version pin"}
-        </span>
+          {installing ? (
+            <InlineLoading status="active" />
+          ) : def.versioned ? (
+            // Versioned runtimes stay installable after the first version, so
+            // the tile keeps offering the next one alongside the link.
+            <div className="gisila-versions__actions">
+              {isInstalled && (
+                <CarbonLink
+                  as={RouterLink}
+                  href={`/runtimes/${installed.id}`}
+                  renderIcon={ArrowRight}
+                  size="sm"
+                >
+                  Installed · View
+                </CarbonLink>
+              )}
+              {isSuperuser && installable.length > 0 && (
+                <Button
+                  size="sm"
+                  kind="tertiary"
+                  renderIcon={Add}
+                  onClick={openInstall}
+                >
+                  {isInstalled ? "Install another version" : "Install"}
+                </Button>
+              )}
+            </div>
+          ) : isInstalled ? (
+            <CarbonLink
+              as={RouterLink}
+              href={`/runtimes/${installed.id}`}
+              renderIcon={ArrowRight}
+              size="sm"
+            >
+              Installed · View
+            </CarbonLink>
+          ) : isSuperuser ? (
+            <Button
+              size="sm"
+              kind="tertiary"
+              renderIcon={Add}
+              onClick={quickInstall}
+            >
+              Install
+            </Button>
+          ) : null}
+        </div>
+      </Stack>
 
-        {isInstalled ? (
-          <Link
-            href={`/applications/${installed.id}`}
-            className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+      <Modal
+        open={choosing}
+        size="sm"
+        modalHeading={
+          isInstalled
+            ? `Install another ${def.displayName} version`
+            : `Install ${def.displayName}`
+        }
+        modalLabel={def.key}
+        primaryButtonText="Install"
+        primaryButtonDisabled={!version}
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setChoosing(false)}
+        onRequestSubmit={() => void installVersion()}
+      >
+        <Stack gap={5}>
+          <Select
+            id={`install-version-${def.key}`}
+            labelText="Version"
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
           >
-            <CheckCircle className="h-3 w-3" />
-            Installed · View
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        ) : isSuperuser ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            disabled={installing}
-            onClick={quickInstall}
-          >
-            {installing ? (
-              <Loader className="h-3 w-3 animate-spin" />
-            ) : (
-              <Plus className="h-3 w-3" />
-            )}
-            Install
-          </Button>
-        ) : null}
-      </div>
-    </div>
+            {installable.map((v) => (
+              <SelectItem
+                key={v}
+                value={v}
+                text={v === def.defaultVersion ? `${v} (recommended)` : v}
+              />
+            ))}
+          </Select>
+          <p className="gisila-detail__note">
+            {isInstalled
+              ? "The version is installed alongside the ones already on the host. Apps keep whichever version they pin."
+              : "The toolchain is installed on the host in the background. More versions can be added afterwards."}
+          </p>
+        </Stack>
+      </Modal>
+    </Tile>
   );
 }
 
-function SkeletonRow() {
+function SkeletonTiles() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <Grid fullWidth withRowGap className="gisila-catalog__grid">
       {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-28 animate-pulse rounded-lg border border-border bg-card/40"
-        />
+        <Column key={i} sm={4} md={4} lg={8}>
+          <Tile>
+            <SkeletonText paragraph lineCount={3} />
+          </Tile>
+        </Column>
       ))}
-    </div>
+    </Grid>
   );
 }

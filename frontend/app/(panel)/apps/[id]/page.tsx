@@ -3,30 +3,36 @@
 import { useState } from "react";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR from "swr";
-import { toast } from "sonner";
-import { Play, RotateCw, Square, Rocket, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { StatusDot } from "@/components/ui/status-dot";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
+  Breadcrumb,
+  BreadcrumbItem,
+  Button,
+  ButtonSet,
+  Link as CarbonLink,
+  Modal,
+  SkeletonText,
+  Tab,
+  TabList,
+  TabPanel,
+  TabPanels,
   Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+  Tag,
+  Tile,
+} from "@carbon/react";
+import {
+  PlayFilled,
+  Renew,
+  Rocket,
+  StopFilled,
+  TrashCan,
+} from "@carbon/icons-react";
+import RouterLink from "@/compat/link";
+import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { App } from "@/lib/types";
+import { Page, PageHeader } from "@/components/page";
 import { OverviewTab } from "./_tabs/overview";
 import { DeploymentsTab } from "./_tabs/deployments";
 import { EnvsTab } from "./_tabs/envs";
@@ -36,6 +42,30 @@ import { ConsoleTab } from "./_tabs/console";
 import { MetricsTab } from "./_tabs/metrics";
 import { StorageTab } from "./_tabs/storage";
 import { SettingsTab } from "./_tabs/settings";
+import "./_app-detail.scss";
+
+type TagType = "green" | "blue" | "cyan" | "red" | "gray";
+
+/// Lifecycle state mapped onto Carbon's tag palette: green for healthy, blue
+/// for in-flight work, red for anything that needs attention.
+function statusTagType(status: string): TagType {
+  switch (status) {
+    case "running":
+    case "succeeded":
+      return "green";
+    case "building":
+    case "deploying":
+      return "blue";
+    case "queued":
+      return "cyan";
+    case "failed":
+    case "crashed":
+    case "deleting":
+      return "red";
+    default:
+      return "gray";
+  }
+}
 
 export default function AppDetailPage() {
   const params = useParams<{ id: string }>();
@@ -46,13 +76,15 @@ export default function AppDetailPage() {
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [tabIndex, setTabIndex] = useState(0);
   const { canForProject } = usePermissions();
 
   if (!app) {
     return (
-      <div className="container py-8">
-        <div className="h-24 animate-pulse rounded-xl border border-border/60 bg-card/40" />
-      </div>
+      <Page>
+        <SkeletonText heading width="40%" />
+        <SkeletonText paragraph lineCount={2} />
+      </Page>
     );
   }
 
@@ -104,116 +136,156 @@ export default function AppDetailPage() {
     canDelete && !["running", "building", "deleting"].includes(app.status);
 
   return (
-    <div className="container space-y-6 py-8">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <StatusDot status={app.status} />
-            <h1 className="text-2xl font-semibold tracking-tight">
+    <Page>
+      <div className="gisila-app">
+        <Breadcrumb
+          noTrailingSlash
+          aria-label="Breadcrumb"
+          className="gisila-app__breadcrumb"
+        >
+          <BreadcrumbItem>
+            <CarbonLink as={RouterLink} href="/apps">
+              Apps
+            </CarbonLink>
+          </BreadcrumbItem>
+          <BreadcrumbItem isCurrentPage>{app.name}</BreadcrumbItem>
+        </Breadcrumb>
+
+        <PageHeader
+          title={
+            <span className="gisila-app__title">
               {app.name}
-            </h1>
-            <Badge variant="muted">{app.runtime}</Badge>
-            <Badge variant="secondary">{app.status}</Badge>
-          </div>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {app.linuxUser} · 127.0.0.1:{app.internalPort} · deployed{" "}
-            {formatRelative(app.lastDeployedAt)}
+              <Tag type="cool-gray" size="sm">
+                {app.runtime}
+              </Tag>
+              <Tag type={statusTagType(app.status)} size="sm">
+                {app.status}
+              </Tag>
+            </span>
+          }
+          description={
+            <span className="gisila-app__mono">
+              {app.linuxUser} · 127.0.0.1:{app.internalPort} · deployed{" "}
+              {formatRelative(app.lastDeployedAt)}
+            </span>
+          }
+          actions={
+            <ButtonSet>
+              {canDeploy && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={PlayFilled}
+                  onClick={() => lifecycle("start")}
+                >
+                  Start
+                </Button>
+              )}
+              {canDeploy && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={Renew}
+                  onClick={() => lifecycle("restart")}
+                >
+                  Restart
+                </Button>
+              )}
+              {canStop && (
+                <Button
+                  kind="secondary"
+                  size="sm"
+                  renderIcon={StopFilled}
+                  onClick={() => lifecycle("stop")}
+                >
+                  Stop
+                </Button>
+              )}
+              {canDeploy && (
+                <Button
+                  kind="primary"
+                  size="sm"
+                  renderIcon={Rocket}
+                  onClick={deployNow}
+                >
+                  Deploy now
+                </Button>
+              )}
+              {canRemove && (
+                <Button
+                  kind="danger"
+                  size="sm"
+                  renderIcon={TrashCan}
+                  onClick={() => setConfirmRemove(true)}
+                >
+                  Remove
+                </Button>
+              )}
+              {app.status === "deleting" && (
+                <Button kind="danger" size="sm" renderIcon={TrashCan} disabled>
+                  Removing…
+                </Button>
+              )}
+            </ButtonSet>
+          }
+        />
+
+        <Modal
+          open={confirmRemove}
+          danger
+          size="sm"
+          modalHeading={`Remove ${app.name}?`}
+          modalLabel="Danger zone"
+          primaryButtonText={removing ? "Removing…" : "Remove app"}
+          primaryButtonDisabled={removing}
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmRemove(false)}
+          onRequestSubmit={removeApp}
+        >
+          <p>
+            This permanently deletes the app and all of its resources — the
+            systemd service, AppArmor profile, nginx vhost, TLS certificates, the
+            Linux user, and every file under its work directory. Env vars, domains
+            and deployment history are removed too. This cannot be undone.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canDeploy && (
-            <Button onClick={() => lifecycle("start")} variant="outline" size="sm">
-              <Play className="h-4 w-4" /> Start
-            </Button>
-          )}
-          {canDeploy && (
-            <Button onClick={() => lifecycle("restart")} variant="outline" size="sm">
-              <RotateCw className="h-4 w-4" /> Restart
-            </Button>
-          )}
-          {canStop && (
-            <Button onClick={() => lifecycle("stop")} variant="outline" size="sm">
-              <Square className="h-4 w-4" /> Stop
-            </Button>
-          )}
-          {canDeploy && (
-            <Button onClick={deployNow} size="sm">
-              <Rocket className="h-4 w-4" /> Deploy now
-            </Button>
-          )}
-          {canRemove && (
-            <Button
-              onClick={() => setConfirmRemove(true)}
-              variant="destructive"
-              size="sm"
-            >
-              <Trash2 className="h-4 w-4" /> Remove
-            </Button>
-          )}
-          {app.status === "deleting" && (
-            <Button variant="destructive" size="sm" disabled>
-              <Trash2 className="h-4 w-4" /> Removing…
-            </Button>
-          )}
-        </div>
-      </header>
+        </Modal>
 
-      <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove {app.name}?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes the app and all of its resources — the
-              systemd service, AppArmor profile, nginx vhost, TLS certificates,
-              the Linux user, and every file under its work directory. Env vars,
-              domains and deployment history are removed too. This cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmRemove(false)}
-              disabled={removing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={removeApp}
-              disabled={removing}
-            >
-              {removing ? "Removing…" : "Remove app"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="deployments">Deployments</TabsTrigger>
-          <TabsTrigger value="envs">Environment</TabsTrigger>
-          <TabsTrigger value="domains">Domains</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="console">Console</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          <TabsTrigger value="storage">Storage</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview"><OverviewTab app={app} /></TabsContent>
-        <TabsContent value="deployments"><DeploymentsTab appId={appId} /></TabsContent>
-        <TabsContent value="envs"><EnvsTab appId={appId} /></TabsContent>
-        <TabsContent value="domains"><DomainsTab appId={appId} /></TabsContent>
-        <TabsContent value="logs"><LogsTab appId={appId} /></TabsContent>
-        <TabsContent value="console"><ConsoleTab appId={appId} /></TabsContent>
-        <TabsContent value="metrics"><MetricsTab appId={appId} /></TabsContent>
-        <TabsContent value="storage"><StorageTab appId={appId} /></TabsContent>
-        <TabsContent value="settings">
-          <SettingsTab app={app} onSaved={mutate} />
-        </TabsContent>
-      </Tabs>
-    </div>
+        {/* Carbon renders every TabPanel and only hides the inactive ones, so the
+            body of each tab is gated on the selected index. Several tabs open a
+            WebSocket or start polling the moment they mount. */}
+        <Tabs
+          selectedIndex={tabIndex}
+          onChange={({ selectedIndex }) => setTabIndex(selectedIndex)}
+        >
+          <TabList aria-label="App sections" contained>
+            <Tab>Overview</Tab>
+            <Tab>Deployments</Tab>
+            <Tab>Environment</Tab>
+            <Tab>Domains</Tab>
+            <Tab>Logs</Tab>
+            <Tab>Console</Tab>
+            <Tab>Metrics</Tab>
+            <Tab>Storage</Tab>
+            <Tab>Settings</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>{tabIndex === 0 && <OverviewTab app={app} />}</TabPanel>
+            <TabPanel>
+              {tabIndex === 1 && <DeploymentsTab appId={appId} />}
+            </TabPanel>
+            <TabPanel>{tabIndex === 2 && <EnvsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 3 && <DomainsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 4 && <LogsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 5 && <ConsoleTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 6 && <MetricsTab appId={appId} />}</TabPanel>
+            <TabPanel>{tabIndex === 7 && <StorageTab appId={appId} />}</TabPanel>
+            <TabPanel>
+              {tabIndex === 8 && <SettingsTab app={app} onSaved={mutate} />}
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </div>
+    </Page>
   );
 }
 
@@ -225,13 +297,9 @@ export function StatCard({
   value: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-1">
-        <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="text-xl font-semibold">{value}</CardContent>
-    </Card>
+    <Tile>
+      <p className="gisila-app__label">{label}</p>
+      <p className="gisila-app__stat">{value}</p>
+    </Tile>
   );
 }

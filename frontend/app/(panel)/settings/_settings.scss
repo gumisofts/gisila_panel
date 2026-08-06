@@ -1,0 +1,111 @@
+// Account settings screens.
+//
+// Carbon covers every control these four pages use, so what is left here is the
+// handful of type treatments it has no component for — monospaced fingerprints
+// and one-time secrets — plus the flex rows that arrange them. Tokens are
+// referenced by name so the rules follow the active theme zone.
+
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+
+// Fingerprints, key prefixes and public keys: identifiers that are compared
+// character by character, so they keep the code face.
+.gisila-settings__mono {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+}
+
+// Public keys are hundreds of characters; the full value is never the point in
+// a list row, only enough of it to tell two keys apart.
+.gisila-settings__truncate {
+  display: block;
+  max-inline-size: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gisila-settings__secret {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-settings__secret-value {
+  @include type.type-style('code-01');
+
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: theme.$text-primary;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Caption above a read-only value that has no form control to label.
+.gisila-settings__label {
+  @include type.type-style('label-01');
+
+  display: block;
+  margin-block-end: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-settings__hint {
+  @include type.type-style('label-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-settings__term {
+  color: theme.$text-secondary;
+}
+
+.gisila-settings__form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-settings__form-field {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+.gisila-settings__form-field--narrow {
+  flex: 0 0 9rem;
+}
+
+// Record name followed by however many status tags apply to it.
+.gisila-settings__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-settings__row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: spacing.$spacing-02;
+}
+
+// Icon, message and optional call to action inside a .gisila-empty tile.
+.gisila-settings__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: spacing.$spacing-04;
+  color: theme.$text-secondary;
+}
+
+.gisila-settings__empty-title {
+  @include type.type-style('productive-heading-02');
+
+  color: theme.$text-primary;
+}

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Pause, Play, Trash2 } from "lucide-react";
+import { Button, Stack } from "@carbon/react";
+import { PauseFilled, PlayFilled, TrashCan } from "@carbon/icons-react";
 import { getToken, getWsBase } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import "../_app-detail.scss";
 
 const WS_URL = getWsBase();
 
@@ -16,6 +15,12 @@ interface LogLine {
 }
 
 type ConnState = "connecting" | "connected" | "reconnecting";
+
+function lineClass(stream: string): string {
+  if (stream === "stderr") return "gisila-term__line gisila-term__line--stderr";
+  if (stream === "system") return "gisila-term__line gisila-term__line--system";
+  return "gisila-term__line";
+}
 
 export function LogsTab({ appId }: { appId: number }) {
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -112,65 +117,60 @@ export function LogsTab({ appId }: { appId: number }) {
   }, [lines, paused]);
 
   const statusMeta = {
-    connecting: { label: "Connecting…", dot: "bg-amber-400" },
-    connected: { label: "Live", dot: "bg-emerald-400 animate-pulse" },
-    reconnecting: { label: "Reconnecting…", dot: "bg-amber-400 animate-pulse" },
+    connecting: { label: "Connecting…", tone: "waiting" },
+    connected: { label: "Live", tone: "live" },
+    reconnecting: { label: "Reconnecting…", tone: "waiting" },
   }[conn];
 
   return (
-    <Card>
-      <CardContent className="space-y-3 p-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Live runtime logs · journald
-            </p>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={cn("h-1.5 w-1.5 rounded-full", statusMeta.dot)} />
-              {statusMeta.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPaused((p) => !p)}
-            >
-              {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-              {paused ? "Resume" : "Pause"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setLines([])}>
-              <Trash2 className="h-4 w-4" /> Clear
-            </Button>
-          </div>
+    <Stack gap={5}>
+      <div className="gisila-app__toolbar">
+        <div className="gisila-app__inline">
+          <span className="gisila-app__label">
+            Live runtime logs · journald
+          </span>
+          <span className="gisila-app__inline gisila-app__label">
+            <span className={`gisila-app__pulse gisila-app__pulse--${statusMeta.tone}`} />
+            {statusMeta.label}
+          </span>
         </div>
-        <div className="scrollbar-thin h-[480px] overflow-y-auto rounded-md border border-border/60 bg-black/80 p-3 font-mono text-xs text-emerald-200">
+        <div className="gisila-app__row-actions">
+          <Button
+            size="sm"
+            kind="tertiary"
+            renderIcon={paused ? PlayFilled : PauseFilled}
+            onClick={() => setPaused((p) => !p)}
+          >
+            {paused ? "Resume" : "Pause"}
+          </Button>
+          <Button
+            size="sm"
+            kind="tertiary"
+            renderIcon={TrashCan}
+            onClick={() => setLines([])}
+          >
+            Clear
+          </Button>
+        </div>
+      </div>
+
+      <div className="gisila-term">
+        <div className="gisila-term__body gisila-term__body--tall">
           {lines.length === 0 && (
-            <p className="text-muted-foreground">
+            <p className="gisila-term__placeholder">
               Waiting for output… deploy or restart the app to populate this
               stream.
             </p>
           )}
           {lines.map((l, i) => (
-            <div
-              key={i}
-              className={
-                l.stream === "stderr"
-                  ? "text-red-300"
-                  : l.stream === "system"
-                    ? "text-fuchsia-300"
-                    : ""
-              }
-            >
-              <span className="mr-2 text-muted-foreground">
-                {l.ts.slice(11, 19)}
-              </span>
+            <div key={i} className={lineClass(l.stream)}>
+              <span className="gisila-term__ts">{l.ts.slice(11, 19)}</span>
               {l.line}
             </div>
           ))}
           <div ref={endRef} />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Stack>
   );
 }

@@ -2,58 +2,50 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { StatusDot } from "@/components/ui/status-dot";
+import {
+  Button,
+  InlineNotification,
+  ProgressIndicator,
+  ProgressStep,
+  RadioTile,
+  SkeletonText,
+  Stack,
+  Tag,
+  Tile,
+  TileGroup,
+} from "@carbon/react";
+import { Branch, Renew, Time } from "@carbon/icons-react";
+import { toast } from "@/lib/toast";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { BuildLog, Deployment, ListResponse } from "@/lib/types";
-import {
-  CheckCircle2,
-  Circle,
-  Clock,
-  GitBranch,
-  Hammer,
-  Loader2,
-  RefreshCw,
-  ServerCog,
-  XCircle,
-  Zap,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import "../_app-detail.scss";
 
 // ── Stage detection ────────────────────────────────────────────────────────────
 const STAGES = [
   {
     id: "provision",
     label: "Provision",
-    icon: ServerCog,
     match: /provision/i,
   },
   {
     id: "build",
     label: "Fetch & Build",
-    icon: Hammer,
     match: /^\[?agent.*\bbuild\b|git clone|pip install|dart compile|go build|cargo build/i,
   },
   {
     id: "apply-unit",
     label: "Configure",
-    icon: ServerCog,
     match: /apply-unit|apply.vhost/i,
   },
   {
     id: "restart",
     label: "Start",
-    icon: Zap,
     match: /^\[?agent.*\brestart\b|^\[?agent.*\bstart\b/i,
   },
   {
     id: "done",
     label: "Done",
-    icon: CheckCircle2,
     match: /deployment succeeded/i,
   },
 ] as const;
@@ -72,6 +64,33 @@ function detectStage(logs: BuildLog[]): StageId {
 
 const WS_BASE = getWsBase();
 
+type TagType = "green" | "blue" | "cyan" | "red" | "gray";
+
+function statusTagType(status: string): TagType {
+  switch (status) {
+    case "running":
+    case "succeeded":
+      return "green";
+    case "building":
+    case "deploying":
+      return "blue";
+    case "queued":
+      return "cyan";
+    case "failed":
+    case "crashed":
+    case "deleting":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
+function lineClass(stream: BuildLog["stream"]): string {
+  if (stream === "stderr") return "gisila-term__line gisila-term__line--stderr";
+  if (stream === "system") return "gisila-term__line gisila-term__line--system";
+  return "gisila-term__line";
+}
+
 // ── Stepper ───────────────────────────────────────────────────────────────────
 function Stepper({
   current,
@@ -82,56 +101,20 @@ function Stepper({
 }) {
   const failed = deploymentStatus === "failed";
   const currentIdx = STAGES.findIndex((s) => s.id === current);
+  // Past the last stage every step reads as complete; ProgressIndicator marks
+  // the step at currentIndex as in-progress rather than done.
+  const displayIdx = current === "done" ? STAGES.length : currentIdx;
 
   return (
-    <div className="flex items-center gap-0 overflow-x-auto pb-1">
-      {STAGES.map((stage, idx) => {
-        const done = idx < currentIdx || stage.id === "done" && current === "done";
-        const active = idx === currentIdx && stage.id !== "done";
-        const isFailed = failed && active;
-        const Icon = stage.icon;
-
-        return (
-          <div key={stage.id} className="flex items-center">
-            <div
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                isFailed
-                  ? "text-destructive"
-                  : done || stage.id === "done" && current === "done"
-                  ? "text-green-600 dark:text-green-400"
-                  : active
-                  ? "text-foreground"
-                  : "text-muted-foreground/50"
-              )}
-            >
-              {isFailed ? (
-                <XCircle className="h-3.5 w-3.5 text-destructive" />
-              ) : done ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-              ) : active ? (
-                current === "done" ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                ) : (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                )
-              ) : (
-                <Circle className="h-3.5 w-3.5" />
-              )}
-              {stage.label}
-            </div>
-            {idx < STAGES.length - 1 && (
-              <div
-                className={cn(
-                  "h-px w-6 shrink-0",
-                  idx < currentIdx ? "bg-green-500/50" : "bg-border"
-                )}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <ProgressIndicator currentIndex={displayIdx} spaceEqually>
+      {STAGES.map((stage, idx) => (
+        <ProgressStep
+          key={stage.id}
+          label={stage.label}
+          invalid={failed && idx === currentIdx}
+        />
+      ))}
+    </ProgressIndicator>
   );
 }
 
@@ -204,55 +187,38 @@ function LogPanel({
   }, [lines]);
 
   return (
-    <div className="flex flex-col gap-3 h-full">
-      {/* Stepper */}
+    <Stack gap={5}>
       <Stepper current={currentStage} deploymentStatus={deployment.status} />
 
-      {/* Terminal */}
-      <div className="flex-1 min-h-0 rounded-md border border-border/60 bg-[#0d1117] overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-white/5 bg-white/5 px-3 py-1.5">
-          <div className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
-          <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
-          <div className="h-2.5 w-2.5 rounded-full bg-green-500/70" />
-          <span className="ml-2 text-xs text-white/40 font-mono">
-            build log · #{deployment.id}
-          </span>
+      <div className="gisila-term">
+        <div className="gisila-term__bar">
+          <span>build log · #{deployment.id}</span>
           {active && (
-            <span className="ml-auto flex items-center gap-1 text-xs text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="gisila-term__live">
+              <span className="gisila-app__pulse gisila-app__pulse--live" />
               live
             </span>
           )}
         </div>
-        <div className="h-[420px] overflow-y-auto p-3 font-mono text-xs scrollbar-thin">
+        <div className="gisila-term__body">
           {loading && (
-            <p className="text-white/40">Loading logs…</p>
+            <p className="gisila-term__placeholder">Loading logs…</p>
           )}
           {!loading && lines.length === 0 && (
-            <p className="text-white/40">
+            <p className="gisila-term__placeholder">
               {active ? "Waiting for output…" : "No logs recorded for this deployment."}
             </p>
           )}
           {lines.map((l, i) => (
-            <div
-              key={i}
-              className={cn(
-                "leading-5",
-                l.stream === "stderr"
-                  ? "text-red-400"
-                  : l.stream === "system"
-                  ? "text-fuchsia-400"
-                  : "text-[#e6edf3]"
-              )}
-            >
-              <span className="mr-2 select-none text-white/25">
+            <div key={i} className={lineClass(l.stream)}>
+              <span className="gisila-term__ts">
                 {l.createdAt ? l.createdAt.slice(11, 19) : "--:--:--"}
               </span>
               {l.stream === "system" && (
-                <span className="mr-1 text-white/30">[sys]</span>
+                <span className="gisila-term__stream">[sys]</span>
               )}
               {l.stream === "stderr" && (
-                <span className="mr-1 text-red-500/70">[err]</span>
+                <span className="gisila-term__stream">[err]</span>
               )}
               {l.line}
             </div>
@@ -260,7 +226,7 @@ function LogPanel({
           <div ref={endRef} />
         </div>
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -297,103 +263,88 @@ export function DeploymentsTab({ appId }: { appId: number }) {
   }
 
   if (!data) {
-    return <div className="h-32 animate-pulse rounded-xl border border-border/60 bg-card/40" />;
+    return <SkeletonText paragraph lineCount={4} />;
   }
 
   if (data.results.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-12 text-center text-sm text-muted-foreground">
-          No deployments yet. Trigger one with{" "}
-          <span className="font-mono font-medium">Deploy now</span>.
-        </CardContent>
-      </Card>
+      <Tile className="gisila-empty">
+        No deployments yet. Trigger one with{" "}
+        <span className="gisila-app__mono">Deploy now</span>.
+      </Tile>
     );
   }
 
   return (
-    <div className="flex gap-4 h-[560px]">
-      {/* Deployment list */}
-      <div className="w-56 shrink-0 space-y-1 overflow-y-auto pr-1 scrollbar-thin">
+    <div className="gisila-deploy">
+      <TileGroup
+        className="gisila-deploy__list"
+        name="deployment"
+        legend="Deployment history"
+        valueSelected={selected ? String(selected.id) : undefined}
+        onChange={(value) => {
+          const picked = data.results.find((d) => String(d.id) === value);
+          if (picked) setSelected(picked);
+        }}
+      >
         {data.results.map((d) => (
-          <button
-            key={d.id}
-            onClick={() => setSelected(d)}
-            className={cn(
-              "w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-              selected?.id === d.id
-                ? "border-primary/50 bg-primary/5"
-                : "border-border/60 bg-card/60 hover:border-border hover:bg-card"
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <StatusDot status={d.status} />
-              <span className="font-mono font-medium text-xs">#{d.id}</span>
-              {d.isActive && (
-                <Badge variant="success" className="ml-auto text-[10px] px-1 py-0">
-                  live
-                </Badge>
-              )}
-            </div>
-            <p className="mt-1 text-[10px] text-muted-foreground truncate">
-              {formatRelative(d.createdAt)}
-            </p>
-            <div className="mt-1 flex items-center gap-1">
+          <RadioTile key={d.id} id={`deployment-${d.id}`} value={String(d.id)}>
+            <div className="gisila-deploy__item">
+              <div className="gisila-deploy__item-head">
+                <span className="gisila-app__mono">#{d.id}</span>
+                <Tag type={statusTagType(d.status)} size="sm">
+                  {d.status}
+                </Tag>
+                {d.isActive && (
+                  <Tag type="green" size="sm">
+                    live
+                  </Tag>
+                )}
+              </div>
+              <span className="gisila-app__label">
+                {formatRelative(d.createdAt)}
+              </span>
               {d.gitCommitSha && (
-                <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground font-mono">
-                  <GitBranch className="h-2.5 w-2.5" />
+                <span className="gisila-app__inline gisila-app__mono">
+                  <Branch size={16} />
                   {d.gitCommitSha.slice(0, 7)}
                 </span>
               )}
-              <span className={cn(
-                "text-[10px] capitalize",
-                d.status === "succeeded" ? "text-green-500" :
-                d.status === "failed"    ? "text-destructive" :
-                                           "text-muted-foreground"
-              )}>
-                {d.status}
-              </span>
             </div>
-          </button>
+          </RadioTile>
         ))}
-      </div>
+      </TileGroup>
 
-      {/* Log panel */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="gisila-deploy__panel">
         {selected ? (
           <>
-            {/* Header */}
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <StatusDot status={selected.status} />
-                <span className="font-medium text-sm">
-                  Deployment #{selected.id}
-                </span>
-                <Badge variant="muted" className="text-xs capitalize">
+            <div className="gisila-app__toolbar">
+              <div className="gisila-app__inline">
+                <span>Deployment #{selected.id}</span>
+                <Tag type={statusTagType(selected.status)} size="sm">
                   {selected.status}
-                </Badge>
+                </Tag>
                 {selected.finishedAt && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                  <span className="gisila-app__inline gisila-app__label">
+                    <Time size={16} />
                     {formatRelative(selected.finishedAt)}
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="gisila-app__row-actions">
                 <Button
+                  kind="ghost"
                   size="sm"
-                  variant="ghost"
+                  hasIconOnly
+                  renderIcon={Renew}
+                  iconDescription="Refresh deployments"
                   onClick={() => mutate()}
-                  className="h-7"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
+                />
                 {selected.status === "succeeded" && !selected.isActive && (
                   <Button
+                    kind="tertiary"
                     size="sm"
-                    variant="outline"
                     onClick={() => rollback(selected)}
-                    className="h-7"
                   >
                     Rollback
                   </Button>
@@ -402,18 +353,21 @@ export function DeploymentsTab({ appId }: { appId: number }) {
             </div>
 
             {selected.failureReason && (
-              <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                <span className="font-medium">Error: </span>
-                {selected.failureReason}
-              </div>
+              <InlineNotification
+                kind="error"
+                lowContrast
+                hideCloseButton
+                title="Error"
+                subtitle={selected.failureReason}
+              />
             )}
 
             <LogPanel appId={appId} deployment={selected} key={selected.id} />
           </>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <Tile className="gisila-empty">
             Select a deployment to see its logs.
-          </div>
+          </Tile>
         )}
       </div>
     </div>

@@ -1,32 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/compat/link";
+import RouterLink from "@/compat/link";
 import useSWR from "swr";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "@/lib/toast";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
+  Button,
+  Column,
+  Grid,
+  Link as CarbonLink,
+  Modal,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Stack,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Add, Application, FolderOpen, TrashCan } from "@carbon/icons-react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, Project, Team } from "@/lib/types";
-import { Boxes, FolderOpen, Plus, Trash2 } from "lucide-react";
+import "../_batch-a.scss";
 
 export default function ProjectsPage() {
   const { data: projectsData, mutate } = useSWR<ListResponse<Project>>(
@@ -99,202 +95,166 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Organize apps into projects within your teams.
-          </p>
-        </div>
-        <Button onClick={openDialog} disabled={teams.length === 0}>
-          <Plus className="w-4 h-4 mr-2" /> New Project
-        </Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="Projects"
+        description="Organize apps into projects within your teams."
+        actions={
+          <Button
+            onClick={openDialog}
+            disabled={teams.length === 0}
+            renderIcon={Add}
+          >
+            New Project
+          </Button>
+        }
+      />
 
       {teams.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-14 gap-3 text-center">
-            <FolderOpen className="w-10 h-10 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">
-              You need a team before you can create projects.
-            </p>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/teams">Go to Teams</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <Tile>
+          <div className="gisila-empty-state">
+            <FolderOpen size={32} />
+            <p>You need a team before you can create projects.</p>
+            <div>
+              <Button as={RouterLink} href="/teams" kind="tertiary" size="sm">
+                Go to Teams
+              </Button>
+            </div>
+          </div>
+        </Tile>
       )}
 
       {teams.length > 0 && projects.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-14 gap-3 text-center">
-            <FolderOpen className="w-10 h-10 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No projects yet.</p>
-            <Button variant="outline" size="sm" onClick={openDialog}>
-              <Plus className="w-4 h-4 mr-1" /> Create your first project
-            </Button>
-          </CardContent>
-        </Card>
+        <Tile>
+          <div className="gisila-empty-state">
+            <FolderOpen size={32} />
+            <p>No projects yet.</p>
+            <div>
+              <Button kind="tertiary" size="sm" renderIcon={Add} onClick={openDialog}>
+                Create your first project
+              </Button>
+            </div>
+          </div>
+        </Tile>
       )}
 
       {byTeam.map(({ team, projects: ps }) =>
         ps.length === 0 ? null : (
-          <section key={team.id}>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 px-0.5">
-              {team.name}
-            </h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <PageSection key={team.id} title={team.name}>
+            <Grid condensed className="gisila-cards">
               {ps.map((p) => (
-                <Card
-                  key={p.id}
-                  className="hover:border-primary/40 transition-colors"
-                >
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <FolderOpen className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm truncate">{p.name}</p>
-                          <p className="text-xs text-muted-foreground font-mono">
+                <Column key={p.id} sm={4} md={4} lg={5}>
+                  <Tile>
+                    <div className="gisila-card__head">
+                      <div className="gisila-row__main">
+                        <span className="gisila-status-icon gisila-status-icon--brand">
+                          <FolderOpen size={16} />
+                        </span>
+                        <div className="gisila-row__text">
+                          <p className="gisila-card__title gisila-truncate">
+                            {p.name}
+                          </p>
+                          <p className="gisila-card__mono gisila-truncate">
                             {p.slug}
                           </p>
                         </div>
                       </div>
                       {canForTeam(p.teamId, "admin") && (
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                          title="Remove project"
+                          kind="ghost"
+                          size="sm"
+                          hasIconOnly
+                          renderIcon={TrashCan}
+                          iconDescription="Remove project"
+                          tooltipAlignment="end"
                           onClick={() => setRemoveTarget(p)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        />
                       )}
                     </div>
                     {p.description && (
-                      <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
+                      <p className="gisila-card__body gisila-clamp">
                         {p.description}
                       </p>
                     )}
-                    <div className="mt-4 flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
-                        {formatRelative(p.createdAt)}
-                      </span>
-                      <Link
+                    <div className="gisila-card__foot">
+                      <span>{formatRelative(p.createdAt)}</span>
+                      <CarbonLink
+                        as={RouterLink}
                         href={`/apps?projectId=${p.id}`}
-                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                        renderIcon={Application}
+                        size="sm"
                       >
-                        <Boxes className="w-3.5 h-3.5" />
                         View apps
-                      </Link>
+                      </CarbonLink>
                     </div>
-                  </CardContent>
-                </Card>
+                  </Tile>
+                </Column>
               ))}
-            </div>
-          </section>
+            </Grid>
+          </PageSection>
         )
       )}
 
-      <Dialog
+      <Modal
+        danger
+        size="sm"
         open={removeTarget !== null}
-        onOpenChange={(o) => !o && setRemoveTarget(null)}
+        modalHeading={`Remove ${removeTarget?.name ?? ""}?`}
+        primaryButtonText={removing ? "Removing…" : "Remove project"}
+        secondaryButtonText="Cancel"
+        primaryButtonDisabled={removing}
+        onRequestClose={() => setRemoveTarget(null)}
+        onRequestSubmit={removeProject}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove {removeTarget?.name}?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            This permanently deletes the project and{" "}
-            <span className="font-medium text-foreground">every app inside it</span>{" "}
-            — each app&apos;s service, files, Linux user, domains and TLS
-            certificates are torn down. This cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRemoveTarget(null)}
-              disabled={removing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={removeProject}
-              disabled={removing}
-            >
-              {removing ? "Removing…" : "Remove project"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <p>
+          This permanently deletes the project and{" "}
+          <strong>every app inside it</strong> — each app&apos;s service, files,
+          Linux user, domains and TLS certificates are torn down. This cannot be
+          undone.
+        </p>
+      </Modal>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New Project</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <Label htmlFor="team">Team</Label>
-              <Select value={teamId} onValueChange={setTeamId}>
-                <SelectTrigger id="team" className="mt-1">
-                  <SelectValue placeholder="Select a team" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="proj-name">Project name</Label>
-              <Input
-                id="proj-name"
-                className="mt-1"
-                placeholder="my-backend"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="proj-desc">
-                Description
-                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
-                  (optional)
-                </span>
-              </Label>
-              <Input
-                id="proj-desc"
-                className="mt-1"
-                placeholder="Short description…"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving || !name.trim() || !teamId}>
-                {saving ? "Creating…" : "Create Project"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <Modal
+        size="sm"
+        open={open}
+        modalHeading="New Project"
+        primaryButtonText={saving ? "Creating…" : "Create Project"}
+        secondaryButtonText="Cancel"
+        primaryButtonDisabled={saving || !name.trim() || !teamId}
+        onRequestClose={() => setOpen(false)}
+        onRequestSubmit={submit}
+      >
+        <form onSubmit={submit}>
+          <Stack gap={5}>
+            <Select
+              id="team"
+              labelText="Team"
+              value={teamId}
+              onChange={(e) => setTeamId(e.target.value)}
+            >
+              <SelectItem disabled hidden value="" text="Select a team" />
+              {teams.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)} text={t.name} />
+              ))}
+            </Select>
+            <TextInput
+              id="proj-name"
+              labelText="Project name"
+              placeholder="my-backend"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+            <TextInput
+              id="proj-desc"
+              labelText="Description (optional)"
+              placeholder="Short description…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </Stack>
+        </form>
+      </Modal>
+    </Page>
   );
 }

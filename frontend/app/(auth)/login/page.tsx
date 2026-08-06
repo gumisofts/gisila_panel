@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Button, PasswordInput, Stack, TextInput } from "@carbon/react";
 import { useRouter } from "@/compat/navigation";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { toast } from "@/lib/toast";
 import { api, setToken } from "@/lib/api";
 import type { User } from "@/lib/types";
+import "../../(panel)/_batch-a.scss";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,20 +33,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Sign in to gisila
-        </h1>
-        <p className="text-sm text-muted-foreground">
+    <Stack gap={6}>
+      <div>
+        <h1 className="gisila-auth__title">Sign in to gisila</h1>
+        <p className="gisila-auth__subtitle">
           Enter your email and password to access your panel.
         </p>
       </div>
-      <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
+      <form onSubmit={onSubmit}>
+        <Stack gap={5}>
+          <TextInput
             id="email"
+            labelText="Email"
             type="email"
             value={email}
             required
@@ -55,25 +52,26 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
+            labelText="Password"
             value={password}
             required
             autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
           />
-        </div>
-        <Button className="w-full" type="submit" disabled={loading}>
-          {loading ? "Signing in…" : "Sign in"}
-        </Button>
+          <Button
+            className="gisila-auth__submit"
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? "Signing in…" : "Sign in"}
+          </Button>
+        </Stack>
       </form>
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="gisila-auth__footnote">
         Contact your administrator to get an account.
       </p>
-    </div>
+    </Stack>
   );
 }

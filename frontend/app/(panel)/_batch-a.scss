@@ -1,0 +1,268 @@
+// Page chrome for the auth and overview screens.
+//
+// Carbon supplies the components; what is left here is the layout it has no
+// opinion about — the split auth shell, and the type and alignment details
+// inside tiles. Rules that override a Carbon default are qualified with the
+// Carbon class, because this file is bundled ahead of the main stylesheet and
+// would otherwise lose the tie on specificity.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+@use '@carbon/react/scss/breakpoint';
+
+// ── Card grids ───────────────────────────────────────────────────────────────
+// Carbon's grid centres itself and adds a page margin, which indents it a
+// second time inside a frame that already has padding. Condensed reduces the
+// column gutters to a hairline, so the spacing between cards is set here and
+// the first card lines up with the page heading.
+.cds--css-grid.gisila-cards {
+  max-inline-size: none;
+  margin-inline: 0;
+  padding-inline: 0;
+  gap: spacing.$spacing-05;
+}
+
+// Tiles fill their column so neighbouring cards in a row share a height.
+.cds--css-grid.gisila-cards .cds--tile {
+  block-size: 100%;
+}
+
+// ── Tile contents ────────────────────────────────────────────────────────────
+
+.gisila-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-04;
+}
+
+.gisila-card__title {
+  @include type.type-style('heading-compact-01');
+
+  color: theme.$text-primary;
+}
+
+.gisila-card__meta {
+  @include type.type-style('label-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-card__body {
+  @include type.type-style('body-01');
+
+  margin-block-start: spacing.$spacing-04;
+  color: theme.$text-secondary;
+}
+
+.gisila-card__mono {
+  @include type.type-style('code-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-card__cta {
+  margin-block-start: spacing.$spacing-05;
+}
+
+.gisila-card__foot {
+  @include type.type-style('label-01');
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: spacing.$spacing-04;
+  margin-block-start: spacing.$spacing-05;
+  padding-block-start: spacing.$spacing-04;
+  border-block-start: 1px solid theme.$border-subtle-01;
+  color: theme.$text-secondary;
+}
+
+// A record laid out as icon + copy on one side, status and actions on the other.
+.gisila-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-row__main {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-04;
+  min-inline-size: 0;
+}
+
+// Lets the copy beside an icon shrink instead of pushing the row wider.
+.gisila-row__text {
+  min-inline-size: 0;
+}
+
+.gisila-row__actions {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gisila-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+// Empty state that needs an icon and a call to action, where the plain
+// `.gisila-empty` line of text is not enough.
+.gisila-empty-state {
+  @include type.type-style('body-01');
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: spacing.$spacing-05;
+  padding-block: spacing.$spacing-08;
+  color: theme.$text-secondary;
+  text-align: center;
+}
+
+// ── Dashboard counters ───────────────────────────────────────────────────────
+
+.gisila-stat {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-stat__label {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gisila-stat__value {
+  @include type.type-style('productive-heading-04');
+
+  color: theme.$text-primary;
+}
+
+// ── Wordmark for the auth shell ──────────────────────────────────────────────
+
+.gisila-brand {
+  @include type.type-style('heading-compact-02');
+
+  display: inline-flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  color: theme.$text-primary;
+  text-decoration: none;
+
+  svg {
+    fill: theme.$link-primary;
+  }
+}
+
+// ── Auth shell ───────────────────────────────────────────────────────────────
+
+.gisila-auth {
+  display: grid;
+  min-block-size: 100%;
+
+  @include breakpoint.breakpoint('lg') {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+// The pitch column is decoration; it is dropped rather than stacked on narrow
+// viewports so the form stays above the fold.
+.gisila-auth__aside {
+  display: none;
+
+  @include breakpoint.breakpoint('lg') {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: spacing.$spacing-09;
+    background-color: theme.$layer-01;
+  }
+}
+
+.gisila-auth__quote {
+  @include type.type-style('fluid-quotation-01', true);
+
+  max-inline-size: 32rem;
+  color: theme.$text-primary;
+}
+
+.gisila-auth__quote-source {
+  @include type.type-style('body-01');
+
+  margin-block-start: spacing.$spacing-05;
+  color: theme.$text-secondary;
+}
+
+.gisila-auth__main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: spacing.$spacing-06;
+}
+
+.gisila-auth__panel {
+  inline-size: 100%;
+  max-inline-size: 22rem;
+}
+
+.gisila-auth__title {
+  @include type.type-style('productive-heading-04');
+
+  color: theme.$text-primary;
+}
+
+.gisila-auth__subtitle {
+  @include type.type-style('body-01');
+
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-auth__names {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-auth__footnote {
+  @include type.type-style('body-01');
+
+  color: theme.$text-secondary;
+  text-align: center;
+}
+
+// Carbon caps button width at 20rem; the auth form wants an edge-to-edge
+// submit under the fields.
+.cds--btn.gisila-auth__submit {
+  max-inline-size: none;
+  inline-size: 100%;
+}
+
+// ── Forms ────────────────────────────────────────────────────────────────────
+// A single field with its action button on the same baseline.
+.gisila-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: spacing.$spacing-05;
+}
+
+.gisila-form-row__field {
+  flex: 1;
+  min-inline-size: 0;
+}

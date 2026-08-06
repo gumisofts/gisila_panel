@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { Play, Trash2, Terminal } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, Stack, TextInput } from "@carbon/react";
+import { PlayFilled, Terminal, TrashCan } from "@carbon/icons-react";
 import { api, getToken, getWsBase } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import "../_app-detail.scss";
 
 const WS_URL = getWsBase();
 
@@ -15,6 +12,12 @@ interface OutputLine {
   ts: string;
   stream: string;
   line: string;
+}
+
+function lineClass(stream: string): string {
+  if (stream === "stderr") return "gisila-term__line gisila-term__line--stderr";
+  if (stream === "system") return "gisila-term__line gisila-term__line--system";
+  return "gisila-term__line";
 }
 
 export function ConsoleTab({ appId }: { appId: number }) {
@@ -125,80 +128,77 @@ export function ConsoleTab({ appId }: { appId: number }) {
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-3 p-5">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-4 w-4 text-muted-foreground" />
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
-            Run a command as the app user
-          </p>
-          {running && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              running…
-            </span>
-          )}
-        </div>
+    <Stack gap={5}>
+      <div className="gisila-app__inline">
+        <Terminal size={16} />
+        <span className="gisila-app__label">
+          Run a command as the app user
+        </span>
+        {running && (
+          <span className="gisila-app__inline gisila-app__label">
+            <span className="gisila-app__pulse gisila-app__pulse--live" />
+            running…
+          </span>
+        )}
+      </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            run();
-          }}
-          className="flex items-center gap-2"
-        >
-          <Input
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run();
+        }}
+        className="gisila-app__form-row"
+      >
+        <div className="gisila-app__form-field">
+          <TextInput
+            id="console-command"
+            labelText="Command"
+            hideLabel
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="e.g. python manage.py migrate · pip list · ls -la"
-            className="font-mono text-xs"
             disabled={running}
           />
-          <Button type="submit" size="sm" disabled={running || !command.trim()}>
-            <Play className="h-4 w-4" /> Run
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setLines([])}
-          >
-            <Trash2 className="h-4 w-4" /> Clear
-          </Button>
-        </form>
+        </div>
+        <Button
+          type="submit"
+          renderIcon={PlayFilled}
+          disabled={running || !command.trim()}
+        >
+          Run
+        </Button>
+        <Button
+          type="button"
+          kind="tertiary"
+          renderIcon={TrashCan}
+          onClick={() => setLines([])}
+        >
+          Clear
+        </Button>
+      </form>
 
-        <p className="text-xs text-muted-foreground">
-          Runs in the app&apos;s working directory. For Python apps the
-          virtualenv is activated automatically, so <code>python</code>,{" "}
-          <code>pip</code> and <code>manage.py</code> use the app interpreter.
-        </p>
+      <p className="gisila-app__hint">
+        Runs in the app&apos;s working directory. For Python apps the virtualenv
+        is activated automatically, so <code>python</code>, <code>pip</code> and{" "}
+        <code>manage.py</code> use the app interpreter.
+      </p>
 
-        <div className="scrollbar-thin h-[420px] overflow-y-auto rounded-md border border-border/60 bg-black/80 p-3 font-mono text-xs text-emerald-200">
+      <div className="gisila-term">
+        <div className="gisila-term__body">
           {lines.length === 0 && (
-            <p className="text-muted-foreground">
+            <p className="gisila-term__placeholder">
               No output yet. Type a command above and hit Run.
             </p>
           )}
           {lines.map((l, i) => (
-            <div
-              key={i}
-              className={
-                l.stream === "stderr"
-                  ? "text-red-300"
-                  : l.stream === "system"
-                    ? "text-fuchsia-300"
-                    : ""
-              }
-            >
-              <span className="mr-2 text-muted-foreground">
-                {l.ts.slice(11, 19)}
-              </span>
+            <div key={i} className={lineClass(l.stream)}>
+              <span className="gisila-term__ts">{l.ts.slice(11, 19)}</span>
               {l.line}
             </div>
           ))}
           <div ref={endRef} />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Stack>
   );
 }

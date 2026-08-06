@@ -1,30 +1,63 @@
 "use client";
 
-import Link from "@/compat/link";
 import useSWR from "swr";
-import { Button } from "@/components/ui/button";
+import { useRouter } from "@/compat/navigation";
+import {
+  HeaderGlobalAction,
+  HeaderGlobalBar,
+  OverflowMenu,
+  OverflowMenuItem,
+} from "@carbon/react";
+import { Add, UserAvatar } from "@carbon/icons-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { fetcher } from "@/lib/api";
+import { fetcher, setToken } from "@/lib/api";
 import type { User } from "@/lib/types";
 
-export function Topbar({ title }: { title?: string }) {
+/// Right-hand side of the Carbon header: create action, theme picker and the
+/// account menu. Sign out moved here from the bottom of the sidebar, which is
+/// where Carbon's shell puts account actions.
+export function PanelHeaderActions() {
   const { data } = useSWR<User>("/auth/me", fetcher);
+  const router = useRouter();
+
+  function signOut() {
+    setToken(null);
+    router.push("/login");
+  }
 
   return (
-    <header className="flex h-12 items-center justify-between border-b border-border bg-background px-5">
-      <div className="text-sm font-medium text-foreground/70">
-        {title ?? "Dashboard"}
-      </div>
-      <div className="flex items-center gap-2">
-        <ThemeToggle />
-        <Button asChild variant="outline" size="sm">
-          <Link href="/apps/new">New app</Link>
-        </Button>
-        <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          {data?.email ?? "—"}
-        </div>
-      </div>
-    </header>
+    <HeaderGlobalBar>
+      <HeaderGlobalAction
+        aria-label="New app"
+        tooltipAlignment="center"
+        onClick={() => router.push("/apps/new")}
+      >
+        <Add size={20} />
+      </HeaderGlobalAction>
+
+      <ThemeToggle />
+
+      <OverflowMenu
+        aria-label={data?.email ? `Account: ${data.email}` : "Account"}
+        className="gisila-header__menu"
+        renderIcon={UserAvatar}
+        size="lg"
+        flipped
+        menuOptionsClass="gisila-header__menu-options"
+      >
+        <OverflowMenuItem
+          itemText={data?.email ?? "Signed in"}
+          disabled
+          requireTitle={false}
+        />
+        <OverflowMenuItem
+          itemText="Sign out"
+          onClick={signOut}
+          hasDivider
+          isDelete
+          requireTitle={false}
+        />
+      </OverflowMenu>
+    </HeaderGlobalBar>
   );
 }

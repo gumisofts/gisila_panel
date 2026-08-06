@@ -2,15 +2,30 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { toast } from "sonner";
-import { Plus, Trash2, Copy } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "@/lib/toast";
+import { Add, Copy, TrashCan } from "@carbon/icons-react";
+import {
+  Button,
+  Form,
+  InlineNotification,
+  NumberInput,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ApiToken, ListResponse } from "@/lib/types";
+import "../_settings.scss";
 
 export default function TokensPage() {
   const { data, mutate } = useSWR<ListResponse<ApiToken>>(
@@ -55,120 +70,128 @@ export default function TokensPage() {
   }
 
   return (
-    <div className="container space-y-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">API tokens</h1>
-        <p className="text-sm text-muted-foreground">
-          Use these for the CLI, CI, or any programmatic access.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="API tokens"
+        description="Use these for the CLI, CI, or any programmatic access."
+      />
 
       {issued && (
-        <Card className="border-primary/50">
-          <CardContent className="space-y-2 p-5">
-            <p className="text-sm font-medium">
-              Token issued — copy it now. It won&rsquo;t be shown again.
-            </p>
-            <div className="flex items-center gap-2 rounded-md border border-border bg-black/40 p-2 font-mono text-sm">
-              <code className="flex-1 truncate">{issued}</code>
+        <PageSection>
+          <Stack gap={4}>
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              hideCloseButton
+              title="Token issued — copy it now."
+              subtitle="It won’t be shown again."
+            />
+            <div className="gisila-settings__secret">
+              <code className="gisila-settings__secret-value">{issued}</code>
               <Button
-                size="icon"
-                variant="ghost"
+                kind="ghost"
+                size="sm"
+                hasIconOnly
+                renderIcon={Copy}
+                iconDescription="Copy token"
                 onClick={() => {
                   navigator.clipboard.writeText(issued);
                   toast.success("Copied");
                 }}
-              >
-                <Copy className="h-4 w-4" />
+              />
+            </div>
+            <div>
+              <Button kind="ghost" size="sm" onClick={() => setIssued(null)}>
+                Dismiss
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIssued(null)}
-            >
-              Dismiss
-            </Button>
-          </CardContent>
-        </Card>
+          </Stack>
+        </PageSection>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Issue a new token</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={create} className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                Name
-              </label>
-              <Input
+      <PageSection title="Issue a new token">
+        <Form onSubmit={create}>
+          <div className="gisila-settings__form-row">
+            <div className="gisila-settings__form-field">
+              <TextInput
+                id="token-name"
+                labelText="Name"
                 required
                 placeholder="ci/cd"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            <div className="w-36 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                Expires (days)
-              </label>
-              <Input
-                type="number"
+            <div className="gisila-settings__form-field gisila-settings__form-field--narrow">
+              <NumberInput
+                id="token-expires-in-days"
+                label="Expires (days)"
                 min={1}
+                allowEmpty
+                hideSteppers
                 value={days}
-                onChange={(e) =>
-                  setDays(e.target.value === "" ? "" : Number(e.target.value))
-                }
                 placeholder="never"
+                onChange={(_event, { value }) =>
+                  setDays(value === "" ? "" : Number(value))
+                }
               />
             </div>
-            <Button type="submit" disabled={busy}>
-              <Plus className="h-4 w-4" /> Issue
+            <Button type="submit" disabled={busy} renderIcon={Add}>
+              Issue
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </Form>
+      </PageSection>
 
-      <div className="space-y-2">
+      <PageSection>
         {data?.results.length ? (
-          data.results.map((t) => (
-            <div
-              key={t.id}
-              className="flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-5 py-3 text-sm"
-            >
-              <div>
-                <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  prefix <span className="font-mono">{t.prefix}</span> · last
-                  used {formatRelative(t.lastUsedAt)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {t.expiresAt && (
-                  <Badge variant="muted">
-                    expires {formatRelative(t.expiresAt)}
-                  </Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => revoke(t.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            </div>
-          ))
+          <TableContainer>
+            <Table size="sm">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Name</TableHeader>
+                  <TableHeader>Prefix</TableHeader>
+                  <TableHeader>Last used</TableHeader>
+                  <TableHeader>Expires</TableHeader>
+                  <TableHeader />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.results.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell>{t.name}</TableCell>
+                    <TableCell>
+                      <span className="gisila-settings__mono">{t.prefix}</span>
+                    </TableCell>
+                    <TableCell>{formatRelative(t.lastUsedAt)}</TableCell>
+                    <TableCell>
+                      {t.expiresAt && (
+                        <Tag type="cool-gray" size="sm">
+                          expires {formatRelative(t.expiresAt)}
+                        </Tag>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="gisila-settings__row-actions">
+                        <Button
+                          kind="danger--ghost"
+                          size="sm"
+                          hasIconOnly
+                          renderIcon={TrashCan}
+                          iconDescription="Revoke token"
+                          onClick={() => revoke(t.id)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         ) : (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No tokens yet.
-            </CardContent>
-          </Card>
+          <Tile className="gisila-empty">No tokens yet.</Tile>
         )}
-      </div>
-    </div>
+      </PageSection>
+    </Page>
   );
 }

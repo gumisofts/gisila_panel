@@ -1,14 +1,51 @@
 "use client";
 
-import Link from "@/compat/link";
 import useSWR from "swr";
-import { Boxes, Globe, Rocket, Users } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { StatusDot } from "@/components/ui/status-dot";
+import {
+  Application,
+  ArrowRight,
+  Earth,
+  Rocket,
+  UserMultiple,
+} from "@carbon/icons-react";
+import {
+  Button,
+  ClickableTile,
+  Column,
+  Grid,
+  Link as CarbonLink,
+  Tag,
+  Tile,
+} from "@carbon/react";
+import type { ComponentProps, ElementType } from "react";
+import RouterLink from "@/compat/link";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { App, ListResponse, Project, Team } from "@/lib/types";
+import "../_batch-a.scss";
+
+// ClickableTile renders Carbon's polymorphic Link and forwards the props it
+// does not recognise, so `as` reaches it at runtime — its prop type just never
+// declared the escape hatch. Aliasing it keeps router navigation on the card.
+const LinkTile = ClickableTile as React.ComponentType<
+  ComponentProps<typeof ClickableTile> & { as?: ElementType }
+>;
+
+// Carbon's Tag colours stand in for the old status dot: the tone already
+// carries the state, so the dot and the label no longer say it twice.
+const STATUS_TAG: Record<
+  string,
+  "green" | "blue" | "gray" | "cool-gray" | "red" | "magenta"
+> = {
+  running: "green",
+  building: "blue",
+  created: "gray",
+  stopped: "cool-gray",
+  failed: "red",
+  crashed: "red",
+  deleting: "magenta",
+};
 
 export default function DashboardPage() {
   const apps = useSWR<ListResponse<App>>("/apps/", fetcher);
@@ -18,66 +55,66 @@ export default function DashboardPage() {
   const recentApps = apps.data?.results.slice(0, 6) ?? [];
 
   return (
-    <div className="container space-y-8 py-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Welcome back
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Your apps, projects, and infrastructure at a glance.
-          </p>
-        </div>
-      </header>
+    <Page>
+      <PageHeader
+        title="Welcome back"
+        description="Your apps, projects, and infrastructure at a glance."
+      />
 
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat
-          icon={<Boxes className="h-5 w-5" />}
-          label="Apps"
-          value={apps.data?.results.length}
-        />
-        <Stat
-          icon={<Rocket className="h-5 w-5" />}
-          label="Running"
-          value={
-            apps.data?.results.filter((a) => a.status === "running").length
-          }
-        />
-        <Stat
-          icon={<Users className="h-5 w-5" />}
-          label="Teams"
-          value={teams.data?.results.length}
-        />
-        <Stat
-          icon={<Globe className="h-5 w-5" />}
-          label="Projects"
-          value={projects.data?.results.length}
-        />
-      </section>
+      <Grid condensed className="gisila-cards">
+        <Column sm={2} md={2} lg={4}>
+          <Stat
+            icon={<Application size={20} />}
+            label="Apps"
+            value={apps.data?.results.length}
+          />
+        </Column>
+        <Column sm={2} md={2} lg={4}>
+          <Stat
+            icon={<Rocket size={20} />}
+            label="Running"
+            value={
+              apps.data?.results.filter((a) => a.status === "running").length
+            }
+          />
+        </Column>
+        <Column sm={2} md={2} lg={4}>
+          <Stat
+            icon={<UserMultiple size={20} />}
+            label="Teams"
+            value={teams.data?.results.length}
+          />
+        </Column>
+        <Column sm={2} md={2} lg={4}>
+          <Stat
+            icon={<Earth size={20} />}
+            label="Projects"
+            value={projects.data?.results.length}
+          />
+        </Column>
+      </Grid>
 
-      <section>
-        <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent apps
-          </h2>
-          <Link
-            href="/apps"
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            View all →
-          </Link>
-        </header>
+      <PageSection
+        title="Recent apps"
+        actions={
+          <CarbonLink as={RouterLink} href="/apps" renderIcon={ArrowRight}>
+            View all
+          </CarbonLink>
+        }
+      >
         {recentApps.length === 0 ? (
           <EmptyApps />
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Grid condensed className="gisila-cards">
             {recentApps.map((app) => (
-              <AppCard key={app.id} app={app} />
+              <Column key={app.id} sm={4} md={4} lg={5}>
+                <AppCard app={app} />
+              </Column>
             ))}
-          </div>
+          </Grid>
         )}
-      </section>
-    </div>
+      </PageSection>
+    </Page>
   );
 }
 
@@ -91,66 +128,55 @@ function Stat({
   value: number | undefined;
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+    <Tile>
+      <div className="gisila-stat">
+        <span className="gisila-status-icon gisila-status-icon--brand">
           {icon}
-        </div>
+        </span>
         <div>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-2xl font-semibold">{value ?? "—"}</p>
+          <p className="gisila-stat__label">{label}</p>
+          <p className="gisila-stat__value">{value ?? "—"}</p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Tile>
   );
 }
 
 function AppCard({ app }: { app: App }) {
   return (
-    <Link
-      href={`/apps/${app.id}`}
-      className="group block rounded-xl border border-border/60 bg-card/60 p-5 transition hover:border-primary/40 hover:bg-card"
-    >
-      <div className="flex items-start justify-between">
+    <LinkTile as={RouterLink} href={`/apps/${app.id}`}>
+      <div className="gisila-card__head">
         <div>
-          <div className="flex items-center gap-2">
-            <StatusDot status={app.status} />
-            <h3 className="font-medium">{app.name}</h3>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <h3 className="gisila-card__title">{app.name}</h3>
+          <p className="gisila-card__meta">
             {app.runtime} · port {app.internalPort}
           </p>
         </div>
-        <Badge variant="secondary">{app.status}</Badge>
+        <Tag type={STATUS_TAG[app.status] ?? "gray"} size="sm">
+          {app.status}
+        </Tag>
       </div>
-      <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
+      <div className="gisila-card__foot">
         <span>Deployed {formatRelative(app.lastDeployedAt)}</span>
-        <span className="font-mono">{app.linuxUser}</span>
+        <span className="gisila-card__mono">{app.linuxUser}</span>
       </div>
-    </Link>
+    </LinkTile>
   );
 }
 
 function EmptyApps() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>No apps yet</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Create your first app to start deploying. You can ship a pre-compiled
-          binary, point at a Git repo, or upload a ZIP.
-        </p>
-        <Link
-          href="/apps/new"
-          className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
+    <Tile>
+      <h3 className="gisila-card__title">No apps yet</h3>
+      <p className="gisila-card__body">
+        Create your first app to start deploying. You can ship a pre-compiled
+        binary, point at a Git repo, or upload a ZIP.
+      </p>
+      <div className="gisila-card__cta">
+        <Button as={RouterLink} href="/apps/new">
           Create your first app
-        </Link>
-      </CardContent>
-    </Card>
+        </Button>
+      </div>
+    </Tile>
   );
 }

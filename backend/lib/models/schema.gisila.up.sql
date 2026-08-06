@@ -23,7 +23,7 @@ CREATE TABLE "teams" (
   "id" BIGSERIAL PRIMARY KEY,
   "name" VARCHAR(255) NOT NULL,
   "slug" VARCHAR(255) UNIQUE,
-  "owner_id" INTEGER NOT NULL,
+  "owner_id" BIGINT NOT NULL,
   "plan" VARCHAR(255) DEFAULT 'free',
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
 );
@@ -31,8 +31,8 @@ CREATE TABLE "teams" (
 
 CREATE TABLE "team_members" (
   "id" BIGSERIAL PRIMARY KEY,
-  "team_id" INTEGER NOT NULL,
-  "user_id" INTEGER NOT NULL,
+  "team_id" BIGINT NOT NULL,
+  "user_id" BIGINT NOT NULL,
   "role" VARCHAR(255) DEFAULT 'developer',
   "invited_at" TIMESTAMP WITH TIME ZONE NOT NULL,
   "accepted_at" TIMESTAMP WITH TIME ZONE
@@ -41,7 +41,7 @@ CREATE TABLE "team_members" (
 
 CREATE TABLE "api_tokens" (
   "id" BIGSERIAL PRIMARY KEY,
-  "user_id" INTEGER NOT NULL,
+  "user_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "token_hash" VARCHAR(255) UNIQUE,
   "prefix" VARCHAR(255),
@@ -53,7 +53,7 @@ CREATE TABLE "api_tokens" (
 
 CREATE TABLE "ssh_keys" (
   "id" BIGSERIAL PRIMARY KEY,
-  "user_id" INTEGER NOT NULL,
+  "user_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "algorithm" VARCHAR(255),
   "public_key" TEXT NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE "ssh_keys" (
 
 CREATE TABLE "projects" (
   "id" BIGSERIAL PRIMARY KEY,
-  "team_id" INTEGER NOT NULL,
+  "team_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "slug" VARCHAR(255),
   "description" TEXT,
@@ -92,15 +92,28 @@ CREATE TABLE "applications" (
 );
 
 
+CREATE TABLE "application_versions" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "application_id" BIGINT NOT NULL,
+  "version" VARCHAR(255) NOT NULL,
+  "status" VARCHAR(255) DEFAULT 'pending',
+  "is_default" BOOLEAN DEFAULT FALSE,
+  "error_message" TEXT,
+  "installed_at" TIMESTAMP WITH TIME ZONE,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
 CREATE TABLE "apps" (
   "id" BIGSERIAL PRIMARY KEY,
-  "project_id" INTEGER NOT NULL,
+  "project_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "slug" VARCHAR(255),
   "linux_user" VARCHAR(255) UNIQUE,
   "work_dir" VARCHAR(255) NOT NULL,
   "internal_port" INTEGER UNIQUE,
-  "application_id" INTEGER,
+  "application_id" BIGINT,
   "deployment_mode" VARCHAR(255),
   "runtime" VARCHAR(255) NOT NULL,
   "source_type" VARCHAR(255) NOT NULL,
@@ -110,7 +123,7 @@ CREATE TABLE "apps" (
   "build_command" VARCHAR(255),
   "start_command" VARCHAR(255),
   "health_check_path" VARCHAR(255),
-  "deploy_key_id" INTEGER,
+  "deploy_key_id" BIGINT,
   "python_version" VARCHAR(255),
   "python_mode" VARCHAR(255),
   "wsgi_app" VARCHAR(255),
@@ -146,7 +159,7 @@ CREATE TABLE "apps" (
 
 CREATE TABLE "env_vars" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
+  "app_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "value" TEXT,
   "is_secret" BOOLEAN DEFAULT FALSE,
@@ -156,8 +169,8 @@ CREATE TABLE "env_vars" (
 
 CREATE TABLE "deployments" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
-  "triggered_by_id" INTEGER,
+  "app_id" BIGINT NOT NULL,
+  "triggered_by_id" BIGINT,
   "source_type" VARCHAR(255) NOT NULL,
   "git_commit_sha" VARCHAR(255),
   "artifact_path" VARCHAR(255),
@@ -172,7 +185,7 @@ CREATE TABLE "deployments" (
 
 CREATE TABLE "build_logs" (
   "id" BIGSERIAL PRIMARY KEY,
-  "deployment_id" INTEGER NOT NULL,
+  "deployment_id" BIGINT NOT NULL,
   "line" TEXT NOT NULL,
   "stream" VARCHAR(255) DEFAULT 'stdout',
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
@@ -181,7 +194,7 @@ CREATE TABLE "build_logs" (
 
 CREATE TABLE "domains" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
+  "app_id" BIGINT NOT NULL,
   "hostname" VARCHAR(255) UNIQUE,
   "is_primary" BOOLEAN DEFAULT FALSE,
   "is_verified" BOOLEAN DEFAULT FALSE,
@@ -195,7 +208,7 @@ CREATE TABLE "domains" (
 
 CREATE TABLE "metric_samples" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
+  "app_id" BIGINT NOT NULL,
   "cpu_percent" INTEGER DEFAULT 0,
   "mem_bytes" INTEGER DEFAULT 0,
   "rss_bytes" INTEGER DEFAULT 0,
@@ -205,8 +218,8 @@ CREATE TABLE "metric_samples" (
 
 CREATE TABLE "app_events" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
-  "actor_id" INTEGER,
+  "app_id" BIGINT NOT NULL,
+  "actor_id" BIGINT,
   "kind" VARCHAR(255) NOT NULL,
   "message" TEXT,
   "data" TEXT,
@@ -247,7 +260,7 @@ CREATE TABLE "postgres_instances" (
 
 CREATE TABLE "postgres_databases" (
   "id" BIGSERIAL PRIMARY KEY,
-  "instance_id" INTEGER NOT NULL,
+  "instance_id" BIGINT NOT NULL,
   "db_name" VARCHAR(255) NOT NULL,
   "role_name" VARCHAR(255) NOT NULL,
   "password" VARCHAR(255) NOT NULL,
@@ -262,7 +275,7 @@ CREATE TABLE "postgres_databases" (
 
 CREATE TABLE "postgres_backup_schedules" (
   "id" BIGSERIAL PRIMARY KEY,
-  "database_id" INTEGER NOT NULL,
+  "database_id" BIGINT NOT NULL UNIQUE,
   "enabled" BOOLEAN DEFAULT FALSE,
   "frequency" VARCHAR(255) DEFAULT 'daily',
   "hour" INTEGER DEFAULT 2,
@@ -278,7 +291,7 @@ CREATE TABLE "postgres_backup_schedules" (
 
 CREATE TABLE "postgres_backups" (
   "id" BIGSERIAL PRIMARY KEY,
-  "database_id" INTEGER NOT NULL,
+  "database_id" BIGINT NOT NULL,
   "file_path" VARCHAR(255),
   "file_name" VARCHAR(255),
   "size_bytes" BIGINT,
@@ -313,7 +326,7 @@ CREATE TABLE "mongo_instances" (
 
 CREATE TABLE "mongo_databases" (
   "id" BIGSERIAL PRIMARY KEY,
-  "instance_id" INTEGER NOT NULL,
+  "instance_id" BIGINT NOT NULL,
   "db_name" VARCHAR(255) NOT NULL,
   "user_name" VARCHAR(255) NOT NULL,
   "password" VARCHAR(255) NOT NULL,
@@ -327,7 +340,7 @@ CREATE TABLE "mongo_databases" (
 
 CREATE TABLE "mongo_backup_schedules" (
   "id" BIGSERIAL PRIMARY KEY,
-  "database_id" INTEGER NOT NULL,
+  "database_id" BIGINT NOT NULL UNIQUE,
   "enabled" BOOLEAN DEFAULT FALSE,
   "frequency" VARCHAR(255) DEFAULT 'daily',
   "hour" INTEGER DEFAULT 2,
@@ -343,7 +356,7 @@ CREATE TABLE "mongo_backup_schedules" (
 
 CREATE TABLE "mongo_backups" (
   "id" BIGSERIAL PRIMARY KEY,
-  "database_id" INTEGER NOT NULL,
+  "database_id" BIGINT NOT NULL,
   "file_path" VARCHAR(255),
   "file_name" VARCHAR(255),
   "size_bytes" BIGINT,
@@ -379,7 +392,7 @@ CREATE TABLE "storage_providers" (
 
 CREATE TABLE "storage_buckets" (
   "id" BIGSERIAL PRIMARY KEY,
-  "provider_id" INTEGER NOT NULL,
+  "provider_id" BIGINT NOT NULL,
   "bucket_name" VARCHAR(255) NOT NULL,
   "access_key" VARCHAR(255) NOT NULL,
   "secret_key" VARCHAR(255) NOT NULL,
@@ -393,8 +406,8 @@ CREATE TABLE "storage_buckets" (
 
 CREATE TABLE "app_storage_links" (
   "id" BIGSERIAL PRIMARY KEY,
-  "app_id" INTEGER NOT NULL,
-  "bucket_id" INTEGER NOT NULL,
+  "app_id" BIGINT NOT NULL,
+  "bucket_id" BIGINT NOT NULL,
   "env_prefix" VARCHAR(255) DEFAULT 'S3',
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
 );
@@ -415,7 +428,7 @@ CREATE TABLE "mail_domains" (
 
 CREATE TABLE "mail_accounts" (
   "id" BIGSERIAL PRIMARY KEY,
-  "mail_domain_id" INTEGER NOT NULL,
+  "mail_domain_id" BIGINT NOT NULL,
   "address" VARCHAR(255) NOT NULL UNIQUE,
   "password_hash" VARCHAR(255) NOT NULL,
   "quota_mb" INTEGER,
@@ -427,8 +440,8 @@ CREATE TABLE "mail_accounts" (
 
 CREATE TABLE "audit_logs" (
   "id" BIGSERIAL PRIMARY KEY,
-  "actor_id" INTEGER,
-  "team_id" INTEGER,
+  "actor_id" BIGINT,
+  "team_id" BIGINT,
   "action" VARCHAR(255) NOT NULL,
   "target_type" VARCHAR(255),
   "target_id" VARCHAR(255),
@@ -449,6 +462,8 @@ ALTER TABLE "api_tokens" ADD CONSTRAINT "api_tokens_user_fkey" FOREIGN KEY ("use
 ALTER TABLE "ssh_keys" ADD CONSTRAINT "ssh_keys_user_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "projects" ADD CONSTRAINT "projects_team_fkey" FOREIGN KEY ("team_id") REFERENCES "teams" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "application_versions" ADD CONSTRAINT "application_versions_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "apps" ADD CONSTRAINT "apps_project_fkey" FOREIGN KEY ("project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "apps" ADD CONSTRAINT "apps_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -493,6 +508,8 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_team_fkey" FOREIGN KEY ("tea
 CREATE INDEX "idx_api_tokens_prefix" ON "api_tokens" ("prefix");
 
 CREATE INDEX "idx_projects_slug" ON "projects" ("slug");
+
+CREATE INDEX "idx_application_versions_version" ON "application_versions" ("version");
 
 CREATE INDEX "idx_apps_slug" ON "apps" ("slug");
 

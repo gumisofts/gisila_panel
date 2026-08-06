@@ -4,7 +4,7 @@ import 'package:gisila_agent/runtime/runtime_plugin.dart';
 /// A pre-built executable artifact is dropped in place by
 /// `gisila-agent build --source-type binary` (see `Builders.binaryArtifact`,
 /// invoked before the runtime dispatch). There is nothing further to build.
-class BinaryPlugin implements RuntimePlugin {
+class BinaryPlugin extends RuntimePlugin {
   @override
   String get key => 'binary';
 

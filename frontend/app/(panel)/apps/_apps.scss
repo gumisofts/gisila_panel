@@ -1,0 +1,185 @@
+// Layout glue for the Apps list and the New App form.
+//
+// Everything that Carbon ships a component for uses that component; what is
+// left here is the handful of responsive grids and inline type styles that
+// have no component equivalent.
+
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+@use '@carbon/react/scss/breakpoint';
+
+// ── Apps list ────────────────────────────────────────────────────────────────
+
+// Carbon's Grid assumes it owns the page margin, but the page frame already
+// supplies horizontal padding, so the grid's own would double it up and push
+// the cards out of line with the page heading. The class is repeated to outrank
+// Carbon's own single-class rule regardless of which stylesheet lands first.
+.gisila-apps__grid.gisila-apps__grid {
+  padding-inline: 0;
+}
+
+// Carbon's Grid columns have no vertical gutter, so wrapped rows would collide.
+.gisila-apps__column {
+  margin-block-end: spacing.$spacing-05;
+}
+
+// Tiles in the same row should end level with each other regardless of how
+// long the endpoint line wraps.
+.gisila-app-tile {
+  block-size: 100%;
+}
+
+.gisila-app-tile__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app-tile__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app-tile__name {
+  @include type.type-style('heading-compact-01');
+
+  color: theme.$text-primary;
+}
+
+.gisila-app-tile__endpoint {
+  @include type.type-style('code-01');
+
+  margin-block-start: spacing.$spacing-02;
+  overflow: hidden;
+  color: theme.$text-secondary;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gisila-app-tile__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: spacing.$spacing-03;
+  margin-block-start: spacing.$spacing-05;
+  padding-block-start: spacing.$spacing-04;
+  border-block-start: 1px solid theme.$border-subtle-01;
+}
+
+.gisila-app-tile__meta > * {
+  min-inline-size: 0;
+}
+
+.gisila-app-tile__meta-label {
+  @include type.type-style('label-01');
+
+  color: theme.$text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gisila-app-tile__meta-value {
+  @include type.type-style('body-compact-01');
+
+  overflow-wrap: anywhere;
+  color: theme.$text-primary;
+}
+
+.gisila-apps__skeleton {
+  inline-size: 100%;
+  block-size: 8.5rem;
+}
+
+// ── New app form ─────────────────────────────────────────────────────────────
+
+// Two field columns from md up, stacked below. Carbon's Grid is page-level
+// chrome with its own gutters, which fights the form's own rhythm.
+.gisila-app-form__two-col,
+.gisila-app-form__three-col {
+  display: grid;
+  gap: spacing.$spacing-05;
+}
+
+@include breakpoint.breakpoint('md') {
+  .gisila-app-form__two-col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gisila-app-form__three-col {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+// Puts the "New project" action on the same baseline as the project Select.
+.gisila-app-form__field-with-action {
+  display: flex;
+  align-items: flex-end;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app-form__field-with-action > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+// TileGroup renders `fieldset > div > label`; laying the tiles out side by side
+// is the only thing the group needs beyond Carbon's own styling.
+.gisila-tile-grid > fieldset > div {
+  display: grid;
+  gap: spacing.$spacing-03;
+}
+
+@include breakpoint.breakpoint('md') {
+  .gisila-tile-grid--2 > fieldset > div {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gisila-tile-grid--3 > fieldset > div {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.gisila-app-form__tile-title {
+  @include type.type-style('heading-compact-01');
+
+  display: block;
+  color: theme.$text-primary;
+}
+
+.gisila-app-form__tile-desc {
+  @include type.type-style('helper-text-01');
+
+  display: block;
+  margin-block-start: spacing.$spacing-02;
+  color: theme.$text-secondary;
+}
+
+.gisila-app-form__banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.gisila-app-form__hint {
+  @include type.type-style('helper-text-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-app-form__label-note {
+  @include type.type-style('helper-text-01');
+
+  color: theme.$text-secondary;
+}
+
+.gisila-app-form__actions {
+  margin-block-start: spacing.$spacing-03;
+}
+
+.gisila-code {
+  @include type.type-style('code-01');
+}

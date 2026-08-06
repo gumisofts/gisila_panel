@@ -3,7 +3,7 @@ import 'package:gisila_agent/runtime/deploy_mode.dart';
 import 'package:gisila_agent/runtime/runtime_plugin.dart';
 
 /// Celery reuses the Python toolchain (pyenv) — see [Builders.buildCelery].
-class CeleryPlugin implements RuntimePlugin {
+class CeleryPlugin extends RuntimePlugin {
   @override
   String get key => 'celery';
 

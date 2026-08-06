@@ -1,65 +1,81 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR, { mutate } from "swr";
+import { Add, ArrowRight, Launch, Save, Star, TrashCan } from "@carbon/icons-react";
 import {
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Trash2,
-  Save,
-  ExternalLink,
-  ArrowLeft,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Card, CardContent } from "@/components/ui/card";
+  Breadcrumb,
+  BreadcrumbItem,
+  Button,
+  Form,
+  InlineLoading,
+  InlineNotification,
+  Link as CarbonLink,
+  Modal,
+  Select,
+  SelectItem,
+  SkeletonText,
+  Stack,
+  StructuredListBody,
+  StructuredListCell,
+  StructuredListRow,
+  StructuredListWrapper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
-import type { Application, ApplicationDef, DeployMode } from "@/lib/types";
+import type {
+  App,
+  Application,
+  ApplicationDef,
+  ApplicationVersion,
+  DeployMode,
+  ListResponse,
+} from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import "../../services/_services.scss";
+import "../_applications.scss";
 
-const STATUS_META: Record<
-  string,
-  { icon: React.ReactNode; label: string; color: string }
-> = {
-  installed: {
-    icon: <CheckCircle className="h-4 w-4" />,
-    label: "Installed",
-    color: "text-emerald-500",
-  },
-  failed: {
-    icon: <AlertCircle className="h-4 w-4" />,
-    label: "Failed",
-    color: "text-red-500",
-  },
-  installing: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Installing…",
-    color: "text-blue-500",
-  },
-  updating: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Updating…",
-    color: "text-blue-500",
-  },
-  removing: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Removing…",
-    color: "text-zinc-400",
-  },
-  pending: {
-    icon: <Loader className="h-4 w-4 animate-spin" />,
-    label: "Pending…",
-    color: "text-zinc-400",
-  },
+const STATUS_LABEL: Record<string, string> = {
+  installed: "Installed",
+  failed: "Failed",
+  installing: "Installing…",
+  updating: "Updating…",
+  removing: "Removing…",
+  pending: "Pending…",
 };
+
+const IN_PROGRESS = ["installing", "updating", "removing", "pending"];
+
+const STATUS_TAG: Record<string, "green" | "red"> = {
+  installed: "green",
+  failed: "red",
+};
+
+function StatusIndicator({ status }: { status: string }) {
+  const label = STATUS_LABEL[status] ?? status;
+  if (IN_PROGRESS.includes(status)) {
+    return <InlineLoading status="active" description={label} />;
+  }
+  return (
+    <Tag type={STATUS_TAG[status] ?? "cool-gray"} size="md">
+      {label}
+    </Tag>
+  );
+}
 
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -69,76 +85,77 @@ export default function ApplicationDetailPage() {
     `/applications/${id}`,
     fetcher,
     {
-      refreshInterval: (a) =>
-        a && ["installing", "updating", "removing", "pending"].includes(a.status)
-          ? 2000
-          : 0,
+      // A settled Application can still have a version installing on the host,
+      // so the page also polls while any single version is in flight.
+      refreshInterval: (a) => {
+        if (!a) return 0;
+        if (IN_PROGRESS.includes(a.status)) return 2000;
+        if (a.versions.some((v) => IN_PROGRESS.includes(v.status))) return 4000;
+        return 0;
+      },
     },
   );
 
   const def = app?._def;
-  const statusMeta = STATUS_META[app?.status ?? ""] ?? {
-    icon: null,
-    label: app?.status ?? "unknown",
-    color: "text-muted-foreground",
-  };
 
   if (isLoading) return <PageSkeleton />;
   if (!app) return null;
 
   return (
-    <div className="container max-w-2xl space-y-6 py-8">
-      <div>
-        <button
-          onClick={() => router.push("/applications")}
-          className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Applications
-        </button>
+    <Page>
+      <Breadcrumb noTrailingSlash className="gisila-breadcrumb">
+        <BreadcrumbItem>
+          <CarbonLink as={RouterLink} href="/runtimes">
+            Runtimes
+          </CarbonLink>
+        </BreadcrumbItem>
+        <BreadcrumbItem isCurrentPage>{app.displayName}</BreadcrumbItem>
+      </Breadcrumb>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              {app.displayName}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground font-mono">
-              {app.key}
-            </p>
-          </div>
+      <PageHeader
+        title={app.displayName}
+        description={<span className="gisila-detail__key">{app.key}</span>}
+        actions={<StatusIndicator status={app.status} />}
+      />
 
-          <div className={cn("flex items-center gap-1.5 mt-1", statusMeta.color)}>
-            {statusMeta.icon}
-            <span className="text-sm font-medium">{statusMeta.label}</span>
-          </div>
-        </div>
+      {(app.errorMessage || def?.docsUrl || def?.description) && (
+        <PageSection>
+          <Stack gap={5}>
+            {app.errorMessage && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                hideCloseButton
+                title={app.errorMessage}
+              />
+            )}
 
-        {app.errorMessage && (
-          <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
-            {app.errorMessage}
-          </div>
-        )}
+            {def?.docsUrl && (
+              <CarbonLink
+                href={def.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                renderIcon={Launch}
+                size="sm"
+              >
+                Documentation
+              </CarbonLink>
+            )}
 
-        {def?.docsUrl && (
-          <a
-            href={def.docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Documentation
-          </a>
-        )}
+            {def?.description && (
+              <p className="gisila-detail__note">{def.description}</p>
+            )}
+          </Stack>
+        </PageSection>
+      )}
 
-        {def?.description && (
-          <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-            {def.description}
-          </p>
-        )}
-      </div>
-
-      <Separator />
+      {def?.versioned && (
+        <VersionsSection
+          app={app}
+          def={def}
+          onChanged={() => mutate(`/applications/${id}`)}
+        />
+      )}
 
       <DefaultsForm
         app={app}
@@ -146,14 +163,250 @@ export default function ApplicationDetailPage() {
         onSaved={() => mutate(`/applications/${id}`)}
       />
 
-      <Separator />
-
       <AppsUsingSection applicationId={app.id} />
 
-      <Separator />
+      <ApplicationActions
+        app={app}
+        onDone={() => router.push("/runtimes")}
+      />
+    </Page>
+  );
+}
 
-      <ApplicationActions app={app} onDone={() => router.push("/applications")} />
-    </div>
+// ── Installed versions ────────────────────────────────────────────────────────
+
+/// The versions of a versioned Application that are on the host. Several live
+/// side by side; one of them is the version new apps get when they don't pin
+/// their own.
+function VersionsSection({
+  app,
+  def,
+  onChanged,
+}: {
+  app: Application;
+  def: ApplicationDef;
+  onChanged: () => void;
+}) {
+  const { isSuperuser } = usePermissions();
+  const [installing, setInstalling] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [version, setVersion] = useState("");
+  const [removing, setRemoving] = useState<ApplicationVersion | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const present = new Set(app.versions.map((v) => v.version));
+  const installable = def.availableVersions.filter((v) => !present.has(v));
+
+  function openInstall() {
+    const recommended = def.defaultVersion ?? "";
+    setVersion(
+      installable.includes(recommended) ? recommended : installable[0] ?? "",
+    );
+    setChoosing(true);
+  }
+
+  async function install() {
+    if (!version) return;
+    setChoosing(false);
+    setInstalling(true);
+    try {
+      await api(`/applications/${app.id}/versions`, {
+        method: "POST",
+        body: JSON.stringify({ version }),
+      });
+      toast.success(`${version} install queued.`);
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Install failed.");
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  async function makeDefault(v: ApplicationVersion) {
+    setBusy(true);
+    try {
+      await api(`/applications/${app.id}/versions/${v.id}/default`, {
+        method: "POST",
+      });
+      toast.success(`New apps will use ${v.version}.`);
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to set the default.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /// Removes one version. The backend refuses (409) while any app still pins
+  /// it and explains which — that message is the whole point of the toast.
+  async function remove(v: ApplicationVersion) {
+    setBusy(true);
+    try {
+      await api(`/applications/${app.id}/versions/${v.id}`, { method: "DELETE" });
+      toast.success(`${v.version} removal queued.`);
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Removal failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <PageSection
+      title="Installed versions"
+      description="Several versions of this runtime can live on the host at once. Apps pin the version they were created with; the default is what new apps get."
+      actions={
+        isSuperuser &&
+        (installing ? (
+          <InlineLoading status="active" description="Installing…" />
+        ) : (
+          <Button
+            size="sm"
+            kind="tertiary"
+            renderIcon={Add}
+            disabled={installable.length === 0}
+            onClick={openInstall}
+          >
+            Install version
+          </Button>
+        ))
+      }
+    >
+      {app.versions.length === 0 ? (
+        <Tile>
+          <p className="gisila-versions__muted">
+            No versions installed yet — install one to deploy apps against this
+            runtime.
+          </p>
+        </Tile>
+      ) : (
+        <TableContainer>
+          <Table size="lg">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Version</TableHeader>
+                <TableHeader>Status</TableHeader>
+                <TableHeader>Default</TableHeader>
+                <TableHeader>Installed</TableHeader>
+                <TableHeader>Actions</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {app.versions.map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell>
+                    <span className="gisila-versions__version">{v.version}</span>
+                    {v.errorMessage && (
+                      <span className="gisila-versions__error">
+                        {v.errorMessage}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <StatusIndicator status={v.status} />
+                  </TableCell>
+                  <TableCell>
+                    {v.isDefault ? (
+                      <Tag type="blue" size="sm" renderIcon={Star}>
+                        Default
+                      </Tag>
+                    ) : (
+                      <span className="gisila-versions__muted">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {v.installedAt
+                      ? new Date(v.installedAt).toLocaleDateString()
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <div className="gisila-versions__actions">
+                      {isSuperuser && !v.isDefault && v.status === "installed" && (
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          renderIcon={Star}
+                          disabled={busy}
+                          onClick={() => void makeDefault(v)}
+                        >
+                          Make default
+                        </Button>
+                      )}
+                      {isSuperuser && (
+                        <Button
+                          kind="danger--ghost"
+                          size="sm"
+                          hasIconOnly
+                          renderIcon={TrashCan}
+                          iconDescription={`Remove ${v.version}`}
+                          disabled={busy || v.status === "removing"}
+                          onClick={() => setRemoving(v)}
+                        />
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      <Modal
+        open={choosing}
+        size="sm"
+        modalHeading={`Install a ${app.displayName} version`}
+        modalLabel={app.key}
+        primaryButtonText="Install"
+        primaryButtonDisabled={!version}
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setChoosing(false)}
+        onRequestSubmit={() => void install()}
+      >
+        <Stack gap={5}>
+          <Select
+            id="install-version"
+            labelText="Version"
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+          >
+            {installable.map((v) => (
+              <SelectItem
+                key={v}
+                value={v}
+                text={v === def.defaultVersion ? `${v} (recommended)` : v}
+              />
+            ))}
+          </Select>
+          <p className="gisila-detail__note">
+            Installed alongside the versions already on the host. Existing apps
+            keep the version they pin.
+          </p>
+        </Stack>
+      </Modal>
+
+      <Modal
+        open={!!removing}
+        danger
+        modalHeading={`Remove ${app.displayName} ${removing?.version ?? ""}?`}
+        modalLabel={app.key}
+        primaryButtonText="Remove"
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setRemoving(null)}
+        onRequestSubmit={() => {
+          const target = removing;
+          setRemoving(null);
+          if (target) void remove(target);
+        }}
+      >
+        <p className="gisila-detail__note">
+          The toolchain is deleted from the host. Blocked while any app still
+          pins this version — the other installed versions are untouched.
+        </p>
+      </Modal>
+    </PageSection>
   );
 }
 
@@ -185,6 +438,15 @@ function DefaultsForm({
 
   const { isSuperuser } = usePermissions();
 
+  // A versioned Application can only default to a version that is actually on
+  // the host — plus whatever it currently points at, so a stale value is
+  // visible rather than silently swapped for the first option.
+  const onHost = app.versions
+    .filter((v) => v.status === "installed")
+    .map((v) => v.version);
+  const versionOptions =
+    version && !onHost.includes(version) ? [version, ...onHost] : onHost;
+
   async function save() {
     setSaving(true);
     try {
@@ -207,127 +469,126 @@ function DefaultsForm({
   }
 
   return (
-    <div className="space-y-5">
-      <h2 className="text-sm font-semibold">Deployment defaults</h2>
-      <p className="text-xs text-muted-foreground">
-        These seed new Apps created against this Application. Existing Apps
-        keep their own configured values.
-      </p>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="version">Default version</Label>
-        <Input
-          id="version"
-          value={version}
-          placeholder={def?.versionHint ?? "e.g. 3.12.4"}
-          onChange={(e) => setVersion(e.target.value)}
-          disabled={!isSuperuser}
-          className="h-8 font-mono"
-        />
-        {def?.versionHint && (
-          <p className="text-xs text-muted-foreground">{def.versionHint}</p>
-        )}
-      </div>
-
-      {modes.length > 1 && (
-        <div className="space-y-1.5">
-          <Label htmlFor="deployMode">Default deployment mode</Label>
-          <select
-            id="deployMode"
-            value={deployMode}
-            onChange={(e) => setDeployMode(e.target.value as DeployMode)}
-            disabled={!isSuperuser}
-            className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {modes.map((m) => (
-              <option key={m} value={m}>
-                {DEPLOY_MODE_LABEL[m] ?? m}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <Label htmlFor="buildCommand">Default build command</Label>
-        <Input
-          id="buildCommand"
-          value={buildCommand}
-          placeholder="leave empty to use the plugin's built-in default"
-          onChange={(e) => setBuildCommand(e.target.value)}
-          disabled={!isSuperuser}
-          className="h-8 font-mono"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="startCommand">Default start command</Label>
-        <Input
-          id="startCommand"
-          value={startCommand}
-          placeholder="leave empty to use the plugin's built-in default"
-          onChange={(e) => setStartCommand(e.target.value)}
-          disabled={!isSuperuser}
-          className="h-8 font-mono"
-        />
-      </div>
-
-      {isSuperuser && (
-        <Button size="sm" disabled={saving} onClick={save}>
-          {saving ? (
-            <Loader className="h-3.5 w-3.5 animate-spin" />
+    <PageSection
+      title="Deployment defaults"
+      description="These seed new Apps created against this runtime. Existing Apps keep their own configured values."
+    >
+      <Form onSubmit={(e) => e.preventDefault()}>
+        <Stack gap={5}>
+          {def?.versioned ? (
+            <Select
+              id="version"
+              labelText="Default version"
+              value={version}
+              helperText="Only versions installed on this host can be the default. Install more from the section above."
+              onChange={(e) => setVersion(e.target.value)}
+              disabled={!isSuperuser}
+            >
+              <SelectItem value="" text="No default — apps pick their own" />
+              {versionOptions.map((v) => (
+                <SelectItem key={v} value={v} text={v} />
+              ))}
+            </Select>
           ) : (
-            <Save className="h-3.5 w-3.5" />
+            <TextInput
+              id="version"
+              labelText="Default version"
+              className="gisila-field--mono"
+              value={version}
+              placeholder={def?.versionHint ?? "e.g. 3.12.4"}
+              helperText={def?.versionHint}
+              onChange={(e) => setVersion(e.target.value)}
+              disabled={!isSuperuser}
+            />
           )}
-          Save defaults
-        </Button>
-      )}
-    </div>
+
+          {modes.length > 1 && (
+            <Select
+              id="deployMode"
+              labelText="Default deployment mode"
+              value={deployMode}
+              onChange={(e) => setDeployMode(e.target.value as DeployMode)}
+              disabled={!isSuperuser}
+            >
+              {modes.map((m) => (
+                <SelectItem key={m} value={m} text={DEPLOY_MODE_LABEL[m] ?? m} />
+              ))}
+            </Select>
+          )}
+
+          <TextInput
+            id="buildCommand"
+            labelText="Default build command"
+            className="gisila-field--mono"
+            value={buildCommand}
+            placeholder="leave empty to use the plugin's built-in default"
+            onChange={(e) => setBuildCommand(e.target.value)}
+            disabled={!isSuperuser}
+          />
+
+          <TextInput
+            id="startCommand"
+            labelText="Default start command"
+            className="gisila-field--mono"
+            value={startCommand}
+            placeholder="leave empty to use the plugin's built-in default"
+            onChange={(e) => setStartCommand(e.target.value)}
+            disabled={!isSuperuser}
+          />
+
+          {isSuperuser &&
+            (saving ? (
+              <InlineLoading status="active" description="Saving…" />
+            ) : (
+              <Button size="md" renderIcon={Save} onClick={save}>
+                Save defaults
+              </Button>
+            ))}
+        </Stack>
+      </Form>
+    </PageSection>
   );
 }
 
-// ── Apps using this Application ───────────────────────────────────────────────
+// ── Apps using this runtime ───────────────────────────────────────────────────
 
 function AppsUsingSection({ applicationId }: { applicationId: number }) {
-  const { data } = useSWR<{ results: { id: number; name: string }[] }>(
-    "/apps/",
-    fetcher,
+  const { data } = useSWR<ListResponse<App>>("/apps/", fetcher);
+  const inUse = (data?.results ?? []).filter(
+    (a) => Number(a.applicationId) === Number(applicationId),
   );
-  const apps = (data?.results ?? []) as unknown as {
-    id: number;
-    name: string;
-    applicationId?: number | null;
-  }[];
-  const inUse = apps.filter((a) => a.applicationId === applicationId);
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold">
-        Apps using this Application ({inUse.length})
-      </h2>
+    <PageSection title={`Apps using this runtime (${inUse.length})`}>
       {inUse.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No apps reference this Application yet.
+        <p className="gisila-detail__note">
+          No apps reference this runtime yet.
         </p>
       ) : (
-        <Card>
-          <CardContent className="divide-y divide-border p-0">
+        <StructuredListWrapper aria-label="Apps using this runtime" isCondensed>
+          <StructuredListBody>
             {inUse.map((a) => (
-              <a
-                key={a.id}
-                href={`/apps/${a.id}`}
-                className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/40"
-              >
-                {a.name}
-                <Badge variant="secondary" className="text-[10px]">
-                  #{a.id}
-                </Badge>
-              </a>
+              <StructuredListRow key={a.id}>
+                <StructuredListCell>
+                  <CarbonLink
+                    as={RouterLink}
+                    href={`/apps/${a.id}`}
+                    renderIcon={ArrowRight}
+                  >
+                    {a.name}
+                  </CarbonLink>
+                </StructuredListCell>
+                <StructuredListCell>
+                  <Tag type="cool-gray" size="sm">
+                    #{a.id}
+                  </Tag>
+                </StructuredListCell>
+              </StructuredListRow>
             ))}
-          </CardContent>
-        </Card>
+          </StructuredListBody>
+        </StructuredListWrapper>
       )}
-    </div>
+    </PageSection>
   );
 }
 
@@ -341,6 +602,7 @@ function ApplicationActions({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const { isSuperuser } = usePermissions();
 
   if (!isSuperuser) return null;
@@ -363,40 +625,59 @@ function ApplicationActions({
   }
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold">Actions</h2>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-red-500 hover:text-red-600 border-red-500/30 hover:bg-red-500/5"
-        disabled={isInProgress || busy}
-        onClick={remove}
-      >
+    <PageSection title="Actions">
+      <Stack gap={3}>
         {busy ? (
-          <Loader className="h-3.5 w-3.5 animate-spin" />
+          <InlineLoading status="active" description="Removing…" />
         ) : (
-          <Trash2 className="h-3.5 w-3.5" />
+          <Button
+            size="md"
+            kind="danger--tertiary"
+            renderIcon={TrashCan}
+            disabled={isInProgress}
+            onClick={() => setConfirming(true)}
+          >
+            Remove
+          </Button>
         )}
-        Remove
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        Blocked while any App still references this Application.
-      </p>
-    </div>
+        <p className="gisila-detail__note">
+          Blocked while any App still references this runtime.
+        </p>
+      </Stack>
+
+      <Modal
+        open={confirming}
+        danger
+        modalHeading={`Remove ${app.displayName}?`}
+        modalLabel={app.key}
+        primaryButtonText="Remove"
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setConfirming(false)}
+        onRequestSubmit={() => {
+          setConfirming(false);
+          void remove();
+        }}
+      >
+        <p className="gisila-detail__note">
+          The runtime is queued for removal from the host. Apps that still
+          reference this runtime will block it.
+        </p>
+      </Modal>
+    </PageSection>
   );
 }
 
 function PageSkeleton() {
   return (
-    <div className="container max-w-2xl space-y-6 py-8">
-      <div className="h-16 animate-pulse rounded-md bg-card" />
-      <Card>
-        <CardContent className="space-y-4 py-6">
+    <Page>
+      <SkeletonText heading width="40%" />
+      <Tile>
+        <Stack gap={5}>
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-8 animate-pulse rounded bg-muted" />
+            <SkeletonText key={i} />
           ))}
-        </CardContent>
-      </Card>
-    </div>
+        </Stack>
+      </Tile>
+    </Page>
   );
 }

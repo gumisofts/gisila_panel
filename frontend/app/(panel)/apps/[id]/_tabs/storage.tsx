@@ -2,34 +2,28 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import { toast } from "sonner";
-import { HardDrive, Plus, Trash2, Link2, Loader } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
+  Button,
+  Modal,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SkeletonText,
+  Stack,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Add, Link, ObjectStorage, TrashCan } from "@carbon/icons-react";
+import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
+import { PageSection } from "@/components/page";
 import type {
   AppStorageLink,
   ListResponse,
   StorageBucket,
   StorageProvider,
 } from "@/lib/types";
+import "../_app-detail.scss";
 
 export function StorageTab({ appId }: { appId: number }) {
   const linksKey = `/storage/apps/${appId}/links`;
@@ -91,158 +85,138 @@ export function StorageTab({ appId }: { appId: number }) {
   }
 
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">Object storage buckets</h3>
-          <p className="text-xs text-muted-foreground">
-            Linking a bucket injects its S3 credentials into this app&apos;s
-            environment (live on the next deploy).
-          </p>
-        </div>
-        {(
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> Link bucket
+    <div className="gisila-app__narrow">
+      <PageSection
+        title="Object storage buckets"
+        description="Linking a bucket injects its S3 credentials into this app's environment (live on the next deploy)."
+        actions={
+          <Button size="sm" renderIcon={Add} onClick={() => setOpen(true)}>
+            Link bucket
           </Button>
-        )}
-      </div>
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : links.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            <HardDrive className="mx-auto mb-3 h-8 w-8 opacity-40" />
-            No buckets linked yet.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {links.map((l) => (
-            <Card key={l.id}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Link2 className="h-4 w-4 text-violet-500" />
-                  {l.bucketName}
-                  <Badge variant="outline" className="ml-1 text-[10px]">
-                    {l.providerName}
-                  </Badge>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {l.providerKind}
-                  </Badge>
-                </CardTitle>
-                {(
+        }
+      >
+        {isLoading ? (
+          <SkeletonText paragraph lineCount={3} />
+        ) : links.length === 0 ? (
+          <Tile className="gisila-empty">
+            <span className="gisila-app__empty">
+              <ObjectStorage size={32} />
+              No buckets linked yet.
+            </span>
+          </Tile>
+        ) : (
+          <Stack gap={5}>
+            {links.map((l) => (
+              <Tile key={l.id}>
+                <div className="gisila-app__toolbar">
+                  <span className="gisila-app__inline">
+                    <Link size={16} />
+                    {l.bucketName}
+                    <Tag type="outline" size="sm">
+                      {l.providerName}
+                    </Tag>
+                    <Tag type="cool-gray" size="sm">
+                      {l.providerKind}
+                    </Tag>
+                  </span>
                   <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-muted-foreground hover:text-red-500"
+                    size="sm"
+                    kind="danger--ghost"
+                    hasIconOnly
+                    renderIcon={TrashCan}
+                    iconDescription={`Unlink ${l.bucketName}`}
                     onClick={() => unlink(l.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="pb-3">
-                <p className="mb-1.5 text-xs text-muted-foreground">
+                  />
+                </div>
+                <p className="gisila-app__hint">
                   Injected env vars (prefix{" "}
-                  <code className="font-mono">{l.envPrefix}</code>):
+                  <span className="gisila-app__chip">{l.envPrefix}</span>):
                 </p>
-                <div className="flex flex-wrap gap-1">
+                <div className="gisila-app__inline">
                   {l.envVars.map((v) => (
-                    <code
-                      key={v}
-                      className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]"
-                    >
+                    <span key={v} className="gisila-app__chip">
                       {v}
-                    </code>
+                    </span>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              </Tile>
+            ))}
+          </Stack>
+        )}
+      </PageSection>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Link a bucket</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Provider</Label>
-              <Select
-                value={providerId}
-                onValueChange={(v) => {
-                  setProviderId(v);
-                  setBucketId("");
-                }}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select a storage provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(providers.data?.results ?? []).map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.displayName} ({p.kind})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Bucket</Label>
-              <Select
-                value={bucketId}
-                onValueChange={setBucketId}
-                disabled={!providerId}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue
-                    placeholder={
-                      providerId ? "Select a bucket" : "Pick a provider first"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {(buckets.data?.results ?? [])
-                    .filter((b) => b.status === "active")
-                    .map((b) => (
-                      <SelectItem key={b.id} value={String(b.id)}>
-                        {b.bucketName}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="env-prefix">Env var prefix</Label>
-              <Input
-                id="env-prefix"
-                className="mt-1 font-mono"
-                value={envPrefix}
-                onChange={(e) => setEnvPrefix(e.target.value.toUpperCase())}
-                placeholder="S3"
+      <Modal
+        open={open}
+        size="sm"
+        modalHeading="Link a bucket"
+        primaryButtonText={saving ? "Linking…" : "Link bucket"}
+        primaryButtonDisabled={saving || !bucketId}
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setOpen(false)}
+        onRequestSubmit={link}
+      >
+        <Stack gap={5}>
+          <Select
+            id="storage-provider"
+            labelText="Provider"
+            value={providerId}
+            onChange={(e) => {
+              setProviderId(e.target.value);
+              setBucketId("");
+            }}
+          >
+            <SelectItem value="" text="Select a storage provider" />
+            {(providers.data?.results ?? []).map((p) => (
+              <SelectItem
+                key={p.id}
+                value={String(p.id)}
+                text={`${p.displayName} (${p.kind})`}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Variables are named{" "}
-                <code className="font-mono">{envPrefix || "S3"}_ENDPOINT</code>,{" "}
-                <code className="font-mono">{envPrefix || "S3"}_BUCKET</code>,{" "}
-                <code className="font-mono">{envPrefix || "S3"}_ACCESS_KEY</code>, …
-                Use a distinct prefix to attach more than one bucket.
-              </p>
-            </div>
+            ))}
+          </Select>
+
+          <Select
+            id="storage-bucket"
+            labelText="Bucket"
+            value={bucketId}
+            disabled={!providerId}
+            onChange={(e) => setBucketId(e.target.value)}
+          >
+            <SelectItem
+              value=""
+              text={providerId ? "Select a bucket" : "Pick a provider first"}
+            />
+            {(buckets.data?.results ?? [])
+              .filter((b) => b.status === "active")
+              .map((b) => (
+                <SelectItem key={b.id} value={String(b.id)} text={b.bucketName} />
+              ))}
+          </Select>
+
+          <div>
+            <TextInput
+              id="env-prefix"
+              labelText="Env var prefix"
+              value={envPrefix}
+              onChange={(e) => setEnvPrefix(e.target.value.toUpperCase())}
+              placeholder="S3"
+            />
+            <p className="gisila-app__hint">
+              Variables are named{" "}
+              <span className="gisila-app__chip">
+                {envPrefix || "S3"}_ENDPOINT
+              </span>
+              ,{" "}
+              <span className="gisila-app__chip">{envPrefix || "S3"}_BUCKET</span>
+              ,{" "}
+              <span className="gisila-app__chip">
+                {envPrefix || "S3"}_ACCESS_KEY
+              </span>
+              , … Use a distinct prefix to attach more than one bucket.
+            </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={link} disabled={saving || !bucketId}>
-              {saving ? <Loader className="h-4 w-4 animate-spin" /> : "Link bucket"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </Stack>
+      </Modal>
     </div>
   );
 }

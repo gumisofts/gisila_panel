@@ -1,34 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
+  Button,
+  CodeSnippet,
+  ContentSwitcher,
+  InlineLoading,
+  InlineNotification,
+  Modal,
   Select,
-  SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextArea,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader } from "@/components/page";
 import { api } from "@/lib/api";
 import { SshKey, SshKeyAlgorithm } from "@/lib/types";
-import {
-  Check,
-  Clipboard,
-  Key,
-  Plus,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
+import { Add, Checkmark, Copy, Password, TrashCan } from "@carbon/icons-react";
+import "../_settings.scss";
 
 const ALGORITHMS: { value: SshKeyAlgorithm; label: string; badge: string }[] = [
   { value: "ed25519",   label: "Ed25519",   badge: "Recommended" },
@@ -74,6 +74,16 @@ export default function SshKeysPage() {
     setGeneratedPublicKey(null);
     setMode("generate");
     setDialogOpen(true);
+  };
+
+  // Dismissing the dialog itself (close button, escape, click outside) drops the
+  // one-time keypair; the explicit footer buttons below only close it.
+  const onDialogOpenChange = (o: boolean) => {
+    if (!o) {
+      setGeneratedPrivateKey(null);
+      setGeneratedPublicKey(null);
+    }
+    setDialogOpen(o);
   };
 
   const submit = async () => {
@@ -126,231 +136,208 @@ export default function SshKeysPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">SSH Keys</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Generate deploy keys or add existing public keys for server access.
-          </p>
-        </div>
-        <Button onClick={openNew}>
-          <Plus className="w-4 h-4 mr-2" /> Add Key
-        </Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="SSH Keys"
+        description="Generate deploy keys or add existing public keys for server access."
+        actions={
+          <Button renderIcon={Add} onClick={openNew}>
+            Add Key
+          </Button>
+        }
+      />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <InlineLoading description="Loading…" />
       ) : keys.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-14 gap-3 text-center">
-            <Key className="w-10 h-10 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No SSH keys yet.</p>
-            <Button variant="outline" size="sm" onClick={openNew}>
-              <Plus className="w-4 h-4 mr-1" /> Add your first key
+        <Tile className="gisila-empty">
+          <div className="gisila-settings__empty">
+            <Password size={32} />
+            <p>No SSH keys yet.</p>
+            <Button kind="tertiary" size="sm" renderIcon={Add} onClick={openNew}>
+              Add your first key
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </Tile>
       ) : (
-        <div className="space-y-3">
-          {keys.map((key) => (
-            <Card key={key.id}>
-              <CardContent className="flex items-start gap-4 py-4">
-                <div className="mt-0.5 text-muted-foreground">
-                  <Key className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">{key.name}</span>
-                    {key.algorithm && (
-                      <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                        {ALGORITHMS.find((a) => a.value === key.algorithm)?.label ?? key.algorithm}
-                      </span>
-                    )}
-                    {key.isDeployKey && (
-                      <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                        Deploy key
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
-                    {key.fingerprint}
-                  </p>
-                  <p className="text-xs text-muted-foreground font-mono mt-1 truncate opacity-60">
-                    {key.publicKey}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Copy public key"
-                    onClick={() => copyPub(key)}
-                  >
-                    {copiedId === key.id ? (
-                      <Check className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <Clipboard className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => deleteKey(key.id as number)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <TableContainer>
+          <Table size="sm">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Name</TableHeader>
+                <TableHeader>Fingerprint</TableHeader>
+                <TableHeader>Public key</TableHeader>
+                <TableHeader />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {keys.map((key) => (
+                <TableRow key={key.id}>
+                  <TableCell>
+                    <div className="gisila-settings__name">
+                      <span>{key.name}</span>
+                      {key.algorithm && (
+                        <Tag type="cool-gray" size="sm">
+                          {ALGORITHMS.find((a) => a.value === key.algorithm)?.label ?? key.algorithm}
+                        </Tag>
+                      )}
+                      {key.isDeployKey && (
+                        <Tag type="blue" size="sm">
+                          Deploy key
+                        </Tag>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="gisila-settings__mono gisila-settings__truncate">
+                      {key.fingerprint}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="gisila-settings__mono gisila-settings__truncate">
+                      {key.publicKey}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="gisila-settings__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        hasIconOnly
+                        renderIcon={copiedId === key.id ? Checkmark : Copy}
+                        iconDescription="Copy public key"
+                        onClick={() => copyPub(key)}
+                      />
+                      <Button
+                        kind="danger--ghost"
+                        size="sm"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription="Delete key"
+                        onClick={() => deleteKey(key.id as number)}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
       {/* Add / Generate dialog */}
-        <Dialog
+      <Modal
         open={dialogOpen}
-        onOpenChange={(o) => {
-          if (!o) {
-            setGeneratedPrivateKey(null);
-            setGeneratedPublicKey(null);
-          }
-          setDialogOpen(o);
-        }}
+        onRequestClose={() => onDialogOpenChange(false)}
+        size="md"
+        hasScrollingContent={Boolean(generatedPrivateKey)}
+        modalHeading={
+          generatedPrivateKey ? "Key generated — save your private key" : "Add SSH Key"
+        }
+        primaryButtonText={
+          generatedPrivateKey
+            ? "Done"
+            : saving
+            ? "…"
+            : mode === "generate"
+            ? "Generate Key"
+            : "Add Key"
+        }
+        primaryButtonDisabled={
+          generatedPrivateKey ? false : saving || !name.trim()
+        }
+        secondaryButtonText={generatedPrivateKey ? undefined : "Cancel"}
+        onRequestSubmit={
+          generatedPrivateKey ? () => setDialogOpen(false) : submit
+        }
       >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {generatedPrivateKey ? "Key generated — save your private key" : "Add SSH Key"}
-            </DialogTitle>
-          </DialogHeader>
-
-          {generatedPrivateKey ? (
-            <div className="space-y-4">
-              <div className="rounded-md bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
-                This private key will <strong>not</strong> be shown again. Copy
-                it now if you need external access to this key.
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Private Key (PEM)</Label>
-                <pre className="text-xs font-mono bg-muted rounded-md p-3 overflow-auto max-h-48 whitespace-pre-wrap break-all">
-                  {generatedPrivateKey}
-                </pre>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Public Key</Label>
-                <pre className="text-xs font-mono bg-muted rounded-md p-3 overflow-auto max-h-24 whitespace-pre-wrap break-all">
-                  {generatedPublicKey}
-                </pre>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Add this to your Git hosting provider as a deploy key with read access.
-                </p>
-              </div>
-              <Button variant="outline" className="w-full" onClick={copyPrivate}>
-                {copiedPrivate ? (
-                  <><Check className="w-4 h-4 mr-2 text-green-500" /> Copied!</>
-                ) : (
-                  <><Clipboard className="w-4 h-4 mr-2" /> Copy private key</>
-                )}
-              </Button>
+        {generatedPrivateKey ? (
+          <Stack gap={5}>
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              hideCloseButton
+              title="This private key will not be shown again."
+              subtitle="Copy it now if you need external access to this key."
+            />
+            <div>
+              <span className="gisila-settings__label">Private Key (PEM)</span>
+              <CodeSnippet type="multi" hideCopyButton wrapText>
+                {generatedPrivateKey}
+              </CodeSnippet>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Mode tabs */}
-              <div className="flex rounded-md border overflow-hidden text-sm">
-                {(["generate", "paste"] as Mode[]).map((m) => (
-                  <button
-                    key={m}
-                    className={`flex-1 px-4 py-2 flex items-center justify-center gap-1.5 transition-colors ${
-                      mode === m
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted text-muted-foreground"
-                    }`}
-                    onClick={() => setMode(m)}
-                  >
-                    {m === "generate" ? (
-                      <><Sparkles className="w-3.5 h-3.5" /> Generate</>
-                    ) : (
-                      <><Clipboard className="w-3.5 h-3.5" /> Paste public key</>
-                    )}
-                  </button>
-                ))}
-              </div>
+            <div>
+              <span className="gisila-settings__label">Public Key</span>
+              <CodeSnippet type="multi" hideCopyButton wrapText>
+                {generatedPublicKey}
+              </CodeSnippet>
+              <p className="gisila-settings__hint">
+                Add this to your Git hosting provider as a deploy key with read access.
+              </p>
+            </div>
+            <Button
+              kind="tertiary"
+              renderIcon={copiedPrivate ? Checkmark : Copy}
+              onClick={copyPrivate}
+            >
+              {copiedPrivate ? "Copied!" : "Copy private key"}
+            </Button>
+          </Stack>
+        ) : (
+          <Stack gap={5}>
+            <ContentSwitcher
+              selectedIndex={mode === "generate" ? 0 : 1}
+              onChange={({ name: selected }) => setMode(selected as Mode)}
+            >
+              <Switch name="generate" text="Generate" />
+              <Switch name="paste" text="Paste public key" />
+            </ContentSwitcher>
 
-              <div>
-                <Label htmlFor="key-name">Name</Label>
-                <Input
-                  id="key-name"
-                  placeholder="e.g. my-repo deploy key"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
+            <TextInput
+              id="key-name"
+              labelText="Name"
+              placeholder="e.g. my-repo deploy key"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
 
-              {mode === "generate" ? (
-                <div>
-                  <Label htmlFor="key-algo">Algorithm</Label>
-                  <Select
-                    value={algorithm}
-                    onValueChange={(v) => setAlgorithm(v as SshKeyAlgorithm)}
-                  >
-                    <SelectTrigger id="key-algo" className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ALGORITHMS.map((a) => (
-                        <SelectItem key={a.value} value={a.value}>
-                          {a.label}
-                          {a.badge && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({a.badge})
-                            </span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div>
-                  <Label htmlFor="pub-key">Public Key</Label>
-                  <textarea
-                    id="pub-key"
-                    rows={4}
-                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-                    placeholder="ssh-ed25519 AAAAC3Nz…"
-                    value={publicKey}
-                    onChange={(e) => setPublicKey(e.target.value)}
+            {mode === "generate" ? (
+              <Select
+                id="key-algo"
+                labelText="Algorithm"
+                value={algorithm}
+                onChange={(e) => setAlgorithm(e.target.value as SshKeyAlgorithm)}
+              >
+                {ALGORITHMS.map((a) => (
+                  <SelectItem
+                    key={a.value}
+                    value={a.value}
+                    text={a.badge ? `${a.label} (${a.badge})` : a.label}
                   />
-                </div>
-              )}
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </div>
-          )}
-
-          <DialogFooter>
-            {generatedPrivateKey ? (
-              <Button onClick={() => setDialogOpen(false)}>Done</Button>
+                ))}
+              </Select>
             ) : (
-              <>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={submit} disabled={saving || !name.trim()}>
-                  {saving
-                    ? "…"
-                    : mode === "generate"
-                    ? "Generate Key"
-                    : "Add Key"}
-                </Button>
-              </>
+              <TextArea
+                id="pub-key"
+                labelText="Public Key"
+                rows={4}
+                placeholder="ssh-ed25519 AAAAC3Nz…"
+                value={publicKey}
+                onChange={(e) => setPublicKey(e.target.value)}
+              />
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+
+            {error && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                hideCloseButton
+                title={error}
+              />
+            )}
+          </Stack>
+        )}
+      </Modal>
+    </Page>
   );
 }

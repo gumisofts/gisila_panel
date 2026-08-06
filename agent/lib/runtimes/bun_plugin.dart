@@ -2,7 +2,7 @@ import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/deploy_mode.dart';
 import 'package:gisila_agent/runtime/runtime_plugin.dart';
 
-class BunPlugin implements RuntimePlugin {
+class BunPlugin extends RuntimePlugin {
   @override
   String get key => 'bun';
 
@@ -11,14 +11,24 @@ class BunPlugin implements RuntimePlugin {
       const [DeployMode.buildExecute, DeployMode.directRun];
 
   @override
+  bool get versioned => true;
+
+  @override
   Future<void> installToolchain({String? version}) async {
-    if (version == null || version.isEmpty) return;
+    if (version == null || version.isEmpty) {
+      // Returning quietly here used to mark the Application installed in the
+      // panel while nothing had been put on disk.
+      throw ArgumentError('bun requires --version, e.g. --version 1.1.38');
+    }
     await Builders.installBunToolchain(version);
   }
 
   @override
   Future<void> removeToolchain({String? version}) =>
       Builders.removeBunToolchain(version: version);
+
+  @override
+  Future<List<String>> installedVersions() async => Builders.listBunVersions();
 
   @override
   Future<void> build(RuntimeBuildContext ctx) => Builders.buildBun(

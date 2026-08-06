@@ -2,22 +2,22 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { toast } from "sonner";
-import { Plus, Trash2, Users } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "@/lib/toast";
+import { Add, TrashCan, UserMultiple } from "@carbon/icons-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Button,
+  Column,
+  Grid,
+  Modal,
+  Tag,
+  TextInput,
+  Tile,
+} from "@carbon/react";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, Team, User } from "@/lib/types";
+import "../_batch-a.scss";
 
 export default function TeamsPage() {
   const { data, mutate } = useSWR<ListResponse<Team>>("/teams/", fetcher);
@@ -65,107 +65,90 @@ export default function TeamsPage() {
   }
 
   return (
-    <div className="container space-y-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
-        <p className="text-sm text-muted-foreground">
-          Group projects and collaborators. Billing applies per team.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Teams"
+        description="Group projects and collaborators. Billing applies per team."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Create a team</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex items-end gap-3" onSubmit={create}>
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                Team name
-              </label>
-              <Input
+      <PageSection title="Create a team">
+        <Tile>
+          <form className="gisila-form-row" onSubmit={create}>
+            <div className="gisila-form-row__field">
+              <TextInput
+                id="team-name"
+                labelText="Team name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Indie ops"
                 required
               />
             </div>
-            <Button type="submit" disabled={busy}>
-              <Plus className="h-4 w-4" /> Create
+            <Button type="submit" disabled={busy} renderIcon={Add}>
+              Create
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </Tile>
+      </PageSection>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {data?.results.map((t) => (
-          <Card key={t.id}>
-            <CardContent className="flex items-center justify-between p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                  <Users className="h-5 w-5" />
+      <PageSection>
+        <Grid condensed className="gisila-cards">
+          {data?.results.map((t) => (
+            <Column key={t.id} sm={4} md={4} lg={8}>
+              <Tile>
+                <div className="gisila-row">
+                  <div className="gisila-row__main">
+                    <span className="gisila-status-icon gisila-status-icon--brand">
+                      <UserMultiple size={16} />
+                    </span>
+                    <div>
+                      <p className="gisila-card__title">{t.name}</p>
+                      <p className="gisila-card__meta">
+                        {t.slug} · created {formatRelative(t.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="gisila-row__actions">
+                    <Tag type="cool-gray" size="sm">
+                      {t.plan}
+                    </Tag>
+                    {canRemove(t) && (
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription="Remove team"
+                        tooltipAlignment="end"
+                        onClick={() => setRemoveTarget(t)}
+                      />
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium">{t.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t.slug} · created {formatRelative(t.createdAt)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="muted">{t.plan}</Badge>
-                {canRemove(t) && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    title="Remove team"
-                    onClick={() => setRemoveTarget(t)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </Tile>
+            </Column>
+          ))}
+        </Grid>
+      </PageSection>
 
-      <Dialog
+      <Modal
+        danger
+        size="sm"
         open={removeTarget !== null}
-        onOpenChange={(o) => !o && setRemoveTarget(null)}
+        modalHeading={`Remove ${removeTarget?.name ?? ""}?`}
+        primaryButtonText={removing ? "Removing…" : "Remove team"}
+        secondaryButtonText="Cancel"
+        primaryButtonDisabled={removing}
+        onRequestClose={() => setRemoveTarget(null)}
+        onRequestSubmit={removeTeam}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove {removeTarget?.name}?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            This permanently deletes the team along with{" "}
-            <span className="font-medium text-foreground">
-              all of its projects and every app inside them
-            </span>
-            . Each app&apos;s service, files, Linux user, domains and TLS
-            certificates are torn down, and team members lose access. This cannot
-            be undone.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRemoveTarget(null)}
-              disabled={removing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={removeTeam}
-              disabled={removing}
-            >
-              {removing ? "Removing…" : "Remove team"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        <p>
+          This permanently deletes the team along with{" "}
+          <strong>all of its projects and every app inside them</strong>. Each
+          app&apos;s service, files, Linux user, domains and TLS certificates are
+          torn down, and team members lose access. This cannot be undone.
+        </p>
+      </Modal>
+    </Page>
   );
 }

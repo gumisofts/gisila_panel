@@ -31,8 +31,12 @@ class ApplicationsApi {
     ApplicationService svc,
   ) async {
     final apps = await svc.listInstalled();
+    final versions = await svc.versionsByApplication();
     return <String, Object?>{
-      'results': apps.map(_serialize).toList(),
+      'results': [
+        for (final app in apps)
+          _serialize(app, versions: versions[app.id] ?? const []),
+      ],
     };
   }
 
@@ -56,7 +60,11 @@ class ApplicationsApi {
     ApplicationService svc,
   ) async {
     final app = await svc.findById(id);
-    return _serialize(app, includeDef: true);
+    return _serialize(
+      app,
+      includeDef: true,
+      versions: await svc.listVersions(id),
+    );
   }
 
   @Patch('/{id}', summary: 'Update an Application\'s deployment defaults')
@@ -87,12 +95,69 @@ class ApplicationsApi {
     await svc.remove(id);
     return <String, Object?>{'detail': 'Removal queued.'};
   }
+
+  // ── Installed versions ────────────────────────────────────────────────────
+
+  @Get('/{id}/versions', summary: 'List installed versions of an Application')
+  Future<Map<String, Object?>> versions(
+    int id,
+    ApplicationService svc,
+  ) async {
+    final rows = await svc.listVersions(id);
+    return <String, Object?>{
+      'results': rows.map((v) => v.toJson()).toList(),
+    };
+  }
+
+  @Post('/{id}/versions', summary: 'Install another version alongside the rest')
+  Future<Map<String, Object?>> installVersion(
+    int id,
+    InstallApplicationVersionForm form,
+    ApplicationService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final row = await svc.installVersion(id, form.version.value!);
+    return row.toJson();
+  }
+
+  @Delete('/{id}/versions/{versionId}', summary: 'Remove one installed version')
+  Future<Map<String, Object?>> removeVersion(
+    int id,
+    int versionId,
+    ApplicationService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    await svc.removeVersion(id, versionId);
+    return <String, Object?>{'detail': 'Removal queued.'};
+  }
+
+  @Post(
+    '/{id}/versions/{versionId}/default',
+    summary: 'Make this the version new apps get',
+  )
+  Future<Map<String, Object?>> setDefaultVersion(
+    int id,
+    int versionId,
+    ApplicationService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final row = await svc.setDefaultVersion(id, versionId);
+    return row.toJson();
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-Map<String, Object?> _serialize(Application a, {bool includeDef = false}) {
+Map<String, Object?> _serialize(
+  Application a, {
+  bool includeDef = false,
+  List<ApplicationVersion> versions = const [],
+}) {
   final base = a.toJson();
+  base['versions'] = versions.map((v) => v.toJson()).toList();
   if (includeDef) {
     final def = findApplicationDef(a.key ?? '');
     if (def != null) base['_def'] = def.toJson();
