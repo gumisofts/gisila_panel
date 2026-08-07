@@ -2,46 +2,57 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { OverflowMenu, OverflowMenuItem } from "@carbon/react";
+import { HeaderGlobalAction } from "@carbon/react";
 import { Asleep, Light, Screen } from "@carbon/icons-react";
 
-const OPTIONS = [
-  { key: "light", label: "Light", icon: Light },
-  { key: "system", label: "System", icon: Screen },
-  { key: "dark", label: "Dark", icon: Asleep },
-] as const;
+const ORDER = ["light", "dark", "system"] as const;
+type ThemeKey = (typeof ORDER)[number];
 
-/// Theme picker for the header. A menu rather than a plain toggle because the
-/// panel offers three states, and cycling a single button through them gives no
-/// indication of what the next press will do.
+const ICONS = {
+  light: Light,
+  dark: Asleep,
+  system: Screen,
+} as const;
+
+const LABELS = {
+  light: "Light",
+  dark: "Dark",
+  system: "System",
+} as const;
+
+/// Cycles light → dark → system. A single header action is more reliable in the
+/// Carbon shell than an OverflowMenu (v11/v12 menu variants disagree on
+/// children), and still exposes all three modes.
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  // next-themes cannot know the resolved theme until it has read the DOM, so
-  // the trigger icon would otherwise differ between the server-rendered markup
-  // and the first client render.
   useEffect(() => setMounted(true), []);
 
-  const current = OPTIONS.find((option) => option.key === theme) ?? OPTIONS[1];
+  const current: ThemeKey = ORDER.includes(theme as ThemeKey)
+    ? (theme as ThemeKey)
+    : "system";
+
+  function cycle() {
+    const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length];
+    setTheme(next);
+  }
+
+  // Show the active mode. For "system", use the Screen icon and mention what
+  // the OS is currently resolving to in the accessible label.
+  const Icon = !mounted ? Screen : ICONS[current];
+  const detail =
+    current === "system" && mounted && resolvedTheme
+      ? `${LABELS.system} (${LABELS[resolvedTheme as "light" | "dark"]})`
+      : LABELS[current];
 
   return (
-    <OverflowMenu
-      aria-label="Change theme"
-      className="gisila-header__menu"
-      renderIcon={mounted ? current.icon : Screen}
-      size="lg"
-      flipped
-      menuOptionsClass="gisila-header__menu-options"
+    <HeaderGlobalAction
+      aria-label={`Theme: ${detail}. Click to change.`}
+      tooltipAlignment="end"
+      onClick={cycle}
     >
-      {OPTIONS.map((option) => (
-        <OverflowMenuItem
-          key={option.key}
-          itemText={option.label}
-          onClick={() => setTheme(option.key)}
-          requireTitle={false}
-        />
-      ))}
-    </OverflowMenu>
+      <Icon size={20} />
+    </HeaderGlobalAction>
   );
 }

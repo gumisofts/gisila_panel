@@ -47,10 +47,19 @@ Useful knobs (combine as needed):
 sudo VERSION=0.1.0 bash infra/install-prebuilt.sh                  # pin a release
 sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \
      bash infra/install-prebuilt.sh                                # local artifact
-sudo DB_HOST=10.0.0.5 DB_PASSWORD=secret \
-     REDIS_HOST=10.0.0.5 REDIS_PASSWORD=secret \
-     bash infra/install-prebuilt.sh                                # external DB/Redis
+
+# Preferred: URLs + domain (pass env to bash, not to curl)
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh \
+  | sudo env \
+      DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
+      REDIS_URL='redis://:secret@10.0.0.5:6379' \
+      PANEL_DOMAIN=panel.example.com \
+      ISSUE_TLS=1 \
+      bash
 ```
+
+`DATABASE_URL` / `REDIS_URL` replace the discrete `DB_*` / `REDIS_*` vars.
+`PANEL_DOMAIN` is written into the nginx vhost; `ISSUE_TLS=1` runs certbot.
 
 By default (`VERSION=latest`) it fetches from GitHub's
 `.../releases/latest/download/…` URL, which only ever resolves to the newest
@@ -72,11 +81,12 @@ cd /opt/gisila-panel
 sudo bash infra/install.sh
 ```
 
-Same `DB_*`/`REDIS_*` knobs apply:
+Same URL / domain knobs apply:
 
 ```bash
-sudo DB_HOST=10.0.0.5 DB_PASSWORD=secret \
-     REDIS_HOST=10.0.0.5 REDIS_PASSWORD=secret \
+sudo DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
+     REDIS_URL='redis://:secret@10.0.0.5:6379' \
+     PANEL_DOMAIN=panel.example.com \
      bash infra/install.sh
 ```
 
@@ -109,6 +119,9 @@ When the script finishes:
 
 ## Wire your domain
 
+Prefer setting it at install time (`PANEL_DOMAIN=…`, optional `ISSUE_TLS=1`).
+Or afterwards:
+
 1. Point a DNS A record at the box: `panel.your-domain.tld → <ip>`.
 2. Edit the nginx vhost:
    ```bash
@@ -131,17 +144,17 @@ When the script finishes:
 | `JWT_SECRET` | HMAC secret. Rotate by editing + `systemctl restart gisila-panel`. |
 | `JWT_EXPIRE_DAYS` | JWT lifetime. |
 | `STUDIO_USERNAME` / `STUDIO_PASSWORD` | Credentials for `/admin`. |
-| `REDIS_HOST` / `REDIS_PORT` | Redis connection (set at install time via `REDIS_HOST`/`REDIS_PORT`). |
-| `REDIS_PASSWORD` | Redis auth password, if the instance requires one (`REDIS_PASSWORD`). |
+| `REDIS_HOST` / `REDIS_PORT` | Redis connection (from `REDIS_URL` or discrete vars at install). |
+| `REDIS_PASSWORD` | Redis auth password, if the instance requires one. |
+| `PANEL_DOMAIN` | Hostname for the panel nginx vhost (set at install via `PANEL_DOMAIN`). |
 | `APPS_ROOT` | Where per-app filesystems live (default `/srv/apps`). |
 | `APP_PORT_RANGE_MIN/MAX` | Internal port pool for new apps. |
 | `AGENT_BIN` | Path to the privileged agent binary. |
 | `NODE_ID` | Used when you scale beyond a single host. |
 
-`/etc/gisila/database.yaml` points at PostgreSQL — an external instance you
-configured with the installer's `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/
-`DB_PASSWORD`/`DB_SSL` env vars, never installed by the panel itself. Both
-files are owned `gisila:gisila`, mode `0640`.
+`/etc/gisila/database.yaml` points at PostgreSQL — usually written from
+`DATABASE_URL` at install time (or discrete `DB_*` vars). Never installed by
+the panel itself. Both files are owned `gisila:gisila`, mode `0640`.
 
 ## Logs
 

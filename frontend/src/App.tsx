@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Routes, Route, useParams } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/lib/toast";
+import { CarbonTheme } from "@/components/carbon-theme";
 
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
@@ -47,7 +48,9 @@ export default function App() {
         defaultTheme="system"
         enableSystem
         disableTransitionOnChange
+        storageKey="gisila-theme"
       >
+        <CarbonTheme>
         <Routes>
           <Route path="/" element={<LandingPage />} />
 
@@ -100,6 +103,7 @@ export default function App() {
           </Route>
         </Routes>
         <Toaster />
+        </CarbonTheme>
       </ThemeProvider>
     </BrowserRouter>
   );

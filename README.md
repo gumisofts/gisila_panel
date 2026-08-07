@@ -208,15 +208,20 @@ Or, if you've already cloned the repo:
 sudo bash infra/install-prebuilt.sh
 ```
 
-Useful knobs:
+Useful knobs (put env on `env`/`bash`, not on `curl`):
 
 ```bash
 sudo VERSION=0.1.0 bash infra/install-prebuilt.sh         # pin a release
-sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \  # install a local artifact
+sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \
      bash infra/install-prebuilt.sh
-sudo DB_HOST=10.0.0.5 DB_PASSWORD=secret \                # point at external DB/Redis
-     REDIS_HOST=10.0.0.5 REDIS_PASSWORD=secret \
-     bash infra/install-prebuilt.sh
+
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh \
+  | sudo env \
+      DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
+      REDIS_URL='redis://:secret@10.0.0.5:6379' \
+      PANEL_DOMAIN=panel.example.com \
+      ISSUE_TLS=1 \
+      bash
 ```
 
 It performs the same system setup as the source installer below (Nginx,

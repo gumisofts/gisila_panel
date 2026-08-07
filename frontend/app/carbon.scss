@@ -62,10 +62,20 @@ $brand-40: #5593f7; // lifted accent for dark themes, where blue-600 on a near
 }
 
 // The panel is a full-height application shell, not a scrolling document.
+// Background/color follow the active Carbon zone on <html> (set by next-themes)
+// so light/dark flips the whole viewport, not only nested components.
 html,
 body,
-#root {
+#root,
+.gisila-theme-root {
   block-size: 100%;
+}
+
+body,
+#root,
+.gisila-theme-root {
+  background-color: var(--cds-background, #ffffff);
+  color: var(--cds-text-primary, #161616);
 }
 
 // ── Shell adjustments ────────────────────────────────────────────────────────

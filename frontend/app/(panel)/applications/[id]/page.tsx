@@ -55,14 +55,16 @@ const STATUS_LABEL: Record<string, string> = {
   installing: "Installing…",
   updating: "Updating…",
   removing: "Removing…",
-  pending: "Pending…",
+  // Seeded catalog row with no toolchain — idle, not a job in flight.
+  pending: "Not installed",
 };
 
-const IN_PROGRESS = ["installing", "updating", "removing", "pending"];
+const IN_PROGRESS = ["installing", "updating", "removing"];
 
-const STATUS_TAG: Record<string, "green" | "red"> = {
+const STATUS_TAG: Record<string, "green" | "red" | "cool-gray"> = {
   installed: "green",
   failed: "red",
+  pending: "cool-gray",
 };
 
 function StatusIndicator({ status }: { status: string }) {
@@ -607,7 +609,7 @@ function ApplicationActions({
 
   if (!isSuperuser) return null;
 
-  const isInProgress = ["installing", "updating", "removing", "pending"].includes(
+  const isInProgress = ["installing", "updating", "removing"].includes(
     app.status,
   );
 

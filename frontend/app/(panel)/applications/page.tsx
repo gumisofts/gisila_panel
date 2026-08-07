@@ -55,19 +55,29 @@ const STATUS_LABEL: Record<string, string> = {
   installing: "Installing…",
   updating: "Updating…",
   removing: "Removing…",
-  pending: "Pending…",
+  // Seeded catalog rows with no toolchain yet — idle, not a job in flight.
+  pending: "Not installed",
   disabled: "Disabled",
 };
 
 /// Statuses the backend is still working through — these poll and show a spinner
-/// rather than a settled tag.
-const IN_PROGRESS = ["installing", "updating", "removing", "pending"];
+/// rather than a settled tag. `pending` is intentionally excluded: it means the
+/// runtime exists in the catalog DB but nothing has been queued/installed.
+const IN_PROGRESS = ["installing", "updating", "removing"];
 
-const STATUS_TAG: Record<string, "green" | "red" | "gray"> = {
+const STATUS_TAG: Record<string, "green" | "red" | "gray" | "cool-gray"> = {
   installed: "green",
   failed: "red",
   disabled: "gray",
+  pending: "cool-gray",
 };
+
+/// Builtins are seeded as Application rows even before a version lands on the
+/// host. Those placeholders are not "installed" for catalog/list purposes.
+function hasHostPresence(app: Application): boolean {
+  if (app.versions.length > 0) return true;
+  return app.status !== "pending";
+}
 
 function StatusIndicator({ status }: { status: string }) {
   const label = STATUS_LABEL[status] ?? status;
@@ -117,11 +127,22 @@ export default function ApplicationsPage() {
   const { data: installedData, isLoading } = useSWR<ListResponse<Application>>(
     "/applications/",
     fetcher,
-    { refreshInterval: 4000 },
+    {
+      refreshInterval: (data) => {
+        const apps = data?.results ?? [];
+        const busy = apps.some(
+          (a) =>
+            IN_PROGRESS.includes(a.status) ||
+            a.versions.some((v) => IN_PROGRESS.includes(v.status)),
+        );
+        return busy ? 4000 : 0;
+      },
+    },
   );
 
   const catalog = catalogData?.results ?? [];
   const installed = installedData?.results ?? [];
+  const onHost = installed.filter(hasHostPresence);
 
   const installedByKey = new Map(installed.map((a) => [a.key, a]));
 
@@ -135,13 +156,13 @@ export default function ApplicationsPage() {
       <PageSection>
         {isLoading ? (
           <SkeletonTiles />
-        ) : installed.length === 0 ? (
+        ) : onHost.length === 0 ? (
           <Tile className="gisila-empty">
             No runtimes installed yet — pick one from the catalog below.
           </Tile>
         ) : (
           <Grid fullWidth withRowGap className="gisila-catalog__grid">
-            {installed.map((app) => (
+            {onHost.map((app) => (
               <Column key={app.id} sm={4} md={4} lg={8}>
                 <InstalledTile app={app} />
               </Column>
@@ -233,7 +254,9 @@ function CatalogTile({
   const [version, setVersion] = useState("");
   const { isSuperuser } = usePermissions();
 
-  const isInstalled = !!installed;
+  // Seeded-but-empty rows still come back from /applications/; treat those as
+  // catalog entries so Install stays available instead of "Installed · View".
+  const isInstalled = !!installed && hasHostPresence(installed);
 
   // Versions already on the host — offering one of those again would only earn
   // a 409 from the backend.

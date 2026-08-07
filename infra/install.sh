@@ -5,17 +5,21 @@
 # Tested on Ubuntu 22.04 / Debian 12. Run as root: sudo bash infra/install.sh
 #
 # PostgreSQL and Redis are NOT installed or managed by this script — the panel
-# is a client of both, not their operator. Point it at existing instances
-# (same host or remote) with the DB_*/REDIS_* env vars below; defaults assume
-# a Postgres/Redis you've already stood up locally with those exact settings.
+# is a client of both, not their operator. Point it at existing instances with
+# DATABASE_URL / REDIS_URL (preferred) or discrete DB_*/REDIS_* vars.
 #
-#   sudo DB_HOST=10.0.0.5 DB_PASSWORD=secret \
-#        REDIS_HOST=10.0.0.5 REDIS_PASSWORD=secret \
+#   sudo DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
+#        REDIS_URL='redis://:secret@10.0.0.5:6379' \
+#        PANEL_DOMAIN=panel.example.com \
 #        bash infra/install.sh
 #
 # Env knobs:
-#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSL   PostgreSQL
-#   REDIS_HOST, REDIS_PORT, REDIS_PASSWORD                   Redis
+#   DATABASE_URL   postgresql://user:pass@host:5432/db(?sslmode=require)
+#   REDIS_URL      redis://[:pass@]host:6379
+#   PANEL_DOMAIN   hostname written into the nginx vhost
+#   ISSUE_TLS=1    run certbot for PANEL_DOMAIN after nginx is up
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSL   (override URL)
+#   REDIS_HOST, REDIS_PORT, REDIS_PASSWORD                   (override URL)
 #   BUILD_FRONTEND=1   rebuild the UI from source instead of using the
 #                      prebuilt backend/web/ assets (requires Node.js + pnpm)
 #
@@ -55,20 +59,8 @@ APPS_ROOT="/srv/apps"
 # from source with BUILD_FRONTEND=1.
 BUILD_FRONTEND="${BUILD_FRONTEND:-0}"
 
-# External PostgreSQL connection this install will point the panel at. Not
-# installed here — see the header comment above.
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
-DB_NAME="${DB_NAME:-gisila_panel}"
-DB_USER="${DB_USER:-gisila}"
-DB_PASSWORD="${DB_PASSWORD:-gisila}"
-DB_SSL="${DB_SSL:-false}"
-
-# External Redis connection this install will point the panel at. Not
-# installed here — see the header comment above.
-REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+# shellcheck source=install-env.sh
+source "$REPO_DIR/infra/install-env.sh"
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 # Note: no `postgresql` or `redis-server` here — this installer is a client of
@@ -78,13 +70,15 @@ echo "==> Installing system packages"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   postgresql-client nginx \
-  certbot python3-certbot-nginx \
+  certbot python3-certbot-nginx python3 \
   apparmor apparmor-utils \
   git build-essential unzip \
   curl ca-certificates gnupg \
   libsqlite3-dev libssl-dev zlib1g-dev libbz2-dev \
   libreadline-dev libncursesw5-dev xz-utils \
   libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+
+gisila_apply_install_env
 
 if ! command -v dart >/dev/null 2>&1; then
   echo "==> Installing Dart SDK"
@@ -145,9 +139,9 @@ echo "==> Checking PostgreSQL connectivity ($DB_USER@$DB_HOST:$DB_PORT/$DB_NAME)
 if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
     -d "$DB_NAME" --set ON_ERROR_STOP=1 -tc 'SELECT 1' >/dev/null 2>&1; then
   echo "ERROR: could not connect to PostgreSQL as $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME." >&2
-  echo "       This script no longer installs/configures PostgreSQL — create the" >&2
-  echo "       database and role yourself, then re-run with matching DB_HOST/DB_PORT/" >&2
-  echo "       DB_NAME/DB_USER/DB_PASSWORD env vars. Example, on the DB host:" >&2
+  echo "       Create the database/role yourself, then re-run with DATABASE_URL, e.g.:" >&2
+  echo "         sudo env DATABASE_URL='postgresql://gisila:SECRET@localhost:5432/gisila_panel' bash \$0" >&2
+  echo "       On the DB host:" >&2
   echo "         sudo -u postgres psql -c \"CREATE ROLE $DB_USER LOGIN PASSWORD '<pw>';\"" >&2
   echo "         sudo -u postgres createdb --owner=$DB_USER $DB_NAME" >&2
   exit 1
@@ -159,8 +153,8 @@ echo "    connected."
 echo "==> Checking Redis connectivity ($REDIS_HOST:$REDIS_PORT)"
 if ! timeout 5 bash -c "exec 3<>/dev/tcp/$REDIS_HOST/$REDIS_PORT" 2>/dev/null; then
   echo "ERROR: could not open a TCP connection to Redis at $REDIS_HOST:$REDIS_PORT." >&2
-  echo "       This script no longer installs/configures Redis — stand it up yourself," >&2
-  echo "       then re-run with matching REDIS_HOST/REDIS_PORT/REDIS_PASSWORD env vars." >&2
+  echo "       Install/start Redis yourself, then re-run with REDIS_URL, e.g.:" >&2
+  echo "         sudo env REDIS_URL='redis://:SECRET@127.0.0.1:6379' bash \$0" >&2
   exit 1
 fi
 echo "    connected."
@@ -261,11 +255,12 @@ JWT_SECRET=$(head -c 32 /dev/urandom | base64)
 JWT_EXPIRE_DAYS=14
 STUDIO_USERNAME=admin
 STUDIO_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -d '/+=')
-SUPERUSER_EMAIL=admin@$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)
+SUPERUSER_EMAIL=admin@${PANEL_DOMAIN:-$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)}
 SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
 REDIS_HOST=$REDIS_HOST
 REDIS_PORT=$REDIS_PORT
 REDIS_PASSWORD=$REDIS_PASSWORD
+PANEL_DOMAIN=$PANEL_DOMAIN
 APPS_ROOT=$APPS_ROOT
 NGINX_SITES_DIR=/etc/nginx/sites-enabled
 SYSTEMD_UNITS_DIR=/etc/systemd/system
@@ -348,9 +343,11 @@ install -m 0644 "$REPO_DIR/infra/nginx-panel.conf" \
   /etc/nginx/sites-available/gisila-panel
 ln -sf /etc/nginx/sites-available/gisila-panel \
   /etc/nginx/sites-enabled/gisila-panel
+gisila_apply_panel_domain /etc/nginx/sites-available/gisila-panel
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
+gisila_maybe_issue_tls
 
 # ── 12. Start panel services ──────────────────────────────────────────────────
 echo "==> Starting gisila-panel and gisila-worker"
@@ -363,9 +360,15 @@ echo
 echo "✓ Gisila Panel installed successfully."
 echo
 IP=$(hostname -I | awk '{print $1}')
-echo "  Panel:  http://$IP  (or your configured domain)"
-echo "  Docs:   http://$IP/docs"
-echo "  Admin:  http://$IP/admin"
+if [[ -n "$PANEL_DOMAIN" ]]; then
+  echo "  Panel:  http://$PANEL_DOMAIN  (https if ISSUE_TLS=1 succeeded)"
+  echo "  Docs:   http://$PANEL_DOMAIN/docs"
+  echo "  Admin:  http://$PANEL_DOMAIN/admin"
+else
+  echo "  Panel:  http://$IP"
+  echo "  Docs:   http://$IP/docs"
+  echo "  Admin:  http://$IP/admin"
+fi
 echo
 echo "  PostgreSQL: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME (external, /etc/gisila/database.yaml)"
 echo "  Redis:      $REDIS_HOST:$REDIS_PORT (external, /etc/gisila/.env)"
@@ -373,7 +376,9 @@ echo
 echo "  Panel superuser:  \$SUPERUSER_EMAIL (see /etc/gisila/.env)"
 echo "  Studio/admin:    \$STUDIO_USERNAME (see /etc/gisila/.env)"
 echo
-echo "  To add a domain and get a TLS cert:"
-echo "    Edit /etc/nginx/sites-available/gisila-panel → set server_name"
-echo "    certbot --nginx -d panel.your-domain.tld"
-echo
+if [[ -z "$PANEL_DOMAIN" ]]; then
+  echo "  To set a domain (or re-run with PANEL_DOMAIN=… ISSUE_TLS=1):"
+  echo "    Edit /etc/nginx/sites-available/gisila-panel → set server_name"
+  echo "    certbot --nginx -d panel.your-domain.tld"
+  echo
+fi
