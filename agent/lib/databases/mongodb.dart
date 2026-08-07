@@ -121,6 +121,8 @@ String _certDir(String version) => '/etc/gisila/mongo-tls/$version';
 /// Install MongoDB Community [version] from the official apt repo and bring up a
 /// dedicated `gisila-mongod-<version>` instance on [port] with auth enabled.
 Future<void> _install(String version, int port, String rootPw) async {
+  await _preflightMongo(version);
+
   // 1. Add the MongoDB apt repo + signing key for this version.
   final keyring = '/usr/share/keyrings/mongodb-server-$version.gpg';
   if (!File(keyring).existsSync()) {
@@ -160,21 +162,35 @@ Future<void> _install(String version, int port, String rootPw) async {
   // 3. Data + log dirs, owned by the mongodb service user.
   await Priv.sudo('mkdir', ['-p', _dataDir(version), '/var/log/mongodb']);
   await Priv.sudo('chown', ['-R', 'mongodb:mongodb', _dataDir(version)]);
+  await Priv.sudo('chown', ['mongodb:mongodb', '/var/log/mongodb'], failOk: true);
   await Priv.sudo('mkdir', ['-p', '/etc/gisila']);
 
-  // 4. Config + unit, then start.
-  await Priv.writeFile(_confPath(version), _buildConf(version, port));
+  // Cap WiredTiger cache on small VMs so mongod can start (default ~50% of RAM
+  // often OOMs Contabo-style 2–4 GB boxes during first boot).
+  final cacheGb = await _defaultCacheGb();
+
+  // 4. Bootstrap WITHOUT auth (MongoDB's recommended first-run path), create the
+  // root user, then flip authorization on and restart.
+  await Priv.writeFile(
+    _confPath(version),
+    _buildConf(version, port, cacheSizeGB: cacheGb, auth: false),
+  );
   await _writeUnit(version);
   await Priv.sudo('systemctl', ['daemon-reload']);
   await Priv.sudo('systemctl', ['enable', _unitName(version)]);
   await Priv.sudo('systemctl', ['restart', _unitName(version)]);
 
-  // 5. Create the authenticated root user via the localhost exception (allowed
-  // only while no users exist yet), then persist the password for later admin
-  // operations (root-only file).
-  await _waitForMongo(port);
+  await _waitForMongo(version, port);
   await _eval(port, null,
       "db.getSiblingDB('admin').createUser({user:'root',pwd:'$rootPw',roles:['root']})");
+
+  await Priv.writeFile(
+    _confPath(version),
+    _buildConf(version, port, cacheSizeGB: cacheGb, auth: true),
+  );
+  await Priv.sudo('systemctl', ['restart', _unitName(version)]);
+  await _waitForMongo(version, port);
+
   await Priv.writeFile(_rootPwFile(version), rootPw);
   await Priv.sudo('chmod', ['600', _rootPwFile(version)], failOk: true);
   stdout.writeln('[agent] MongoDB $version running on port $port');
@@ -284,6 +300,7 @@ String _buildConf(
   double? cacheSizeGB,
   int? maxConns,
   String? publicCertDir,
+  bool auth = true,
 }) {
   final bindIp = publicCertDir != null ? '127.0.0.1,0.0.0.0' : '127.0.0.1';
   final buf = StringBuffer()
@@ -313,9 +330,11 @@ String _buildConf(
       ..writeln('    mode: requireTLS')
       ..writeln('    certificateKeyFile: $publicCertDir/mongo.pem');
   }
-  buf
-    ..writeln('security:')
-    ..writeln('  authorization: enabled');
+  if (auth) {
+    buf
+      ..writeln('security:')
+      ..writeln('  authorization: enabled');
+  }
   return buf.toString();
 }
 
@@ -467,9 +486,21 @@ Future<void> _eval(int port, String? rootPw, String js) async {
   }
 }
 
-/// Poll until mongod accepts connections (up to ~30s after a fresh start).
-Future<void> _waitForMongo(int port) async {
-  for (var i = 0; i < 30; i++) {
+/// Poll until mongod accepts connections (up to ~60s after a fresh start).
+Future<void> _waitForMongo(String version, int port) async {
+  String lastErr = '';
+  for (var i = 0; i < 60; i++) {
+    // Fail fast if the unit crashed (systemctl restart returns before healthy).
+    final active = await Process.run('systemctl', ['is-active', _unitName(version)]);
+    final state = (active.stdout as String? ?? '').trim();
+    if (state == 'failed' || state == 'inactive') {
+      throw Exception(await _mongoDiag(
+        version,
+        port,
+        'unit is $state',
+      ));
+    }
+
     final res = await Process.run('mongosh', [
       '--quiet',
       '--port',
@@ -478,9 +509,105 @@ Future<void> _waitForMongo(int port) async {
       'db.runCommand({ping:1})',
     ]);
     if (res.exitCode == 0) return;
+    lastErr = (res.stderr as String? ?? res.stdout as String? ?? '').trim();
     await Future<void>.delayed(const Duration(seconds: 1));
   }
-  throw Exception('MongoDB on port $port did not become ready in time');
+  throw Exception(await _mongoDiag(
+    version,
+    port,
+    'did not become ready in time${lastErr.isEmpty ? '' : ': $lastErr'}',
+  ));
+}
+
+/// Host checks that catch the usual Contabo / small-VPS install failures early.
+Future<void> _preflightMongo(String version) async {
+  final major = int.tryParse(version.split('.').first) ?? 0;
+  // MongoDB 5.0+ is built with AVX; without it mongod dies with SIGILL and the
+  // only symptom the panel saw was the readiness timeout.
+  if (major >= 5) {
+    try {
+      final cpu = await File('/proc/cpuinfo').readAsString();
+      if (!RegExp(r'\bavx\b').hasMatch(cpu)) {
+        throw Exception(
+          'MongoDB $version requires CPU AVX support, which this host lacks '
+          '(common on some Contabo / budget VPS plans). '
+          'Choose a host with AVX, or install is not possible for this version.',
+        );
+      }
+    } catch (e) {
+      if (e is Exception && e.toString().contains('AVX')) rethrow;
+    }
+  }
+
+  try {
+    final mem = await File('/proc/meminfo').readAsString();
+    final m = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(mem);
+    final availKb = int.tryParse(m?.group(1) ?? '') ?? 0;
+    if (availKb > 0 && availKb < 500 * 1024) {
+      throw Exception(
+        'Not enough free memory to start MongoDB $version '
+        '(MemAvailable=${(availKb / 1024).round()} MB; need ≥ ~500 MB).',
+      );
+    }
+  } catch (e) {
+    if (e is Exception && e.toString().contains('memory')) rethrow;
+  }
+}
+
+Future<double?> _defaultCacheGb() async {
+  try {
+    final mem = await File('/proc/meminfo').readAsString();
+    final m = RegExp(r'MemTotal:\s+(\d+)').firstMatch(mem);
+    final totalKb = int.tryParse(m?.group(1) ?? '') ?? 0;
+    final totalGb = totalKb / (1024 * 1024);
+    if (totalGb > 0 && totalGb < 2.5) return 0.25;
+    if (totalGb < 4.5) return 0.5;
+  } catch (_) {}
+  return null; // let mongod use its default
+}
+
+Future<String> _mongoDiag(String version, int port, String reason) async {
+  final buf = StringBuffer('MongoDB on port $port $reason');
+
+  final status = await Process.run(
+    'systemctl',
+    ['status', _unitName(version), '--no-pager', '-l'],
+  );
+  final statusOut =
+      '${status.stdout}\n${status.stderr}'.trim();
+  if (statusOut.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('--- systemctl status ---')
+      ..writeln(statusOut.split('\n').take(40).join('\n'));
+  }
+
+  final log = _logPath(version);
+  final tail = await Process.run('tail', ['-n', '40', log]);
+  final logOut = (tail.stdout as String? ?? '').trim();
+  if (logOut.isNotEmpty) {
+    buf
+      ..writeln()
+      ..writeln('--- $log ---')
+      ..writeln(logOut);
+  } else {
+    final journal = await Process.run('journalctl', [
+      '-u',
+      _unitName(version),
+      '-n',
+      '40',
+      '--no-pager',
+    ]);
+    final jOut = '${journal.stdout}\n${journal.stderr}'.trim();
+    if (jOut.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('--- journalctl ---')
+        ..writeln(jOut.split('\n').take(40).join('\n'));
+    }
+  }
+
+  return buf.toString().trim();
 }
 
 Future<String> _rootPw(String version) async {
