@@ -11,6 +11,7 @@ import {
   Earth,
   Password,
   PlayFilled,
+  Renew,
   Sprout,
   Star,
   StopFilled,
@@ -463,19 +464,35 @@ export default function MongoInstancePage() {
                 Stop
               </Button>
             )}
-            {isSuperuser && !instance.isDefault && (
+            {isSuperuser && instance.status === "failed" && (
+              <Button
+                kind="tertiary"
+                size="sm"
+                renderIcon={Renew}
+                onClick={() => action(`/mongo/${id}/retry`)}
+                disabled={!!busy}
+              >
+                Retry install
+              </Button>
+            )}
+            {isSuperuser &&
+              (instance.status === "failed" || !instance.isDefault) && (
               <Button
                 kind="danger--tertiary"
                 size="sm"
                 renderIcon={TrashCan}
                 onClick={async () => {
-                  if (!confirm(`Uninstall MongoDB ${instance.version}? All data will be deleted.`)) return;
+                  const label =
+                    instance.status === "failed"
+                      ? `Remove failed MongoDB ${instance.version} install?`
+                      : `Uninstall MongoDB ${instance.version}? All data will be deleted.`;
+                  if (!confirm(label)) return;
                   await action(`/mongo/${id}`, "DELETE");
                   router.push("/databases");
                 }}
                 disabled={!!busy}
               >
-                Uninstall
+                {instance.status === "failed" ? "Remove" : "Uninstall"}
               </Button>
             )}
           </>

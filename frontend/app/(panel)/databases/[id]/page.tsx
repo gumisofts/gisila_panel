@@ -12,6 +12,7 @@ import {
   Earth,
   Password,
   PlayFilled,
+  Renew,
   ServerProxy,
   Star,
   StopFilled,
@@ -492,19 +493,38 @@ export default function InstancePage() {
                 Stop
               </Button>
             )}
-            {isSuperuser && !instance.isDefault && !instance.isSystem && (
+            {isSuperuser &&
+              instance.status === "failed" &&
+              !instance.isSystem && (
+              <Button
+                kind="tertiary"
+                size="sm"
+                renderIcon={Renew}
+                onClick={() => action(`/databases/${id}/retry`)}
+                disabled={!!busy}
+              >
+                Retry install
+              </Button>
+            )}
+            {isSuperuser &&
+              !instance.isSystem &&
+              (instance.status === "failed" || !instance.isDefault) && (
               <Button
                 kind="danger--tertiary"
                 size="sm"
                 renderIcon={TrashCan}
                 onClick={async () => {
-                  if (!confirm(`Uninstall PostgreSQL ${instance.version}? All data will be deleted.`)) return;
+                  const label =
+                    instance.status === "failed"
+                      ? `Remove failed PostgreSQL ${instance.version} install?`
+                      : `Uninstall PostgreSQL ${instance.version}? All data will be deleted.`;
+                  if (!confirm(label)) return;
                   await action(`/databases/${id}`, "DELETE");
                   router.push("/databases");
                 }}
                 disabled={!!busy}
               >
-                Uninstall
+                {instance.status === "failed" ? "Remove" : "Uninstall"}
               </Button>
             )}
           </>

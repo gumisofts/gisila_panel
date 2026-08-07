@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";
 import {
@@ -21,15 +21,27 @@ import {
   InlineLoading,
   InlineNotification,
   Link as CarbonLink,
+  Modal,
+  NumberInput,
+  PasswordInput,
+  Select,
+  SelectItem,
   SkeletonText,
   Stack,
   Tag,
+  TextInput,
   Tile,
+  Toggle,
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import type { ListResponse, ManagedService, ServiceDef } from "@/lib/types";
+import type {
+  ConfigField,
+  ListResponse,
+  ManagedService,
+  ServiceDef,
+} from "@/lib/types";
 import "./_services.scss";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -244,6 +256,10 @@ function InstalledTile({ svc, def }: { svc: ManagedService; def?: ServiceDef }) 
 
 // ── Catalog tile ──────────────────────────────────────────────────────────────
 
+function requiredInstallFields(def: ServiceDef): ConfigField[] {
+  return def.configSchema.filter((f) => f.required && !f.default);
+}
+
 function CatalogTile({
   def,
   installed,
@@ -253,11 +269,13 @@ function CatalogTile({
 }) {
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
   const { isSuperuser } = usePermissions();
 
   const isInstalled = !!installed;
+  const needsConfig = requiredInstallFields(def).length > 0;
 
-  async function quickInstall() {
+  async function submitInstall(config: Record<string, string>) {
     if (isInstalled || installing) return;
     setError("");
     setInstalling(true);
@@ -267,15 +285,25 @@ function CatalogTile({
         body: JSON.stringify({
           serviceType: def.type,
           displayName: def.name,
-          config: {},
+          config,
         }),
       });
       mutate("/services/");
+      setShowForm(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Install failed.");
     } finally {
       setInstalling(false);
     }
+  }
+
+  function onInstallClick() {
+    if (needsConfig) {
+      setError("");
+      setShowForm(true);
+      return;
+    }
+    void submitInstall({});
   }
 
   return (
@@ -310,7 +338,7 @@ function CatalogTile({
 
         <p className="gisila-catalog__desc">{def.description}</p>
 
-        {error && (
+        {error && !showForm && (
           <InlineNotification
             kind="error"
             lowContrast
@@ -334,14 +362,14 @@ function CatalogTile({
               Installed · View
             </CarbonLink>
           ) : isSuperuser ? (
-            installing ? (
+            installing && !showForm ? (
               <InlineLoading status="active" />
             ) : (
               <Button
                 size="sm"
                 kind="tertiary"
                 renderIcon={Add}
-                onClick={quickInstall}
+                onClick={onInstallClick}
               >
                 {def.requiresInstall ? "Install" : "Configure"}
               </Button>
@@ -349,7 +377,177 @@ function CatalogTile({
           ) : null}
         </div>
       </Stack>
+
+      {needsConfig && (
+        <InstallConfigModal
+          open={showForm}
+          def={def}
+          installing={installing}
+          error={error}
+          onClose={() => {
+            if (!installing) setShowForm(false);
+          }}
+          onSubmit={submitInstall}
+        />
+      )}
     </Tile>
+  );
+}
+
+function InstallConfigModal({
+  open,
+  def,
+  installing,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  def: ServiceDef;
+  installing: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (config: Record<string, string>) => Promise<void>;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    setValues(
+      Object.fromEntries(
+        def.configSchema.map((f) => [f.key, f.default ?? ""]),
+      ),
+    );
+  }, [open, def]);
+
+  function set(key: string, value: string) {
+    setValues((p) => ({ ...p, [key]: value }));
+  }
+
+  const missing = requiredInstallFields(def).filter(
+    (f) => !(values[f.key] ?? "").trim(),
+  );
+
+  return (
+    <Modal
+      open={open}
+      modalHeading={`Install ${def.name}`}
+      primaryButtonText={installing ? "Installing…" : "Install"}
+      secondaryButtonText="Cancel"
+      primaryButtonDisabled={installing || missing.length > 0}
+      onRequestClose={onClose}
+      onRequestSubmit={() => {
+        void onSubmit(values);
+      }}
+      size="md"
+    >
+      <Stack gap={5}>
+        <p className="gisila-catalog__desc">
+          This service needs a few settings before install.
+        </p>
+        {def.configSchema.map((field) => (
+          <InstallField
+            key={field.key}
+            field={field}
+            value={values[field.key] ?? ""}
+            onChange={(v) => set(field.key, v)}
+          />
+        ))}
+        {error && (
+          <InlineNotification
+            kind="error"
+            lowContrast
+            hideCloseButton
+            title={error}
+          />
+        )}
+      </Stack>
+    </Modal>
+  );
+}
+
+function InstallField({
+  field,
+  value,
+  onChange,
+}: {
+  field: ConfigField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const label = (
+    <span className="gisila-label">
+      {field.label}
+      {field.required && <span className="gisila-required">*</span>}
+    </span>
+  );
+
+  if (field.type === "boolean") {
+    return (
+      <Toggle
+        id={`install-${field.key}`}
+        labelText={field.label}
+        labelA="Off"
+        labelB="On"
+        toggled={value === "true"}
+        onToggle={(checked) => onChange(checked ? "true" : "false")}
+      />
+    );
+  }
+
+  if (field.type === "select") {
+    return (
+      <Select
+        id={`install-${field.key}`}
+        labelText={label}
+        helperText={field.hint}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {field.options?.map((opt) => (
+          <SelectItem key={opt} value={opt} text={opt} />
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "password") {
+    return (
+      <PasswordInput
+        id={`install-${field.key}`}
+        labelText={label}
+        helperText={field.hint}
+        value={value}
+        placeholder={field.placeholder ?? field.default}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  if (field.type === "number") {
+    return (
+      <NumberInput
+        id={`install-${field.key}`}
+        label={label}
+        helperText={field.hint}
+        value={value}
+        min={field.min}
+        max={field.max}
+        allowEmpty
+        onChange={(_event, { value: next }) => onChange(String(next))}
+      />
+    );
+  }
+
+  return (
+    <TextInput
+      id={`install-${field.key}`}
+      labelText={label}
+      helperText={field.hint}
+      value={value}
+      placeholder={field.placeholder ?? field.default}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 

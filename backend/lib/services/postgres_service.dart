@@ -154,8 +154,8 @@ class PostgresService extends Service {
           409, 'Port $resolvedPort is already used by another instance.');
     }
 
-    final isFirst = (await listInstances()).isEmpty;
-
+    // Never mark default until the install succeeds — a failed first attempt
+    // used to become the default and then blocked Uninstall in the UI/API.
     final instance =
         await Query<PostgresInstance>(PostgresInstanceTable.metadata)
             .insert(<String, Object?>{
@@ -163,13 +163,31 @@ class PostgresService extends Service {
       'displayName': displayName,
       'port': resolvedPort,
       'status': 'pending',
-      'isDefault': isFirst,
+      'isDefault': false,
       'dataDirectory': '/var/lib/postgresql/$version/main',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).one(_db.context());
 
     await _enqueue('install_instance', {'instanceId': instance.id});
     return findInstance(instance.id!);
+  }
+
+  /// Re-queue a failed install. The host was rolled back on failure, so this
+  /// runs the full install path again against the same row.
+  Future<PostgresInstance> retryInstall(int id) async {
+    final instance = await findInstance(id);
+    if (instance.status != 'failed') {
+      throw HttpException(422, 'Only failed installations can be retried.');
+    }
+    if (isSystemInstance(instance)) {
+      throw HttpException(422, 'Cannot retry the system database.');
+    }
+    await _patchInstance(id, {
+      'status': 'pending',
+      'errorMessage': null,
+    });
+    await _enqueue('install_instance', {'instanceId': id});
+    return findInstance(id);
   }
 
   Future<PostgresInstance> setDefault(int id) async {
@@ -249,11 +267,18 @@ class PostgresService extends Service {
     if (isSystemInstance(instance)) {
       throw HttpException(422, 'Cannot uninstall the system database.');
     }
-    if (instance.isDefault == true) {
+    final failed = instance.status == 'failed';
+    // Failed installs already rolled back on the host — allow removal even when
+    // they were incorrectly marked as default (legacy rows).
+    if (instance.isDefault == true && !failed) {
       throw HttpException(422,
           'Cannot uninstall the default instance. Set another as default first.');
     }
-    await _patchInstance(id, {'status': 'uninstalling'});
+    await _patchInstance(id, {
+      'status': 'uninstalling',
+      if (failed) 'isDefault': false,
+      if (failed) 'errorMessage': null,
+    });
     await _enqueue('uninstall_instance', {'instanceId': id});
   }
 

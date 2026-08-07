@@ -460,3 +460,14 @@ Map<String, String> defaultConfig(ServiceDef def) {
       if (f.defaultValue != null) f.key: f.defaultValue!,
   };
 }
+
+/// Labels of required schema fields that are missing or blank in [config].
+List<String> missingRequiredConfig(ServiceDef def, Map<String, String> config) {
+  final missing = <String>[];
+  for (final f in def.configSchema) {
+    if (!f.required) continue;
+    final v = (config[f.key] ?? '').trim();
+    if (v.isEmpty) missing.add(f.label);
+  }
+  return missing;
+}

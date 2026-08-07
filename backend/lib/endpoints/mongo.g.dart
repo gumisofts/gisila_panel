@@ -379,6 +379,57 @@ extension MongoApiGisilaDoc on MongoApi {
           ));
     }
     {
+      final basePath = '$prefix/mongo/<id>/retry';
+      final openApiPath = '$prefix/mongo/{id}/retry';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final svc = ctx.service<MongoService>();
+                final result = await this.retryInstall(id, svc, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Retry a failed MongoDB installation',
+            tags: <String>['MongoDB'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
       final basePath = '$prefix/mongo/<id>/expose';
       final openApiPath = '$prefix/mongo/{id}/expose';
       final RouteConfig __cfg =

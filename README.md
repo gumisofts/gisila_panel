@@ -143,6 +143,19 @@ That's it. The first start runs migrations + code generation automatically, then
 
 The whole `gisila_tools/` workspace is bind-mounted, so editing Dart or TypeScript code on your host triggers hot reload in the matching container.
 
+### Production-like install host (Ubuntu + sudo + systemd)
+
+To exercise the real `infra/install.sh` / agent path (Mongo, pgAdmin, systemd)
+instead of the stubbed `AGENT_MODE=dev` stack:
+
+```bash
+./scripts/install-env.sh up
+./scripts/install-env.sh shell       # non-root ubuntu user with passwordless sudo
+./scripts/install-env.sh install     # sudo bash infra/install.sh
+```
+
+See [`docker/ubuntu-host/README.md`](docker/ubuntu-host/README.md). Panel after install: <http://localhost:8001>.
+
 ### Common dev commands
 
 ```bash

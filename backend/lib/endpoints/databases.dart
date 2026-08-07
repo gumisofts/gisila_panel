@@ -80,6 +80,16 @@ class DatabasesApi {
     return _serializeInstance(instance);
   }
 
+  @Post('/{id}/retry', summary: 'Retry a failed Postgres installation')
+  Future<Map<String, Object?>> retryInstall(
+    int id,
+    PostgresService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    return _serializeInstance(await svc.retryInstall(id));
+  }
+
   @Post('/{id}/expose', summary: 'Toggle public TLS exposure for an instance')
   Future<Map<String, Object?>> exposeInstance(
     int id,

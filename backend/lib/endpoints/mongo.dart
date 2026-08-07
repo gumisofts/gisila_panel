@@ -85,6 +85,16 @@ class MongoApi {
     return _serializeInstance(await svc.setDefault(id));
   }
 
+  @Post('/{id}/retry', summary: 'Retry a failed MongoDB installation')
+  Future<Map<String, Object?>> retryInstall(
+    int id,
+    MongoService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    return _serializeInstance(await svc.retryInstall(id));
+  }
+
   @Post('/{id}/expose', summary: 'Toggle public TLS exposure for an instance')
   Future<Map<String, Object?>> exposeInstance(
     int id,

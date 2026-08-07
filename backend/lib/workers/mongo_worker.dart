@@ -100,12 +100,19 @@ class MongoWorker {
       ]);
 
       final monitorPassword = generatePassword();
+      // Promote to default only after a successful install, and only when no
+      // other default exists (avoids locking failed first-attempts as default).
+      final existingDefault =
+          await Query<MongoInstance>(MongoInstanceTable.metadata)
+              .where(MongoInstanceTable.isDefault.eq(true))
+              .first(database.context());
       await _patchInstance(instanceId, {
         'status': 'running',
         'installedAt': DateTime.now().toUtc().toIso8601String(),
         'errorMessage': null,
         'rootPassword': rootPassword,
         'monitorPassword': monitorPassword,
+        if (existingDefault == null) 'isDefault': true,
       });
       try {
         await _runAgent([
@@ -139,6 +146,7 @@ class MongoWorker {
       await _patchInstance(instanceId, {
         'status': 'failed',
         'errorMessage': e.toString(),
+        'isDefault': false,
       });
       rethrow;
     }

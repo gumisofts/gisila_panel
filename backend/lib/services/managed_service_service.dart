@@ -39,8 +39,10 @@ class ManagedServiceService extends Service {
       throw HttpException(422, 'Unknown service type: $serviceType');
     }
 
-    // Merge caller config over defaults.
+    // Merge caller config over defaults, then require install-time fields
+    // (e.g. pgAdmin email/password) before enqueueing the agent.
     final merged = <String, String>{...defaultConfig(def), ...config};
+    _requireConfig(def, merged);
 
     final now = DateTime.now().toUtc();
     final svc = await Query<ManagedService>(ManagedServiceTable.metadata)
@@ -74,24 +76,77 @@ class ManagedServiceService extends Service {
       ...existing.map((k, v) => MapEntry(k, v.toString())),
       ...config,
     };
+    _requireConfig(def, merged);
 
     await _patch(id, {
       'config': jsonEncode(merged),
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
 
-    if (def.requiresInstall &&
-        svc.status != 'pending' &&
-        svc.status != 'installing') {
+    if (!def.requiresInstall) return findById(id);
+
+    // A failed (or never-completed) install has nothing on the host to
+    // reconfigure — re-run install with the updated credentials instead.
+    final needsInstall = svc.status == 'failed' ||
+        svc.status == 'pending' ||
+        svc.installedAt == null;
+    if (needsInstall) {
+      if (svc.status != 'installing') {
+        await _patch(id, {
+          'status': 'pending',
+          'errorMessage': null,
+        });
+        await _enqueue('install', id);
+      }
+      return findById(id);
+    }
+
+    if (svc.status != 'installing') {
       await _enqueue('configure', id);
     }
 
     return findById(id);
   }
 
+  /// Re-queue install for a failed service using its stored config.
+  Future<ManagedService> retryInstall(int id) async {
+    final svc = await findById(id);
+    final def = findService(svc.serviceType);
+    if (def == null) throw HttpException(422, 'Unknown service type.');
+    if (!def.requiresInstall) {
+      throw HttpException(
+          422, 'This service has nothing to install on the host.');
+    }
+    if (svc.status != 'failed') {
+      throw HttpException(422, 'Only failed installations can be retried.');
+    }
+
+    final cfg = <String, String>{};
+    try {
+      final raw = jsonDecode(svc.config ?? '{}') as Map<String, dynamic>;
+      for (final e in raw.entries) {
+        cfg[e.key] = e.value.toString();
+      }
+    } catch (_) {}
+    _requireConfig(def, {...defaultConfig(def), ...cfg});
+
+    await _patch(id, {
+      'status': 'pending',
+      'errorMessage': null,
+    });
+    await _enqueue('install', id);
+    return findById(id);
+  }
+
   Future<ManagedService> start(int id) async {
     final svc = await findById(id);
     if (svc.status == 'running') return svc;
+    if (svc.status == 'failed' || svc.installedAt == null) {
+      throw HttpException(
+        422,
+        'Service is not installed. Fix the configuration and retry the install.',
+      );
+    }
     await _patch(id, {'status': 'pending'});
     await _enqueue('start', id);
     return findById(id);
@@ -111,6 +166,15 @@ class ManagedServiceService extends Service {
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
+
+  void _requireConfig(ServiceDef def, Map<String, String> config) {
+    final missing = missingRequiredConfig(def, config);
+    if (missing.isEmpty) return;
+    throw HttpException(
+      422,
+      'Missing required configuration: ${missing.join(', ')}.',
+    );
+  }
 
   Future<void> _patch(int id, Map<String, Object?> data) =>
       Query<ManagedService>(ManagedServiceTable.metadata)

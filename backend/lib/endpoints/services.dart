@@ -83,6 +83,17 @@ class ServicesApi {
     return _serialize(updated);
   }
 
+  @Post('/{id}/retry', summary: 'Retry a failed service installation')
+  Future<Map<String, Object?>> retryInstall(
+    int id,
+    ManagedServiceService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final retried = await svc.retryInstall(id);
+    return _serialize(retried, includeDef: true);
+  }
+
   @Post('/{id}/stop', summary: 'Stop a service')
   Future<Map<String, Object?>> stop(
     int id,

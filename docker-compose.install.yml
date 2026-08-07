@@ -1,0 +1,110 @@
+# =============================================================================
+# Gisila Panel — production-like Ubuntu install host
+#
+# Unlike docker-compose.yml (dart:stable, root, AGENT_MODE=dev, DOCKER_DEPLOY),
+# this stack is an Ubuntu 22.04 VM-alike with:
+#   - systemd as PID 1
+#   - non-root user `ubuntu` with passwordless sudo
+#   - no DOCKER_DEPLOY (agent uses real systemctl)
+#
+# Usage:
+#   ./scripts/install-env.sh up          # build + start
+#   ./scripts/install-env.sh shell       # interactive shell as ubuntu
+#   ./scripts/install-env.sh install     # run infra/install.sh via sudo
+#   ./scripts/install-env.sh down
+#
+# Or with compose directly:
+#   docker compose -p gisila-install -f docker-compose.install.yml up -d --build
+#   docker compose -p gisila-install -f docker-compose.install.yml exec -u ubuntu host bash
+# =============================================================================
+
+name: gisila-install
+
+services:
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5456:5432"
+    environment:
+      POSTGRES_DB: gisila_panel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - install_pg_data:/var/lib/postgresql/data
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gisila_panel"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - install_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  host:
+    build:
+      context: ./docker/ubuntu-host
+      dockerfile: Dockerfile
+    container_name: gisila-install-host
+    hostname: gisila-host
+    restart: unless-stopped
+    privileged: true
+    cgroup: host
+    stop_signal: SIGRTMIN+3
+    ports:
+      # Host / Windows access. Prefer high ports — Windows/Hyper-V often reserves
+      # mid-band ranges (blocked bind on 2222, 4000, 8081, 8443, …).
+      - "0.0.0.0:8001:8000"      # panel API (after install.sh)
+      - "0.0.0.0:18080:80"       # nginx
+      - "0.0.0.0:18443:443"      # nginx TLS
+      - "0.0.0.0:12222:22"       # SSH — ubuntu / ubuntu
+    environment:
+      # Used by entrypoint AUTO_INSTALL and by scripts/install-env.sh install
+      DATABASE_URL: postgresql://postgres:postgres@pg:5432/gisila_panel
+      REDIS_URL: redis://redis:6379
+      PANEL_DOMAIN: localhost
+      # Set AUTO_INSTALL=1 to run infra/install.sh on boot (slow first time).
+      AUTO_INSTALL: ${AUTO_INSTALL:-0}
+      # Explicitly empty — never treat this host as the lightweight DOCKER_DEPLOY path.
+      DOCKER_DEPLOY: ""
+    volumes:
+      # Monorepo (gisila_tools/) so path: deps + infra/install.sh resolve.
+      - ..:/workspace
+      # Host cgroup FS is required for systemd-as-PID-1.
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - install_srv:/srv
+      - install_etc_gisila:/etc/gisila
+      - install_var_lib:/var/lib
+      - install_var_log:/var/log
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    depends_on:
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Keep stdin so `docker compose exec` / attach feel like a VM.
+    stdin_open: true
+    tty: true
+
+volumes:
+  install_pg_data:
+  install_redis_data:
+  install_srv:
+  install_etc_gisila:
+  install_var_lib:
+  install_var_log:

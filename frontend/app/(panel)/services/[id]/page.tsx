@@ -7,6 +7,7 @@ import useSWR, { mutate } from "swr";
 import {
   Launch,
   PlayFilled,
+  Renew,
   Save,
   StopFilled,
   TrashCan,
@@ -351,7 +352,11 @@ function ConfigForm({
         method: "PUT",
         body: JSON.stringify({ config: values }),
       });
-      toast.success("Configuration saved.");
+      toast.success(
+        svc.status === "failed"
+          ? "Configuration saved — reinstall queued."
+          : "Configuration saved.",
+      );
       onSaved();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save.");
@@ -360,10 +365,22 @@ function ConfigForm({
     }
   }
 
+  const saveLabel =
+    svc.status === "failed" ? "Save & retry install" : "Save configuration";
+
   return (
     <PageSection title="Configuration">
       <Form onSubmit={(e) => e.preventDefault()}>
         <Stack gap={5}>
+          {svc.status === "failed" && (
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              hideCloseButton
+              title="Installation failed"
+              subtitle="Fill in required fields below, then save to retry — or remove the service and install again from the catalog."
+            />
+          )}
           {def.configSchema.map((field) => (
             <FieldRow
               key={field.key}
@@ -381,7 +398,7 @@ function ConfigForm({
             <InlineLoading status="active" description="Saving…" />
           ) : (
             <Button size="md" renderIcon={Save} onClick={save}>
-              Save configuration
+              {saveLabel}
             </Button>
           )}
         </Stack>
@@ -517,13 +534,18 @@ function ServiceActions({
   // Managed services are node-global infra — only superusers may control them.
   if (!isSuperuser) return null;
 
-  async function act(action: "start" | "stop" | "uninstall") {
+  async function act(action: "start" | "stop" | "uninstall" | "retry") {
     setBusy(action);
     try {
       if (action === "uninstall") {
         await api(`/services/${svc.id}`, { method: "DELETE" });
         toast.success("Uninstall queued.");
         onDone();
+      } else if (action === "retry") {
+        await api(`/services/${svc.id}/retry`, { method: "POST" });
+        toast.success("Reinstall queued.");
+        mutate(`/services/${svc.id}`);
+        mutate("/services/");
       } else {
         await api(`/services/${svc.id}/${action}`, { method: "POST" });
         toast.success(`${action === "start" ? "Started" : "Stopped"}.`);
@@ -541,12 +563,28 @@ function ServiceActions({
     svc.status,
   );
   const isConfigOnly = svc.status === "config_only";
-  const removeLabel = isConfigOnly ? "Remove" : "Uninstall";
+  const isFailed = svc.status === "failed";
+  const removeLabel = isConfigOnly || isFailed ? "Remove" : "Uninstall";
 
   return (
     <PageSection title="Actions">
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-        {!isConfigOnly && (
+        {isFailed &&
+          (busy === "retry" ? (
+            <InlineLoading status="active" description="Retrying…" />
+          ) : (
+            <Button
+              size="md"
+              kind="tertiary"
+              renderIcon={Renew}
+              disabled={isInProgress || !!busy}
+              onClick={() => act("retry")}
+            >
+              Retry install
+            </Button>
+          ))}
+
+        {!isConfigOnly && !isFailed && (
           <>
             {svc.status !== "running" &&
               (busy === "start" ? (
