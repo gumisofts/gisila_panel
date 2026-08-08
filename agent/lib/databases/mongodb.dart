@@ -139,6 +139,7 @@ Future<void> _install(String version, int port, String rootPw) async {
   await _preflightMongo(version);
 
   // 1. Add the MongoDB apt repo + signing key for this version.
+  await Priv.ensureCmds(['curl', 'gpg', 'ca-certificates']);
   final keyring = '/usr/share/keyrings/mongodb-server-$version.gpg';
   if (!File(keyring).existsSync()) {
     final key = await Process.run('curl', [
@@ -158,14 +159,15 @@ Future<void> _install(String version, int port, String rootPw) async {
     if (await gpg.exitCode != 0) throw Exception('gpg --dearmor failed');
   }
 
-  final apt = await _mongodbAptTarget();
+  final aptOs = await Priv.aptOsTarget();
+  final component = aptOs.id == 'debian' ? 'main' : 'multiverse';
   await Priv.writeFile(
     '/etc/apt/sources.list.d/mongodb-org-$version.list',
     'deb [ signed-by=$keyring ] '
-        'https://repo.mongodb.org/apt/${apt.distro} ${apt.codename}/mongodb-org/$version ${apt.component}\n',
+        'https://repo.mongodb.org/apt/${aptOs.id} ${aptOs.codename}/mongodb-org/$version $component\n',
   );
 
-  await Priv.sudo('apt-get', ['update', '-qq']);
+  await Priv.aptUpdate();
   await Priv.aptInstall(
       ['mongodb-org', 'mongodb-mongosh', 'mongodb-database-tools']);
 
@@ -645,47 +647,6 @@ Future<String> _rootPw(String version) async {
     throw Exception('Root password for MongoDB $version not found on host.');
   }
   return pw;
-}
-
-/// Resolve MongoDB's distro apt repo for this host.
-///
-/// Ubuntu uses `apt/ubuntu … multiverse`; Debian uses `apt/debian … main`.
-/// Codename comes from `/etc/os-release` so we don't depend on `lsb_release`.
-Future<({String distro, String codename, String component})>
-    _mongodbAptTarget() async {
-  final file = File('/etc/os-release');
-  if (!file.existsSync()) {
-    throw Exception('Cannot detect OS (/etc/os-release missing)');
-  }
-  final map = <String, String>{};
-  for (final line in await file.readAsLines()) {
-    final i = line.indexOf('=');
-    if (i <= 0) continue;
-    var val = line.substring(i + 1).trim();
-    if (val.length >= 2 && val.startsWith('"') && val.endsWith('"')) {
-      val = val.substring(1, val.length - 1);
-    }
-    map[line.substring(0, i)] = val;
-  }
-
-  final id = (map['ID'] ?? '').toLowerCase();
-  final idLike = (map['ID_LIKE'] ?? '').toLowerCase();
-  final codename = (map['VERSION_CODENAME'] ?? '').trim();
-  if (codename.isEmpty) {
-    throw Exception('Cannot detect OS codename from /etc/os-release');
-  }
-
-  // Ubuntu lists ID_LIKE=debian, so check ubuntu first.
-  if (id == 'ubuntu' || idLike.contains('ubuntu')) {
-    return (distro: 'ubuntu', codename: codename, component: 'multiverse');
-  }
-  if (id == 'debian' || idLike.contains('debian')) {
-    return (distro: 'debian', codename: codename, component: 'main');
-  }
-
-  throw Exception(
-    'MongoDB apt install supports Debian 12+ and Ubuntu 22.04+; got ID=$id',
-  );
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────

@@ -45,8 +45,24 @@ class Priv {
     return (res.stdout as String? ?? '').trim();
   }
 
+  /// `apt-get update` with [DEBIAN_FRONTEND]=noninteractive.
+  ///
+  /// Always set the frontend: the agent has no TTY, and Debian otherwise
+  /// dumps Dialog/Readline/Teletype fallback noise into stderr.
+  static Future<void> aptUpdate({bool failOk = false}) async {
+    final cmd = wrap('sh', [
+      '-c',
+      'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+    ]);
+    final res = await Process.run(cmd.first, cmd.skip(1).toList());
+    if (res.exitCode != 0 && !failOk) {
+      throw Exception('apt-get update failed: ${res.stderr}'.trim());
+    }
+  }
+
   /// Install one or more apt packages non-interactively.
   static Future<void> aptInstall(List<String> packages) async {
+    if (packages.isEmpty) return;
     final cmd = wrap('sh', [
       '-c',
       'DEBIAN_FRONTEND=noninteractive apt-get -qq -y '
@@ -58,6 +74,85 @@ class Priv {
     if (res.exitCode != 0) {
       throw Exception('apt-get install failed: ${res.stderr}'.trim());
     }
+  }
+
+  /// Map of common CLI tools → apt package names on Debian/Ubuntu.
+  static const hostToolPackages = <String, String>{
+    'git': 'git',
+    'curl': 'curl',
+    'wget': 'wget',
+    'unzip': 'unzip',
+    'tar': 'tar',
+    'make': 'make',
+    'gcc': 'build-essential',
+    'g++': 'build-essential',
+    'gpg': 'gnupg',
+    'ca-certificates': 'ca-certificates',
+  };
+
+  /// Ensure [commands] are on PATH, installing the matching apt packages when
+  /// missing. Idempotent and safe on headless Debian/Ubuntu hosts.
+  static Future<void> ensureCmds(List<String> commands) async {
+    final needed = <String>{};
+    for (final cmd in commands) {
+      final pkg = hostToolPackages[cmd] ?? cmd;
+      if (cmd == 'ca-certificates') {
+        final has = await Process.run('sh', [
+          '-c',
+          'dpkg-query -W -f=\${Status} ca-certificates 2>/dev/null | grep -q "install ok installed"',
+        ]);
+        if (has.exitCode != 0) needed.add(pkg);
+        continue;
+      }
+      final has = await Process.run('sh', ['-c', 'command -v ${shq(cmd)}']);
+      if (has.exitCode != 0) needed.add(pkg);
+    }
+    if (needed.isEmpty) return;
+    await aptUpdate(failOk: true);
+    await aptInstall(needed.toList());
+  }
+
+  /// Read a single KEY from `/etc/os-release` without polluting the environment.
+  static Future<String> osReleaseGet(String key) async {
+    final file = File('/etc/os-release');
+    if (!file.existsSync()) return '';
+    for (final line in await file.readAsLines()) {
+      final i = line.indexOf('=');
+      if (i <= 0) continue;
+      if (line.substring(0, i) != key) continue;
+      var val = line.substring(i + 1).trim();
+      if (val.length >= 2 && val.startsWith('"') && val.endsWith('"')) {
+        val = val.substring(1, val.length - 1);
+      } else if (val.length >= 2 && val.startsWith("'") && val.endsWith("'")) {
+        val = val.substring(1, val.length - 1);
+      }
+      return val;
+    }
+    return '';
+  }
+
+  /// Debian/Ubuntu apt-repo target derived from `/etc/os-release`.
+  ///
+  /// Used for third-party repos (MongoDB, PGDG, …) so we never depend on
+  /// `lsb_release` (often missing on minimal images) and never source
+  /// `/etc/os-release` into the process environment.
+  static Future<({String id, String codename})> aptOsTarget() async {
+    final id = (await osReleaseGet('ID')).toLowerCase();
+    final idLike = (await osReleaseGet('ID_LIKE')).toLowerCase();
+    final codename = (await osReleaseGet('VERSION_CODENAME')).trim();
+    if (codename.isEmpty) {
+      throw Exception('Cannot detect OS codename from /etc/os-release');
+    }
+    // Ubuntu lists ID_LIKE=debian, so check ubuntu first.
+    if (id == 'ubuntu' || idLike.contains('ubuntu')) {
+      return (id: 'ubuntu', codename: codename);
+    }
+    if (id == 'debian' || idLike.contains('debian')) {
+      return (id: 'debian', codename: codename);
+    }
+    throw Exception(
+      'Unsupported OS for apt third-party repos (need Debian/Ubuntu); got ID=$id',
+    );
   }
 
   /// Write [content] to a privileged [path] using `tee`.

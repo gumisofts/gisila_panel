@@ -27,6 +27,7 @@ class MongoExpressHandler extends ServiceHandler {
     // Ensure npm is available, then install mongo-express globally.
     final hasNpm = await Process.run('sh', ['-c', 'command -v npm']);
     if (hasNpm.exitCode != 0) {
+      await Priv.aptUpdate(failOk: true);
       await Priv.aptInstall(['nodejs', 'npm']);
     }
     await Priv.sudo('npm', ['install', '-g', 'mongo-express']);

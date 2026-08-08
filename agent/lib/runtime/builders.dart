@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/exec.dart';
+import 'package:gisila_agent/runtime/priv.dart';
 
 /// Per-runtime build / fetch routines. Each helper leaves the latest source
 /// in `<workDir>/releases/current_build/` and (for compiled runtimes) the
@@ -31,6 +32,7 @@ class Builders {
     String? deployKeyPath,
     bool noCache = false,
   }) async {
+    await _ensureHostTools(['git', 'ca-certificates']);
     final src = '$workDir/releases/current_build';
 
     // Build the environment; if a deploy key is provided, configure an ssh
@@ -130,6 +132,7 @@ class Builders {
     required String zipPath,
     bool noCache = false,
   }) async {
+    await _ensureHostTools(['unzip']);
     final src = '$workDir/releases/current_build';
     final stash = '${BuildCache.dir(workDir)}/stash';
 
@@ -1306,32 +1309,35 @@ class Builders {
   /// modules (sqlite3, ssl, lzma, readline, etc.).  When these are absent
   /// during `pyenv install`, CPython silently omits the corresponding `.so`
   /// files, producing hard-to-diagnose "No module named '_sqlite3'" errors at
-  /// runtime.  Running this before every pyenv call is safe — apt-get is a
-  /// no-op when packages are already at the latest version.
+  /// runtime.  Also pulls in `git` / `build-essential` so pyenv can be cloned
+  /// and built on minimal Debian/Ubuntu images.  Safe to re-run — apt is a
+  /// no-op when packages are already current.
   static Future<void> _ensurePythonBuildDeps() async {
-    // Refresh package lists first so the install below can't fail because of a
-    // stale/empty apt cache (common on minimal VPS images). Best-effort: a
-    // failing mirror should not abort the build outright.
-    await ShellExec.run('apt-get', ['update', '-qq'], requireSuccess: false);
-    await ShellExec.run(
-      'apt-get',
-      [
-        'install', '-y', '-qq',
-        'libsqlite3-dev',
-        'libssl-dev',
-        'zlib1g-dev',
-        'libbz2-dev',
-        'libreadline-dev',
-        'libncursesw5-dev',
-        'xz-utils',
-        'libxml2-dev',
-        'libxmlsec1-dev',
-        'libffi-dev',
-        'liblzma-dev',
-      ],
-      requireSuccess: false,
-    );
+    await Priv.aptUpdate(failOk: true);
+    // Always noninteractive — the agent has no TTY, and Debian otherwise
+    // spams debconf Dialog/Readline/Teletype fallbacks into the error stream.
+    await Priv.aptInstall([
+      'git',
+      'curl',
+      'ca-certificates',
+      'build-essential',
+      'libsqlite3-dev',
+      'libssl-dev',
+      'zlib1g-dev',
+      'libbz2-dev',
+      'libreadline-dev',
+      'libncursesw5-dev',
+      'xz-utils',
+      'libxml2-dev',
+      'libxmlsec1-dev',
+      'libffi-dev',
+      'liblzma-dev',
+    ]);
   }
+
+  /// Ensure host CLIs needed by download/clone/extract paths exist.
+  static Future<void> _ensureHostTools(List<String> cmds) =>
+      Priv.ensureCmds(cmds);
 
   // ── Dart SDK version management ──────────────────────────────────────────
 
@@ -1344,6 +1350,7 @@ class Builders {
     final bin = '$dir/dart-sdk/bin/dart';
     if (File(bin).existsSync()) return bin;
 
+    await _ensureHostTools(['curl', 'unzip', 'ca-certificates']);
     Directory(dir).createSync(recursive: true);
     stdout.writeln('[agent] Downloading Dart SDK $version…');
     final archive = '$dir/dart-sdk.zip';
@@ -1366,6 +1373,7 @@ class Builders {
     final dir = '$_goBase/$version';
     final bin = '$dir/go/bin/go';
     if (!File(bin).existsSync()) {
+      await _ensureHostTools(['curl', 'tar', 'ca-certificates']);
       Directory(dir).createSync(recursive: true);
       stdout.writeln('[agent] Downloading Go $version…');
       final archive = '$dir/go.tar.gz';
@@ -1390,6 +1398,7 @@ class Builders {
   static Future<void> _ensureRustup() async {
     final result = await Process.run('which', ['rustup']);
     if (result.exitCode == 0) return;
+    await _ensureHostTools(['curl', 'ca-certificates']);
     stdout.writeln('[agent] Installing rustup…');
     await ShellExec.run('bash', [
       '-c',
@@ -1407,6 +1416,7 @@ class Builders {
   static Future<Map<String, String>> _ensureFnmNode(String version) async {
     // 1. Install fnm if absent.
     if (!File(_fnmBin).existsSync()) {
+      await _ensureHostTools(['curl', 'ca-certificates', 'unzip']);
       stdout.writeln('[agent] Installing fnm…');
       await ShellExec.run('bash', [
         '-c',
@@ -1442,6 +1452,7 @@ class Builders {
     final bin = File('$dir/bun');
     if (bin.existsSync()) return bin;
 
+    await _ensureHostTools(['curl', 'unzip', 'ca-certificates']);
     Directory(dir).createSync(recursive: true);
     stdout.writeln('[agent] Downloading Bun $version…');
     final archive = '$dir/bun-linux-x64.zip';

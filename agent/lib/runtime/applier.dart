@@ -5,6 +5,7 @@ import 'package:gisila_agent/generators/nginx_vhost.dart';
 import 'package:gisila_agent/generators/supervisor_conf.dart';
 import 'package:gisila_agent/generators/systemd_unit.dart';
 import 'package:gisila_agent/runtime/exec.dart';
+import 'package:gisila_agent/runtime/priv.dart';
 
 /// Parameters for a Celery deployment passed to [Applier.applyCeleryUnits].
 class CeleryUnitParams {
@@ -596,8 +597,12 @@ class Applier {
     if ((await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0) {
       return true;
     }
-    await ShellExec.run('apt-get', ['install', '-y', '-qq', 'acl'],
-        requireSuccess: false);
+    try {
+      await Priv.aptUpdate(failOk: true);
+      await Priv.aptInstall(['acl']);
+    } catch (_) {
+      // Best-effort — caller falls back when setfacl is still missing.
+    }
     return (await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0;
   }
 

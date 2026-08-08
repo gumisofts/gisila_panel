@@ -10,6 +10,7 @@ import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/deploy_mode.dart';
 import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
+import 'package:gisila_agent/runtime/priv.dart';
 import 'package:gisila_agent/runtime/runtime_plugin.dart';
 import 'package:gisila_agent/runtime/runtime_registry.dart';
 import 'package:gisila_agent/runtime/validators.dart';
@@ -2318,7 +2319,10 @@ Future<void> _serviceUninstall(String type) async {
       await _sudo('rm', ['-f', _kMemcachedUnitFile], failOk: true);
       await _serviceCtl('daemon-reload', 'memcached');
     case 'pgbouncer':
-      await _sudo('apt-get', ['-qq', '-y', 'remove', '--purge', 'pgbouncer']);
+      await _sudo('sh', [
+        '-c',
+        'DEBIAN_FRONTEND=noninteractive apt-get -qq -y remove --purge pgbouncer',
+      ]);
       await _sudo('rm', ['-rf', '/etc/pgbouncer'], failOk: true);
     case 'mailpit':
       await _sudo('rm', ['-f', '/usr/local/bin/mailpit'], failOk: true);
@@ -2349,6 +2353,7 @@ Future<void> _serviceUninstall(String type) async {
 
 Future<void> _installMailpit(Map<String, dynamic> config) async {
   // Download the latest mailpit binary (requires root to install to /usr/local/bin).
+  await Priv.ensureCmds(['curl', 'ca-certificates']);
   await _sudo('sh', [
     '-c',
     'curl -sL https://raw.githubusercontent.com/axllent/mailpit/develop/install.sh | bash',
@@ -2635,6 +2640,15 @@ Future<void> _aptInstall(List<String> packages) async {
   await _run(cmd.first, cmd.skip(1).toList());
 }
 
+/// `apt-get update` with a noninteractive frontend (no TTY on agent hosts).
+Future<void> _aptUpdate({bool failOk = false}) async {
+  final cmd = _priv('sh', [
+    '-c',
+    'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+  ]);
+  await _run(cmd.first, cmd.skip(1).toList(), failOk: failOk);
+}
+
 /// Feed a single debconf selection line to `debconf-set-selections`.
 Future<void> _debconfSet(String selection) async {
   final escaped = selection.replaceAll("'", r"'\''");
@@ -2789,6 +2803,7 @@ String _minioArch() {
 /// Download a binary from [url] to [dest] (root-owned, executable) if missing.
 Future<void> _ensureBinary(String url, String dest) async {
   if (await File(dest).exists()) return;
+  await Priv.ensureCmds(['curl', 'ca-certificates']);
   stdout.writeln('[agent] downloading ${dest.split('/').last} from $url');
   final cmd = _priv('sh', ['-c', "curl -fsSL '$url' -o '$dest'"]);
   await _run(cmd.first, cmd.skip(1).toList());
@@ -3268,6 +3283,7 @@ Future<void> _postgres(List<String> args) async {
 /// Install PostgreSQL from the official pgdg apt repository.
 Future<void> _pgInstallInstance(int version, int port) async {
   // 1. Add pgdg repo if the signing key is missing.
+  await Priv.ensureCmds(['curl', 'gpg', 'ca-certificates']);
   final keyFile = File('/etc/apt/keyrings/pgdg.gpg');
   if (!keyFile.existsSync()) {
     await _sudo('mkdir', ['-p', '/etc/apt/keyrings']);
@@ -3294,15 +3310,15 @@ Future<void> _pgInstallInstance(int version, int port) async {
   // 2. Add pgdg source list.
   final sourceFile = File('/etc/apt/sources.list.d/pgdg.list');
   if (!sourceFile.existsSync()) {
-    final os =
-        (await Process.run('lsb_release', ['-cs'])).stdout.toString().trim();
+    // Prefer /etc/os-release over lsb_release (often missing on minimal images).
+    final os = await Priv.aptOsTarget();
     await _writeFileSudo(
         '/etc/apt/sources.list.d/pgdg.list',
         'deb [signed-by=/etc/apt/keyrings/pgdg.gpg] '
-            'https://apt.postgresql.org/pub/repos/apt $os-pgdg main\n');
+            'https://apt.postgresql.org/pub/repos/apt ${os.codename}-pgdg main\n');
   }
 
-  await _sudo('apt-get', ['update', '-qq']);
+  await _aptUpdate();
   await _aptInstall(['postgresql-$version']);
 
   // 3. Ensure the "$version/main" cluster exists.
@@ -3345,8 +3361,10 @@ Future<void> _pgUninstallInstance(int version) async {
   await _sudo('systemctl', ['stop', 'postgresql@$version-main'], failOk: true);
   await _sudo('systemctl', ['disable', 'postgresql@$version-main'],
       failOk: true);
-  await _sudo('apt-get', ['-y', 'remove', '--purge', 'postgresql-$version'],
-      failOk: true);
+  await _sudo('sh', [
+    '-c',
+    'DEBIAN_FRONTEND=noninteractive apt-get -qq -y remove --purge postgresql-$version',
+  ], failOk: true);
   await _sudo(
       'rm', ['-rf', '/etc/postgresql/$version', '/var/lib/postgresql/$version'],
       failOk: true);
@@ -3797,6 +3815,7 @@ Future<void> _pythonCmd(List<String> args) async {
 Future<void> _pyenvEnsureInstalled() async {
   if (Directory('$_pyenvRoot/bin').existsSync()) return;
   stdout.writeln('Installing pyenv at $_pyenvRoot…');
+  await Priv.ensureCmds(['git', 'ca-certificates', 'make', 'curl']);
   await _run('git', [
     'clone',
     '--depth',
@@ -3824,8 +3843,10 @@ Future<void> _pyenvInstallVersion(String version) async {
     'PATH':
         '$_pyenvRoot/bin:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
   };
-  // pyenv needs build deps.
+  // pyenv needs build deps + git/curl on minimal Debian/Ubuntu images.
+  await _aptUpdate(failOk: true);
   await _aptInstall([
+    'git',
     'build-essential',
     'libssl-dev',
     'zlib1g-dev',
@@ -3840,6 +3861,7 @@ Future<void> _pyenvInstallVersion(String version) async {
     'libffi-dev',
     'liblzma-dev',
     'curl',
+    'ca-certificates',
   ]);
   final result = await Process.run(
     '$_pyenvRoot/bin/pyenv',
