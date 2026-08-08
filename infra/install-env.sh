@@ -6,10 +6,57 @@
 #   REDIS_URL      redis://:pass@host:6379/0   (password optional)
 #   PANEL_DOMAIN   panel.example.com           (injected into nginx vhost)
 #   ISSUE_TLS=1    run certbot for PANEL_DOMAIN after nginx is installed
+#   SKIP_OS_CHECK=1  allow non-Ubuntu/Debian hosts (unsupported; for testing)
 #
 # Discrete DB_*/REDIS_* vars still work and override fields from a URL when set
 # explicitly in the environment before the installer runs.
+#
+# Supported host OS: Ubuntu 22.04+ and Debian 12+ (amd64/arm64). Prebuilt
+# release tarballs are glibc Linux binaries — CI builds them on Ubuntu runners,
+# but they install and run on Debian the same way.
 # =============================================================================
+
+# Require Ubuntu 22.04+ or Debian 12+. Uses /etc/os-release only (no lsb_release).
+gisila_require_supported_os() {
+  if [[ "${SKIP_OS_CHECK:-0}" == "1" ]]; then
+    echo "==> SKIP_OS_CHECK=1 — skipping Ubuntu/Debian version check"
+    return 0
+  fi
+
+  if [[ ! -r /etc/os-release ]]; then
+    echo "ERROR: cannot detect OS (/etc/os-release missing)." >&2
+    echo "       Gisila Panel supports Ubuntu 22.04+ and Debian 12+." >&2
+    exit 1
+  fi
+
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  local id="${ID:-}"
+  local version_id="${VERSION_ID:-}"
+  local pretty="${PRETTY_NAME:-$id $version_id}"
+  local major="${version_id%%.*}"
+  major="${major:-0}"
+
+  case "$id" in
+    ubuntu)
+      if [[ "$major" =~ ^[0-9]+$ && "$major" -ge 22 ]]; then
+        echo "==> Detected $pretty (supported)"
+        return 0
+      fi
+      ;;
+    debian)
+      if [[ "$major" =~ ^[0-9]+$ && "$major" -ge 12 ]]; then
+        echo "==> Detected $pretty (supported)"
+        return 0
+      fi
+      ;;
+  esac
+
+  echo "ERROR: unsupported OS: $pretty" >&2
+  echo "       Gisila Panel supports Ubuntu 22.04+ and Debian 12+ (x64 and arm64)." >&2
+  echo "       Set SKIP_OS_CHECK=1 to bypass this check (unsupported)." >&2
+  exit 1
+}
 
 # Parse DATABASE_URL into DB_HOST/PORT/NAME/USER/PASSWORD/SSL (only fills unset).
 gisila_parse_database_url() {

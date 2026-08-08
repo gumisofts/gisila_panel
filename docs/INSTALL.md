@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Ubuntu 22.04+ or Debian 12 (fresh or existing)
+- Ubuntu 22.04+ or Debian 12+ (fresh or existing; x64 or arm64)
 - A non-root user with `sudo` access (or root)
 - Port 80 and 443 open in your firewall
 - A domain name pointed at the server (for TLS)
@@ -29,7 +29,8 @@ in that case.
 ## Option A: prebuilt install (recommended)
 
 Downloads compiled binaries + the panel UI from a GitHub Release — no Dart
-SDK, Node.js, or pnpm required, nothing compiled on the box:
+SDK, Node.js, or pnpm required, nothing compiled on the box. Published for
+**linux-x64** and **linux-arm64** (auto-detected via `uname -m`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh | sudo bash
@@ -45,8 +46,8 @@ Useful knobs (combine as needed):
 
 ```bash
 sudo VERSION=0.1.0 bash infra/install-prebuilt.sh                  # pin a release
-sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \
-     bash infra/install-prebuilt.sh                                # local artifact
+sudo RELEASE_FILE=/tmp/gisila-release-linux-arm64.tar.gz \
+     bash infra/install-prebuilt.sh                                # local artifact (x64 or arm64)
 
 # Preferred: URLs + domain (pass env to bash, not to curl)
 curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh \

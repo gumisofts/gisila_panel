@@ -2,7 +2,8 @@
 # =============================================================================
 # Gisila Panel — single-node production installer.
 #
-# Tested on Ubuntu 22.04 / Debian 12. Run as root: sudo bash infra/install.sh
+# Tested on Ubuntu 22.04+ / Debian 12+ (x64 and arm64).
+# Run as root: sudo bash infra/install.sh
 #
 # PostgreSQL and Redis are NOT installed or managed by this script — the panel
 # is a client of both, not their operator. Point it at existing instances with
@@ -61,6 +62,8 @@ BUILD_FRONTEND="${BUILD_FRONTEND:-0}"
 
 # shellcheck source=install-env.sh
 source "$REPO_DIR/infra/install-env.sh"
+
+gisila_require_supported_os
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 # Note: no `postgresql` or `redis-server` here — this installer is a client of

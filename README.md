@@ -24,7 +24,7 @@ Works like Heroku / Railway / Render / Coolify — but instead of relying on Doc
 | Cache / queue | Redis 7 |
 | Workers  | `gisila_jobs` — Redis-backed Dart task queue (the Celery replacement) |
 | Real-time| WebSockets (logs / events stream) |
-| OS       | Ubuntu 22.04+ |
+| OS       | Ubuntu 22.04+ · Debian 12+ (x64 / arm64) |
 | Runtime  | systemd · Nginx · AppArmor · cgroups v2 · seccomp |
 | TLS      | Let's Encrypt (`certbot`) |
 | Logs     | `journalctl` |
@@ -171,7 +171,7 @@ See [`docker/ubuntu-host/README.md`](docker/ubuntu-host/README.md). Panel after 
 ./scripts/redis-cli.sh            # redis-cli into the dev redis
 ```
 
-> **Note:** The worker uses `AGENT_MODE=dev` in the compose stack — it logs the commands it *would* send to `gisila-agent` but doesn't actually touch systemd / Nginx / AppArmor. Use the production install on a real Ubuntu host (`infra/install.sh`) to test real deployments end-to-end.
+> **Note:** The worker uses `AGENT_MODE=dev` in the compose stack — it logs the commands it *would* send to `gisila-agent` but doesn't actually touch systemd / Nginx / AppArmor. Use the production install on a real Ubuntu/Debian host (`infra/install.sh` or `infra/install-prebuilt.sh`) to test real deployments end-to-end.
 
 ---
 
@@ -179,7 +179,7 @@ See [`docker/ubuntu-host/README.md`](docker/ubuntu-host/README.md). Panel after 
 
 ### Prerequisites
 
-- Ubuntu 22.04+ or Debian 12 (fresh or existing)
+- Ubuntu 22.04+ or Debian 12+ (fresh or existing; x64 or arm64)
 - A non-root user with `sudo` access (or root)
 - Port 80 and 443 open in your firewall
 - A domain name pointed at the server (for TLS)
@@ -209,7 +209,8 @@ The installer's defaults (`DB_HOST=localhost`, `DB_USER=gisila`,
 
 The fastest way to stand up a node. This installs **prebuilt** binaries and the
 prebuilt panel UI from a GitHub Release — no Dart SDK, Node.js, or pnpm, and
-nothing is compiled on the box. One command, no clone required:
+nothing is compiled on the box. Supports **linux-x64** and **linux-arm64**.
+One command, no clone required:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh | sudo bash
@@ -225,8 +226,8 @@ Useful knobs (put env on `env`/`bash`, not on `curl`):
 
 ```bash
 sudo VERSION=0.1.0 bash infra/install-prebuilt.sh         # pin a release
-sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz \
-     bash infra/install-prebuilt.sh
+sudo RELEASE_FILE=/tmp/gisila-release-linux-arm64.tar.gz \
+     bash infra/install-prebuilt.sh                       # local artifact (x64 or arm64)
 
 curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh \
   | sudo env \

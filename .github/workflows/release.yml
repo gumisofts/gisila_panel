@@ -9,9 +9,17 @@ permissions:
   contents: write
 
 jobs:
-  build-linux-x64:
-    name: Build linux-x64
-    runs-on: ubuntu-22.04
+  build:
+    name: Build linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -40,16 +48,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.ref_name }}"
-          TARBALL="dist/gisila-release-linux-x64.tar.gz"
+          ARCH="${{ matrix.arch }}"
+          TARBALL="dist/gisila-release-linux-${ARCH}.tar.gz"
           VERSION_FILE="dist/VERSION"
 
-          # Create the release (skip if it already exists, e.g. created manually)
+          # Create the release (skip if it already exists, e.g. created manually
+          # or by the other arch job racing us).
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
             --title "Gisila Panel $TAG" \
             --generate-notes \
             || true
 
+          # Both jobs upload VERSION with --clobber; content is identical.
           gh release upload "$TAG" "$TARBALL" "$VERSION_FILE" \
             --repo "${{ github.repository }}" \
             --clobber

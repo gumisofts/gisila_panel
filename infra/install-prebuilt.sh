@@ -2,11 +2,11 @@
 # =============================================================================
 # Gisila Panel — prebuilt single-node installer (no build toolchain required).
 #
-# For new devs / operators on Debian 12 or Ubuntu 22.04+. Downloads a prebuilt
-# release (compiled binaries + panel UI + migrations) from GitHub Releases and
-# wires up the system. Unlike infra/install.sh it installs NO Dart SDK, Node.js
-# or pnpm and compiles nothing — so it is far faster and never hits the pnpm
-# build-approval failure.
+# For new devs / operators on Debian 12+ or Ubuntu 22.04+ (x64 and arm64).
+# Downloads a prebuilt release (compiled binaries + panel UI + migrations) from
+# GitHub Releases and wires up the system. Unlike infra/install.sh it installs
+# NO Dart SDK, Node.js or pnpm and compiles nothing — so it is far faster and
+# never hits the pnpm build-approval failure.
 #
 # PostgreSQL and Redis are NOT installed or managed by this script — the panel
 # is a client of both, not their operator. Point it at existing instances
@@ -16,7 +16,7 @@
 # Run as root. Examples:
 #   sudo bash infra/install-prebuilt.sh
 #   sudo VERSION=0.1.0 bash infra/install-prebuilt.sh
-#   sudo RELEASE_FILE=/tmp/gisila-release-linux-x64.tar.gz bash infra/install-prebuilt.sh
+#   sudo RELEASE_FILE=/tmp/gisila-release-linux-arm64.tar.gz bash infra/install-prebuilt.sh
 #   sudo DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
 #        REDIS_URL='redis://:secret@10.0.0.5:6379' \
 #        PANEL_DOMAIN=panel.example.com \
@@ -29,6 +29,7 @@
 #
 # Env knobs:
 #   VERSION, GITHUB_REPO, RELEASE_URL, RELEASE_FILE
+#   SKIP_OS_CHECK=1  bypass Ubuntu/Debian version check (unsupported)
 #   DATABASE_URL   postgresql://user:pass@host:5432/db(?sslmode=require)
 #   REDIS_URL      redis://[:pass@]host:6379
 #   PANEL_DOMAIN   hostname written into the nginx vhost
@@ -60,6 +61,8 @@ else
   source <(curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/main/infra/install-env.sh")
 fi
 
+gisila_require_supported_os
+
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64 | amd64) ARCH=x64 ;;
@@ -67,17 +70,21 @@ case "$ARCH" in
 esac
 ASSET="gisila-release-linux-${ARCH}.tar.gz"
 
-# CI (.github/workflows/release.yml) currently only builds/publishes linux-x64.
-# Fail early with a clear message on other architectures instead of a bare
-# curl 404 — unless the caller is pointing at their own artifact/URL.
-if [[ "$ARCH" != "x64" && -z "${RELEASE_FILE:-}" && -z "${RELEASE_URL:-}" ]]; then
-  echo "ERROR: no prebuilt release is published for linux-$ARCH yet" >&2
-  echo "       (CI only builds linux-x64 — see .github/workflows/release.yml)." >&2
-  echo "       Build your own with 'bash infra/build-release.sh' on this host, then" >&2
-  echo "       re-run with RELEASE_FILE=/path/to/gisila-release-linux-$ARCH.tar.gz," >&2
-  echo "       or use infra/install.sh to build from source instead." >&2
-  exit 1
-fi
+# CI publishes linux-x64 and linux-arm64. Fail early on anything else instead
+# of a bare curl 404 — unless the caller is pointing at their own artifact/URL.
+case "$ARCH" in
+  x64 | arm64) ;;
+  *)
+    if [[ -z "${RELEASE_FILE:-}" && -z "${RELEASE_URL:-}" ]]; then
+      echo "ERROR: no prebuilt release is published for linux-$ARCH" >&2
+      echo "       (CI builds linux-x64 and linux-arm64 — see .github/workflows/release.yml)." >&2
+      echo "       Build your own with 'bash infra/build-release.sh' on this host, then" >&2
+      echo "       re-run with RELEASE_FILE=/path/to/gisila-release-linux-$ARCH.tar.gz," >&2
+      echo "       or use infra/install.sh to build from source instead." >&2
+      exit 1
+    fi
+    ;;
+esac
 
 # ── 1. System packages (runtime only — no build toolchain) ────────────────────
 # Note: no `postgresql` or `redis-server` here — this installer is a client of
