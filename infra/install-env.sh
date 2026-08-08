@@ -16,6 +16,24 @@
 # but they install and run on Debian the same way.
 # =============================================================================
 
+# Read a single KEY=value from /etc/os-release without polluting the caller's
+# environment. (Sourcing that file exports VERSION=… which would clobber the
+# installer's release VERSION knob — e.g. Debian's VERSION="13 (trixie)".)
+gisila_os_release_get() {
+  local key="$1"
+  local value
+  value="$(awk -F= -v k="$key" '
+    $1 == k {
+      v = substr($0, index($0, "=") + 1)
+      if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
+      else if (v ~ /^'\''.*'\''$/) v = substr(v, 2, length(v) - 2)
+      print v
+      exit
+    }
+  ' /etc/os-release)"
+  printf '%s' "$value"
+}
+
 # Require Ubuntu 22.04+ or Debian 12+. Uses /etc/os-release only (no lsb_release).
 gisila_require_supported_os() {
   if [[ "${SKIP_OS_CHECK:-0}" == "1" ]]; then
@@ -29,12 +47,12 @@ gisila_require_supported_os() {
     exit 1
   fi
 
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  local id="${ID:-}"
-  local version_id="${VERSION_ID:-}"
-  local pretty="${PRETTY_NAME:-$id $version_id}"
-  local major="${version_id%%.*}"
+  local id version_id pretty major
+  id="$(gisila_os_release_get ID)"
+  version_id="$(gisila_os_release_get VERSION_ID)"
+  pretty="$(gisila_os_release_get PRETTY_NAME)"
+  pretty="${pretty:-$id $version_id}"
+  major="${version_id%%.*}"
   major="${major:-0}"
 
   case "$id" in
