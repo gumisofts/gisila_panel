@@ -344,12 +344,15 @@ String _buildConf(
     buf.writeln('  maxIncomingConnections: $maxConns');
   }
   if (publicCertDir != null) {
-    // MongoDB 8+ refuses TLS without an explicit chain of trust (SERVER-72839).
-    // We present a LE cert to clients; we do not require client certs (password
-    // auth), so allowConnectionsWithoutCertificates must stay true with CAFile.
+    // preferTLS (not requireTLS): remote clients can use the LE cert, but local
+    // tools (panel metrics, mongo-express, mongosh on 127.0.0.1) keep working
+    // without TLS. requireTLS would force TLS on every connection and break those.
+    // MongoDB 8+ still needs an explicit chain of trust (SERVER-72839) whenever
+    // TLS is enabled — CAFile + allowConnectionsWithoutCertificates (password
+    // auth, no client certs).
     buf
       ..writeln('  tls:')
-      ..writeln('    mode: requireTLS')
+      ..writeln('    mode: preferTLS')
       ..writeln('    certificateKeyFile: $publicCertDir/mongo.pem')
       ..writeln('    CAFile: $publicCertDir/ca.pem')
       ..writeln('    allowConnectionsWithoutCertificates: true');
