@@ -344,10 +344,15 @@ String _buildConf(
     buf.writeln('  maxIncomingConnections: $maxConns');
   }
   if (publicCertDir != null) {
+    // MongoDB 8+ refuses TLS without an explicit chain of trust (SERVER-72839).
+    // We present a LE cert to clients; we do not require client certs (password
+    // auth), so allowConnectionsWithoutCertificates must stay true with CAFile.
     buf
       ..writeln('  tls:')
       ..writeln('    mode: requireTLS')
-      ..writeln('    certificateKeyFile: $publicCertDir/mongo.pem');
+      ..writeln('    certificateKeyFile: $publicCertDir/mongo.pem')
+      ..writeln('    CAFile: $publicCertDir/ca.pem')
+      ..writeln('    allowConnectionsWithoutCertificates: true');
   }
   if (auth) {
     buf
@@ -452,18 +457,20 @@ Future<void> _unexpose(String version, int port) async {
   stdout.writeln('[agent] MongoDB $version is private again (localhost only)');
 }
 
-/// Concatenate the live LE cert + key into a mongodb-owned PEM and install a
-/// certbot renewal deploy hook that rebuilds it + reloads on renew.
+/// Install LE cert material for mongod: server PEM (fullchain+key) plus CA
+/// chain file required by MongoDB 8+ (SERVER-72839). Renew hook refreshes both.
 Future<void> _installCert(String version, String domain, String dest) async {
   await Priv.sudo('mkdir', ['-p', dest]);
   final live = '/etc/letsencrypt/live/$domain';
   final pem = '$dest/mongo.pem';
+  final ca = '$dest/ca.pem';
   await Priv.sudo('bash', [
     '-c',
-    'cat ${Priv.shq('$live/fullchain.pem')} ${Priv.shq('$live/privkey.pem')} > ${Priv.shq(pem)}'
+    'cat ${Priv.shq('$live/fullchain.pem')} ${Priv.shq('$live/privkey.pem')} > ${Priv.shq(pem)} && '
+        'cp ${Priv.shq('$live/chain.pem')} ${Priv.shq(ca)}'
   ]);
   await Priv.sudo('chown', ['-R', 'mongodb:mongodb', dest]);
-  await Priv.sudo('chmod', ['600', pem]);
+  await Priv.sudo('chmod', ['600', pem, ca]);
 
   await Priv.sudo('mkdir', ['-p', '/etc/letsencrypt/renewal-hooks/deploy']);
   final hook = '/etc/letsencrypt/renewal-hooks/deploy/gisila-mongo-$version.sh';
@@ -473,8 +480,9 @@ D="$domain"
 DEST="$dest"
 mkdir -p "\$DEST"
 cat "/etc/letsencrypt/live/\$D/fullchain.pem" "/etc/letsencrypt/live/\$D/privkey.pem" > "\$DEST/mongo.pem"
+cp "/etc/letsencrypt/live/\$D/chain.pem" "\$DEST/ca.pem"
 chown -R mongodb:mongodb "\$DEST"
-chmod 600 "\$DEST/mongo.pem"
+chmod 600 "\$DEST/mongo.pem" "\$DEST/ca.pem"
 systemctl reload ${_unitName(version)} || systemctl restart ${_unitName(version)} || true
 ''');
   await Priv.sudo('chmod', ['755', hook]);

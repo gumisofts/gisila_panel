@@ -395,7 +395,8 @@ const List<ServiceDef> kServiceCatalog = [
           defaultValue: '27017',
           min: 1,
           max: 65535,
-          hint: 'Port of the target MongoDB instance (see the Databases page).'),
+          hint: 'Port of the target MongoDB instance (6.0→27017, 7.0→27018, '
+              '8.0→27019 — see the Databases page).'),
       ConfigField('admin_user',
           label: 'MongoDB admin user',
           type: FieldType.string,
@@ -436,7 +437,8 @@ const List<ServiceDef> kServiceCatalog = [
           type: FieldType.boolean,
           defaultValue: 'true',
           hint: 'Obtain a certificate for the domain. Uncheck if TLS is '
-              'terminated upstream (e.g. Cloudflare).'),
+              'terminated upstream (Cloudflare) — and set Cloudflare SSL to '
+              'Full (strict) if you leave this on.'),
     ],
   ),
 
