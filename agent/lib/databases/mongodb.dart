@@ -110,11 +110,26 @@ Future<void> runMongo(List<String> args) async {
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
 String _unitName(String version) => 'gisila-mongod-$version';
-String _confPath(String version) => '/etc/gisila/mongod-$version.conf';
+// Config + TLS live under /etc/gisila-mongo (0755). /etc/gisila is 0750 gisila:gisila
+// for panel secrets — the mongodb user cannot traverse it, which made mongod ABRT with
+// "Permission denied … mongod-X.conf".
+String _confPath(String version) => '/etc/gisila-mongo/mongod-$version.conf';
 String _dataDir(String version) => '/var/lib/mongo/$version';
 String _logPath(String version) => '/var/log/mongodb/gisila-mongod-$version.log';
 String _rootPwFile(String version) => '/etc/gisila/mongod-$version.root';
-String _certDir(String version) => '/etc/gisila/mongo-tls/$version';
+String _certDir(String version) => '/etc/gisila-mongo/tls/$version';
+
+Future<void> _ensureMongoEtc() async {
+  await Priv.sudo('mkdir', ['-p', '/etc/gisila-mongo']);
+  await Priv.sudo('chmod', ['755', '/etc/gisila-mongo']);
+}
+
+Future<void> _writeMongoConf(String version, String content) async {
+  await _ensureMongoEtc();
+  await Priv.writeFile(_confPath(version), content);
+  // mongod (User=mongodb) must be able to read the config at startup.
+  await Priv.sudo('chmod', ['644', _confPath(version)]);
+}
 
 // ── Install / uninstall ─────────────────────────────────────────────────────
 
@@ -164,6 +179,7 @@ Future<void> _install(String version, int port, String rootPw) async {
   await Priv.sudo('chown', ['-R', 'mongodb:mongodb', _dataDir(version)]);
   await Priv.sudo('chown', ['mongodb:mongodb', '/var/log/mongodb'], failOk: true);
   await Priv.sudo('mkdir', ['-p', '/etc/gisila']);
+  await _ensureMongoEtc();
 
   // Cap WiredTiger cache on small VMs so mongod can start (default ~50% of RAM
   // often OOMs Contabo-style 2–4 GB boxes during first boot).
@@ -171,8 +187,8 @@ Future<void> _install(String version, int port, String rootPw) async {
 
   // 4. Bootstrap WITHOUT auth (MongoDB's recommended first-run path), create the
   // root user, then flip authorization on and restart.
-  await Priv.writeFile(
-    _confPath(version),
+  await _writeMongoConf(
+    version,
     _buildConf(version, port, cacheSizeGB: cacheGb, auth: false),
   );
   await _writeUnit(version);
@@ -184,8 +200,8 @@ Future<void> _install(String version, int port, String rootPw) async {
   await _eval(port, null,
       "db.getSiblingDB('admin').createUser({user:'root',pwd:'$rootPw',roles:['root']})");
 
-  await Priv.writeFile(
-    _confPath(version),
+  await _writeMongoConf(
+    version,
     _buildConf(version, port, cacheSizeGB: cacheGb, auth: true),
   );
   await Priv.sudo('systemctl', ['restart', _unitName(version)]);
@@ -208,6 +224,9 @@ Future<void> _uninstall(String version) async {
     _confPath(version),
     _rootPwFile(version),
     _certDir(version),
+    // Legacy paths (pre gisila-mongo/ move) — best-effort cleanup.
+    '/etc/gisila/mongod-$version.conf',
+    '/etc/gisila/mongo-tls/$version',
   ], failOk: true);
 }
 
@@ -282,8 +301,8 @@ Future<void> _configure(String version, int port, String settingsJson) async {
   // Preserve current exposure state (bindIp / TLS) while rewriting the config.
   final current = await Priv.readFile(_confPath(version)) ?? '';
   final exposed = current.contains('0.0.0.0');
-  await Priv.writeFile(
-    _confPath(version),
+  await _writeMongoConf(
+    version,
     _buildConf(version, port,
         cacheSizeGB: cacheSizeGB,
         maxConns: maxConns,
@@ -414,8 +433,8 @@ Future<void> _expose(String version, int port, String domain) async {
   final dest = _certDir(version);
   await _installCert(version, domain, dest);
 
-  await Priv.writeFile(
-    _confPath(version),
+  await _writeMongoConf(
+    version,
     _buildConf(version, port, publicCertDir: dest),
   );
   await Priv.ufwAllow(port);
@@ -424,7 +443,7 @@ Future<void> _expose(String version, int port, String domain) async {
 }
 
 Future<void> _unexpose(String version, int port) async {
-  await Priv.writeFile(_confPath(version), _buildConf(version, port));
+  await _writeMongoConf(version, _buildConf(version, port));
   await Priv.ufwDeny(port);
   await Priv.sudo('rm',
       ['-f', '/etc/letsencrypt/renewal-hooks/deploy/gisila-mongo-$version.sh'],
