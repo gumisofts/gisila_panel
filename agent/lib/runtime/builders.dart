@@ -190,7 +190,17 @@ class Builders {
         : 'dart';
     final cmd = buildCommand ??
         '$dart pub get && $dart compile exe bin/server.dart -o build/app';
-    await _runAsUser(user, src, cmd);
+    // Same HOME trap as Node/Python: passwd home `/home/<app>` is never
+    // created (`useradd --no-create-home`), so `dart pub get` tries to mkdir
+    // it for the pub cache and dies with EACCES. Keep cache under workDir.
+    await _runAsUserWithEnv(
+      user,
+      src,
+      cmd,
+      _appUserEnv(workDir, extra: {
+        'PUB_CACHE': '$workDir/.pub-cache',
+      }),
+    );
     await ShellExec.run('install', [
       '-m', '0755', '-o', user, '-g', user,
       '$src/build/app',
@@ -209,11 +219,11 @@ class Builders {
     final goEnv = goVersion != null ? await _ensureGo(goVersion) : null;
     // When a versioned Go is available, prepend its bin dir to PATH.
     final cmd = buildCommand ?? 'go build -o build/app ./...';
-    if (goEnv != null) {
-      await _runAsUserWithEnv(user, src, cmd, goEnv);
-    } else {
-      await _runAsUser(user, src, cmd);
-    }
+    final env = _appUserEnv(workDir, base: goEnv, extra: {
+      'GOCACHE': '$workDir/.cache/go-build',
+      'GOMODCACHE': '$workDir/.cache/go-mod',
+    });
+    await _runAsUserWithEnv(user, src, cmd, env);
     await ShellExec.run('install', [
       '-m', '0755', '-o', user, '-g', user,
       '$src/build/app',
@@ -238,7 +248,18 @@ class Builders {
         requireSuccess: false);
     final cmd = buildCommand ??
         'rustup run $toolchain cargo build --release';
-    await _runAsUser(user, src, cmd);
+    await _runAsUserWithEnv(
+      user,
+      src,
+      cmd,
+      _appUserEnv(workDir, extra: {
+        // Keep the registry/git caches writable for the app user without
+        // relocating the shared rustup toolchain store.
+        'CARGO_HOME': '$workDir/.cargo',
+        if (Platform.environment['RUSTUP_HOME'] != null)
+          'RUSTUP_HOME': Platform.environment['RUSTUP_HOME']!,
+      }),
+    );
     // Cargo emits binaries under target/release/<crate-name>; start_command
     // must point at the right one.
   }
@@ -293,23 +314,14 @@ class Builders {
     //                                          may be on 22.12).
     //      COREPACK_HOME=$workDir/.corepack  — cache under the app's workdir.
     //
-    //    HOME / npm_config_cache:
-    //      `runuser -u <app>` runs under PAM, which sets HOME to the user's
-    //      passwd entry (/home/<app>) — a directory that is NEVER created for
-    //      panel apps (they live under /srv/apps/<app>). The unprivileged user
-    //      cannot mkdir it, so npm/yarn/bun fail to write their cache and logs
-    //      with `EACCES: permission denied, mkdir '/home/<app>'` and the whole
-    //      `npm ci` aborts. (pnpm dodges this via COREPACK_HOME + shared store.)
-    //      We point HOME — and npm's cache explicitly — at the app's workdir,
-    //      which the app user owns and can write to. This fixes plain npm/yarn
-    //      static builds (e.g. Vite/CRA) the same way COREPACK_HOME fixes pnpm.
+    // Same HOME trap as Dart/Python: passwd home `/home/<app>` is never
+    // created, so npm/yarn/bun fail mkdir-ing caches there. Point HOME and
+    // caches at the app workdir (owned, writable).
     final nodeEnv = <String, String>{
       'COREPACK_ENABLE_STRICT': '0',
       'COREPACK_ENABLE_AUTO_PIN': '0',
       'COREPACK_HOME': '$workDir/.corepack',
-      'HOME': workDir,
       'npm_config_cache': '$workDir/.npm',
-      'XDG_CACHE_HOME': '$workDir/.cache',
       // Keep `pnpm build` (which runs `pnpm run build`) from doing an
       // interactive deps-status reinstall under `runuser` (no TTY): skip the
       // pre-script check and never prompt to purge node_modules. Deps were just
@@ -328,14 +340,17 @@ class Builders {
     // the build environment so client-side frameworks bake them into the bundle
     // at build time. Vite (`VITE_*`), CRA (`REACT_APP_*`), Astro, etc. read
     // these prefixed vars from `process.env`; without them the build falls back
-    // to its compiled-in defaults (e.g. a default backend URL). appEnv goes
-    // BELOW nodeEnv so the infra overrides (HOME, COREPACK_*, npm cache, CI)
-    // always win over anything the user may have set with the same name.
-    final installEnv = <String, String>{
-      ...(env ?? Platform.environment),
-      ...?appEnv,
-      ...nodeEnv,
-    };
+    // to its compiled-in defaults (e.g. a default backend URL). Infra overrides
+    // (HOME, COREPACK_*, npm cache, CI) always win over anything the user may
+    // have set with the same name.
+    final installEnv = _appUserEnv(
+      workDir,
+      base: {
+        ...?env,
+        ...?appEnv,
+      },
+      extra: nodeEnv,
+    );
 
     // Dependency install + codegen must include devDependencies — that is where
     // the build toolchain lives (tsc, webpack/vite, prisma, …). If the app sets
@@ -679,27 +694,28 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    Map<String, String>? env;
+    String? bunPathPrefix;
     if (bunVersion != null) {
       final bunBin = await _ensureBun(bunVersion);
-      env = {
-        ...Platform.environment,
-        'PATH': '${bunBin.parent.path}:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
-      };
+      bunPathPrefix = bunBin.parent.path;
       // Stable symlink for runtime
       await ShellExec.run('mkdir', ['-p', '$workDir/current']);
       await ShellExec.run('ln', [
         '-sfn', bunBin.path, '$workDir/current/.runtime'
       ], requireSuccess: false);
     }
-    // Inject the app's configured env vars so a build step bakes client-side
-    // vars (e.g. NEXT_PUBLIC_*) into its output. The bun PATH override (when
-    // present) is layered last so app vars never shadow it.
-    final runEnv = <String, String>{
-      ...(env ?? Platform.environment),
-      ...?appEnv,
-      if (env != null) 'PATH': env['PATH']!,
-    };
+    // HOME sandbox + optional bun PATH. App env is layered under infra so a
+    // user-set HOME cannot escape the workDir.
+    final runEnv = _appUserEnv(
+      workDir,
+      base: appEnv,
+      extra: {
+        if (bunPathPrefix != null)
+          'PATH':
+              '$bunPathPrefix:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
+        'BUN_INSTALL_CACHE_DIR': '$workDir/.cache/bun',
+      },
+    );
     final cmd = buildCommand ?? 'bun install';
 
     // Only the default `bun install` is cache-gated; a custom build command can
@@ -864,13 +880,14 @@ class Builders {
   /// infra keys (HOME, PIP_CACHE_DIR) always win.
   static Map<String, String> _pythonBuildEnv(
           String workDir, Map<String, String>? appEnv) =>
-      <String, String>{
-        ...Platform.environment,
-        ...?appEnv,
-        'HOME': workDir,
-        'PIP_CACHE_DIR': '$workDir/.cache/pip',
-        'PIP_DISABLE_PIP_VERSION_CHECK': '1',
-      };
+      _appUserEnv(
+        workDir,
+        base: appEnv,
+        extra: {
+          'PIP_CACHE_DIR': '$workDir/.cache/pip',
+          'PIP_DISABLE_PIP_VERSION_CHECK': '1',
+        },
+      );
 
   /// Create the project virtualenv at `<src>/.venv`, reusing an existing one
   /// when the pinned Python [version] is unchanged and the venv survived the
@@ -906,7 +923,12 @@ class Builders {
     // Rebuild from scratch: the venv is tied to a specific interpreter, so a
     // version change (or force-rebuild) must not reuse the old one.
     await ShellExec.run('rm', ['-rf', venv], requireSuccess: false);
-    await _runAsUser(user, src, '$pythonBin -m venv --copies .venv');
+    await _runAsUser(
+      user,
+      src,
+      '$pythonBin -m venv --copies .venv',
+      workDir: workDir,
+    );
     await BuildCache.store(workDir, user, venvKey, venvFp);
     // A fresh venv has no packages, so any dependent install markers are stale.
     BuildCache.invalidate(workDir, 'py-deps');
@@ -953,24 +975,27 @@ class Builders {
       [Map<String, String>? appEnv]) async {
     if (!File('$src/manage.py').existsSync()) return;
 
+    final env = _pythonBuildEnv(workDir, appEnv);
+
     // Confirm Django is actually installed in the venv before invoking
     // manage.py (a stray manage.py without the framework should not fail here).
     final hasDjango = await _runAsUserStatus(
       user,
       src,
       '.venv/bin/python -c "import django"',
+      workDir: workDir,
+      env: env,
     );
     if (hasDjango != 0) return;
 
     stdout.writeln('[agent] Django project detected — running migrate');
     // migrate is idempotent. Best-effort: a deliberately external DB that is
     // unreachable at build time should not block the release.
-    await ShellExec.run(
-      'runuser',
-      ['-u', user, '--', 'bash', '-lc',
-        'source .venv/bin/activate && python manage.py migrate --noinput'],
-      cwd: src,
-      env: appEnv,
+    await _runAsUserWithEnv(
+      user,
+      src,
+      'source .venv/bin/activate && python manage.py migrate --noinput',
+      env,
       requireSuccess: false,
     );
 
@@ -1030,13 +1055,12 @@ class Builders {
 
     // collectstatic exits non-zero when STATIC_ROOT is unset; that is a valid
     // configuration (e.g. DEBUG=True dev serving), so failures are ignored.
-    await ShellExec.run(
-      'runuser',
-      ['-u', user, '--', 'bash', '-lc',
-        'source .venv/bin/activate && '
-            'python manage.py collectstatic --noinput$settingsArg'],
-      cwd: src,
-      env: appEnv,
+    await _runAsUserWithEnv(
+      user,
+      src,
+      'source .venv/bin/activate && '
+          'python manage.py collectstatic --noinput$settingsArg',
+      _pythonBuildEnv(workDir, appEnv),
       requireSuccess: false,
     );
   }
@@ -1066,11 +1090,21 @@ class Builders {
   }
 
   /// Run a command as [user] in [cwd] and return its exit code without throwing.
-  static Future<int> _runAsUserStatus(String user, String cwd, String command) =>
-      ShellExec.run(
-        'runuser',
-        ['-u', user, '--', 'bash', '-lc', command],
-        cwd: cwd,
+  ///
+  /// Always sandboxes HOME under [workDir]. Pass a pre-built env (e.g. from
+  /// [_pythonBuildEnv]) via [env]; otherwise only the HOME sandbox is applied.
+  static Future<int> _runAsUserStatus(
+    String user,
+    String cwd,
+    String command, {
+    required String workDir,
+    Map<String, String>? env,
+  }) =>
+      _runAsUserWithEnv(
+        user,
+        cwd,
+        command,
+        env ?? _appUserEnv(workDir),
         requireSuccess: false,
       );
 
@@ -1732,36 +1766,85 @@ class Builders {
 
   // ── Shared helpers ────────────────────────────────────────────────────────
 
-  static Future<void> _runAsUser(String user, String cwd, String command) =>
-      ShellExec.run(
-          'runuser',
-          ['-u', user, '--', 'bash', '-lc', command],
-          cwd: cwd);
+  /// Env for builds that run as the app user via `runuser`.
+  ///
+  /// Panel app users are created with `--no-create-home`, so PAM's HOME
+  /// (`/home/<user>`) does not exist and tools that mkdir `~` fail with
+  /// EACCES. Point HOME (and XDG cache) at the owned [workDir], then layer
+  /// optional [base]/toolchain PATH, etc.) and [extra] (runtime caches).
+  static Map<String, String> _appUserEnv(
+    String workDir, {
+    Map<String, String>? base,
+    Map<String, String>? extra,
+  }) =>
+      <String, String>{
+        ...Platform.environment,
+        ...?base,
+        'HOME': workDir,
+        'XDG_CACHE_HOME': '$workDir/.cache',
+        ...?extra,
+      };
 
-  static Future<void> _runAsUserWithEnv(
+  static Future<int> _runAsUser(
+    String user,
+    String cwd,
+    String command, {
+    required String workDir,
+    Map<String, String>? env,
+  }) =>
+      _runAsUserWithEnv(
+        user,
+        cwd,
+        command,
+        _appUserEnv(workDir, base: env),
+      );
+
+  static Future<int> _runAsUserWithEnv(
     String user,
     String cwd,
     String command,
-    Map<String, String> env,
-  ) {
+    Map<String, String> env, {
+    bool requireSuccess = true,
+  }) {
     // `bash -lc` is a LOGIN shell: sourcing /etc/profile (and the PAM session)
-    // can reset PATH to the system default, discarding the version-pinned
-    // toolchain dirs the agent placed in env['PATH'] — e.g. the standalone pnpm
-    // at /opt/pnpm-versions/<v>/bin or the fnm-pinned Node bin. When that
-    // happens a bare `pnpm`/`node` resolves to a system binary or the corepack
-    // shim instead of the pinned one; corepack then downloads the LATEST pnpm,
-    // which can fail where the pinned version succeeds (notably
-    // ERR_PNPM_IGNORED_BUILDS on a repo whose pnpm-workspace.yaml policy the
-    // newer pnpm no longer honours the same way). Re-export PATH inside the
-    // command — it runs AFTER the profile, so the agent's intended toolchain
-    // always wins. PATH holds only directory paths, so single-quoting is safe.
-    final path = env['PATH'];
-    final wrapped = path != null ? "export PATH='$path'; $command" : command;
+    // can reset PATH / HOME to passwd defaults, discarding the agent's
+    // toolchain dirs and the workDir HOME sandbox. Panel app users have no
+    // real `/home/<user>` (`useradd --no-create-home`), so a reset HOME makes
+    // dart/npm/pip/bun try to mkdir it and fail with EACCES. Re-export critical
+    // keys inside the command — they run AFTER the profile, so the agent's
+    // values always win.
+    final exports = <String>[];
+    for (final key in const [
+      'PATH',
+      'HOME',
+      'PUB_CACHE',
+      'XDG_CACHE_HOME',
+      'GOCACHE',
+      'GOMODCACHE',
+      'GOROOT',
+      'CARGO_HOME',
+      'RUSTUP_HOME',
+      'COREPACK_HOME',
+      'npm_config_cache',
+      'PIP_CACHE_DIR',
+      'FNM_DIR',
+      'BUN_INSTALL_CACHE_DIR',
+    ]) {
+      final value = env[key];
+      if (value == null || value.isEmpty) continue;
+      if (value.contains("'")) {
+        throw ArgumentError('env[$key] must not contain single quotes: $value');
+      }
+      exports.add("export $key='$value'");
+    }
+    final wrapped =
+        exports.isEmpty ? command : '${exports.join('; ')}; $command';
     return ShellExec.run(
       'runuser',
       ['-u', user, '--', 'bash', '-lc', wrapped],
       cwd: cwd,
       env: env,
+      requireSuccess: requireSuccess,
     );
   }
 }

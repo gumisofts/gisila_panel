@@ -779,7 +779,13 @@ Future<void> _exec(List<String> args) async {
       'export COREPACK_ENABLE_AUTO_PIN=0; '
       'export COREPACK_HOME="$workDir/.corepack"; '
       'export npm_config_cache="$workDir/.npm"; '
-      'export XDG_CACHE_HOME="$workDir/.cache"; ';
+      'export XDG_CACHE_HOME="$workDir/.cache"; '
+      'export PUB_CACHE="$workDir/.pub-cache"; '
+      'export BUN_INSTALL_CACHE_DIR="$workDir/.cache/bun"; '
+      'export PIP_CACHE_DIR="$workDir/.cache/pip"; '
+      'export GOCACHE="$workDir/.cache/go-build"; '
+      'export GOMODCACHE="$workDir/.cache/go-mod"; '
+      'export CARGO_HOME="$workDir/.cargo"; ';
 
   // Stop pnpm from reinstalling deps before a `pnpm run <script>` (e.g.
   // `pnpm db:migrate`). pnpm 9+ runs a deps-status check before a script and,
