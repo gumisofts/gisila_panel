@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@carbon/react";
 import { PauseFilled, PlayFilled, TrashCan } from "@carbon/icons-react";
 import { getToken, getWsBase } from "@/lib/api";
+import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
 
 const WS_URL = getWsBase();
@@ -113,7 +114,7 @@ export function LogsTab({ appId }: { appId: number }) {
   }, [appId]);
 
   useEffect(() => {
-    if (!paused) endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!paused) scrollLogPaneToBottom(endRef.current);
   }, [lines, paused]);
 
   const statusMeta = {

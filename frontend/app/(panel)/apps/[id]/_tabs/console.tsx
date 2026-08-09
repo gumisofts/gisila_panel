@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Stack, TextInput } from "@carbon/react";
 import { PlayFilled, Terminal, TrashCan } from "@carbon/icons-react";
 import { api, getToken, getWsBase } from "@/lib/api";
+import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
 
 const WS_URL = getWsBase();
@@ -28,7 +29,7 @@ export function ConsoleTab({ appId }: { appId: number }) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollLogPaneToBottom(endRef.current);
   }, [lines]);
 
   // Tear down any open socket on unmount.

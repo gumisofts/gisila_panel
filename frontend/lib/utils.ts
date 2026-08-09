@@ -25,3 +25,10 @@ export function bytes(n?: number | null) {
   }
   return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 }
+
+/** Scroll a log pane to its bottom without dragging the page via scrollIntoView. */
+export function scrollLogPaneToBottom(endEl: HTMLElement | null) {
+  const pane = endEl?.parentElement;
+  if (!pane) return;
+  pane.scrollTop = pane.scrollHeight;
+}

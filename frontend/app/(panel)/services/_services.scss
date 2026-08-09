@@ -254,7 +254,11 @@
   @include type.type-style('code-01');
 
   block-size: 16rem;
+  max-block-size: 16rem;
+  min-block-size: 0;
+  overflow-x: auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: spacing.$spacing-03;
   border: 1px solid theme.$border-subtle-01;
   background-color: theme.$layer-01;

@@ -17,7 +17,7 @@ import {
 import { Branch, Renew, Time } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
-import { formatRelative } from "@/lib/utils";
+import { formatRelative, scrollLogPaneToBottom } from "@/lib/utils";
 import type { BuildLog, Deployment, ListResponse } from "@/lib/types";
 import "../_app-detail.scss";
 
@@ -181,9 +181,9 @@ function LogPanel({
     return () => { ws.close(); wsRef.current = null; };
   }, [appId, deployment.id, active]);
 
-  // Auto-scroll
+  // Auto-scroll inside the log pane only (not the page).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollLogPaneToBottom(endRef.current);
   }, [lines]);
 
   return (

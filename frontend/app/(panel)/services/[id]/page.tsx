@@ -34,6 +34,7 @@ import {
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
+import { scrollLogPaneToBottom } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";
 import type {
   ManagedService,
@@ -262,7 +263,7 @@ function ServiceLogPanel({
   }, [serviceId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollLogPaneToBottom(endRef.current);
   }, [lines]);
 
   return (

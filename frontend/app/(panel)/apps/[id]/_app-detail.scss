@@ -242,6 +242,8 @@
   display: flex;
   flex-direction: column;
   min-block-size: 0;
+  // Clip children so a runaway line cannot stretch the page; the body scrolls.
+  overflow: hidden;
   border: 1px solid theme.$border-subtle-01;
   background-color: theme.$layer-01;
 }
@@ -250,6 +252,7 @@
   @include type.type-style('label-01');
 
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: spacing.$spacing-03;
   padding-block: spacing.$spacing-03;
@@ -270,15 +273,22 @@
 .gisila-term__body {
   @include type.type-style('code-01');
 
-  flex: 1;
+  // Flex min-size defaults to content size, which lets long streams grow the
+  // pane (and the page) instead of scrolling inside the box.
+  flex: 1 1 auto;
   block-size: 26.25rem;
+  max-block-size: 26.25rem;
+  min-block-size: 0;
+  overflow-x: auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: spacing.$spacing-05;
   color: theme.$text-primary;
 }
 
 .gisila-term__body--tall {
   block-size: 30rem;
+  max-block-size: 30rem;
 }
 
 .gisila-term__placeholder {
