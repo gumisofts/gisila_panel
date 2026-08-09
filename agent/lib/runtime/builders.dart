@@ -1339,24 +1339,95 @@ class Builders {
   static Future<void> _ensureHostTools(List<String> cmds) =>
       Priv.ensureCmds(cmds);
 
+  // ── Host CPU architecture ────────────────────────────────────────────────
+
+  /// Normalized `uname -m` (`x86_64` or `aarch64`).
+  static String _hostMachine() {
+    final m = (Process.runSync('uname', ['-m']).stdout as String).trim();
+    if (m == 'arm64') return 'aarch64';
+    if (m == 'amd64') return 'x86_64';
+    return m;
+  }
+
+  /// Dart SDK archive arch (`x64` / `arm64`).
+  static String _dartSdkArch() {
+    switch (_hostMachine()) {
+      case 'aarch64':
+        return 'arm64';
+      case 'x86_64':
+        return 'x64';
+      default:
+        throw StateError(
+            'Unsupported host architecture for Dart SDK: ${_hostMachine()}');
+    }
+  }
+
+  /// Go archive arch (`amd64` / `arm64`).
+  static String _goArch() {
+    switch (_hostMachine()) {
+      case 'aarch64':
+        return 'arm64';
+      case 'x86_64':
+        return 'amd64';
+      default:
+        throw StateError(
+            'Unsupported host architecture for Go: ${_hostMachine()}');
+    }
+  }
+
+  /// Bun release asset arch (`x64` / `aarch64`).
+  static String _bunArch() {
+    switch (_hostMachine()) {
+      case 'aarch64':
+        return 'aarch64';
+      case 'x86_64':
+        return 'x64';
+      default:
+        throw StateError(
+            'Unsupported host architecture for Bun: ${_hostMachine()}');
+    }
+  }
+
+  /// True when [path] exists and runs with [args] (exit 0). Used to detect
+  /// wrong-arch binaries left over from an earlier install (Exec format error).
+  static bool _binRuns(String path, List<String> args) {
+    if (!File(path).existsSync()) return false;
+    try {
+      return Process.runSync(path, args).exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Dart SDK version management ──────────────────────────────────────────
 
   static const _dartBase = '/opt/dart-versions';
 
   /// Ensure a specific Dart SDK version is available and return its `dart`
   /// binary path. Downloads and extracts from the official archive if absent.
+  /// Re-downloads when a previously cached SDK is for the wrong CPU arch
+  /// (e.g. an x64 zip left on an ARM host).
   static Future<String> _ensureDartSdk(String version) async {
     final dir = '$_dartBase/$version';
     final bin = '$dir/dart-sdk/bin/dart';
-    if (File(bin).existsSync()) return bin;
+    if (_binRuns(bin, ['--version'])) return bin;
+    if (File(bin).existsSync()) {
+      stdout.writeln(
+        '[agent] Dart SDK $version at $bin is unusable; '
+        're-downloading for ${_dartSdkArch()}…',
+      );
+      await ShellExec.run('rm', ['-rf', dir]);
+    }
 
+    final arch = _dartSdkArch();
     await _ensureHostTools(['curl', 'unzip', 'ca-certificates']);
     Directory(dir).createSync(recursive: true);
-    stdout.writeln('[agent] Downloading Dart SDK $version…');
+    stdout.writeln('[agent] Downloading Dart SDK $version ($arch)…');
     final archive = '$dir/dart-sdk.zip';
     await ShellExec.run('curl', [
       '-fSL', '--output', archive,
-      'https://storage.googleapis.com/dart-archive/channels/stable/release/$version/sdk/dartsdk-linux-x64-release.zip',
+      'https://storage.googleapis.com/dart-archive/channels/stable/release/'
+          '$version/sdk/dartsdk-linux-$arch-release.zip',
     ]);
     await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
     await ShellExec.run('rm', ['-f', archive]);
@@ -1372,14 +1443,22 @@ class Builders {
   static Future<Map<String, String>> _ensureGo(String version) async {
     final dir = '$_goBase/$version';
     final bin = '$dir/go/bin/go';
-    if (!File(bin).existsSync()) {
+    if (!_binRuns(bin, ['version'])) {
+      if (File(bin).existsSync()) {
+        stdout.writeln(
+          '[agent] Go $version at $bin is unusable; '
+          're-downloading for ${_goArch()}…',
+        );
+        await ShellExec.run('rm', ['-rf', dir]);
+      }
+      final arch = _goArch();
       await _ensureHostTools(['curl', 'tar', 'ca-certificates']);
       Directory(dir).createSync(recursive: true);
-      stdout.writeln('[agent] Downloading Go $version…');
+      stdout.writeln('[agent] Downloading Go $version ($arch)…');
       final archive = '$dir/go.tar.gz';
       await ShellExec.run('curl', [
         '-fSL', '--output', archive,
-        'https://go.dev/dl/go$version.linux-amd64.tar.gz',
+        'https://go.dev/dl/go$version.linux-$arch.tar.gz',
       ]);
       await ShellExec.run('tar', ['-C', dir, '-xzf', archive]);
       await ShellExec.run('rm', ['-f', archive]);
@@ -1395,9 +1474,15 @@ class Builders {
   // ── Rust / rustup version management ─────────────────────────────────────
 
   /// Ensure rustup is installed system-wide (at `/usr/local/rustup`).
+  /// The official installer picks the host target triple automatically.
   static Future<void> _ensureRustup() async {
-    final result = await Process.run('which', ['rustup']);
-    if (result.exitCode == 0) return;
+    final which = await Process.run('which', ['rustup']);
+    if (which.exitCode == 0) {
+      final rustup = (which.stdout as String).trim();
+      if (_binRuns(rustup, ['--version'])) return;
+      stdout.writeln(
+          '[agent] rustup at $rustup is unusable; reinstalling…');
+    }
     await _ensureHostTools(['curl', 'ca-certificates']);
     stdout.writeln('[agent] Installing rustup…');
     await ShellExec.run('bash', [
@@ -1413,9 +1498,15 @@ class Builders {
 
   /// Ensure fnm is installed at [_fnmBin] and the requested Node version is
   /// available. Returns an env map suitable for `_runAsUserWithEnv`.
+  /// fnm's install script and `fnm install` both select the host arch.
   static Future<Map<String, String>> _ensureFnmNode(String version) async {
-    // 1. Install fnm if absent.
-    if (!File(_fnmBin).existsSync()) {
+    // 1. Install fnm if absent or wrong-arch.
+    if (!_binRuns(_fnmBin, ['--version'])) {
+      if (File(_fnmBin).existsSync()) {
+        stdout.writeln(
+            '[agent] fnm at $_fnmBin is unusable; reinstalling…');
+        await ShellExec.run('rm', ['-f', _fnmBin], requireSuccess: false);
+      }
       await _ensureHostTools(['curl', 'ca-certificates', 'unzip']);
       stdout.writeln('[agent] Installing fnm…');
       await ShellExec.run('bash', [
@@ -1424,9 +1515,17 @@ class Builders {
       ]);
     }
 
-    // 2. Install the requested Node version if absent.
+    // 2. Install the requested Node version if absent or wrong-arch.
     final nodeDir = '$_fnmDir/node-versions/v$version/installation';
-    if (!Directory(nodeDir).existsSync()) {
+    final nodeExe = '$nodeDir/bin/node';
+    if (!_binRuns(nodeExe, ['--version'])) {
+      if (Directory(nodeDir).existsSync()) {
+        stdout.writeln(
+          '[agent] Node.js $version at $nodeExe is unusable; '
+          'reinstalling via fnm…',
+        );
+        await ShellExec.run('rm', ['-rf', '$_fnmDir/node-versions/v$version']);
+      }
       stdout.writeln('[agent] Installing Node.js $version via fnm…');
       await ShellExec.run(_fnmBin, [
         'install', version, '--fnm-dir', _fnmDir,
@@ -1450,22 +1549,31 @@ class Builders {
   static Future<File> _ensureBun(String version) async {
     final dir = '$_bunBase/$version';
     final bin = File('$dir/bun');
-    if (bin.existsSync()) return bin;
+    if (_binRuns(bin.path, ['--version'])) return bin;
+    if (bin.existsSync()) {
+      stdout.writeln(
+        '[agent] Bun $version at ${bin.path} is unusable; '
+        're-downloading for ${_bunArch()}…',
+      );
+      await ShellExec.run('rm', ['-rf', dir]);
+    }
 
+    final arch = _bunArch();
+    final asset = 'bun-linux-$arch';
     await _ensureHostTools(['curl', 'unzip', 'ca-certificates']);
     Directory(dir).createSync(recursive: true);
-    stdout.writeln('[agent] Downloading Bun $version…');
-    final archive = '$dir/bun-linux-x64.zip';
+    stdout.writeln('[agent] Downloading Bun $version ($arch)…');
+    final archive = '$dir/$asset.zip';
     await ShellExec.run('curl', [
       '-fSL', '--output', archive,
-      'https://github.com/oven-sh/bun/releases/download/bun-v$version/bun-linux-x64.zip',
+      'https://github.com/oven-sh/bun/releases/download/bun-v$version/$asset.zip',
     ]);
     await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
-    // The zip extracts to `bun-linux-x64/bun` — move it up.
-    final extracted = File('$dir/bun-linux-x64/bun');
+    // The zip extracts to `bun-linux-<arch>/bun` — move it up.
+    final extracted = File('$dir/$asset/bun');
     if (extracted.existsSync()) {
       await ShellExec.run('mv', [extracted.path, bin.path]);
-      await ShellExec.run('rm', ['-rf', '$dir/bun-linux-x64']);
+      await ShellExec.run('rm', ['-rf', '$dir/$asset']);
     }
     await ShellExec.run('chmod', ['+x', bin.path]);
     await ShellExec.run('rm', ['-f', archive]);
@@ -1599,8 +1707,8 @@ class Builders {
 
   /// rustup keeps toolchains in its own store rather than a plain directory
   /// tree, and names them with a target triple suffix ("stable-x86_64-unknown-
-  /// linux-gnu") that is dropped here so the names round-trip with what the
-  /// panel asked to install.
+  /// linux-gnu" / "stable-aarch64-unknown-linux-gnu") that is dropped here so
+  /// the names round-trip with what the panel asked to install.
   static Future<List<String>> listRustToolchains() async {
     final result = await Process.run('rustup', ['toolchain', 'list']);
     if (result.exitCode != 0) return const [];
@@ -1609,9 +1717,15 @@ class Builders {
       final line = rawLine.trim();
       if (line.isEmpty || line == 'no installed toolchains') continue;
       // Entries look like "stable-x86_64-unknown-linux-gnu (default)".
-      final name = line.split(' ').first;
-      final triple = name.indexOf('-x86_64-');
-      names.add(triple > 0 ? name.substring(0, triple) : name);
+      var name = line.split(' ').first;
+      for (final marker in const ['-x86_64-', '-aarch64-', '-i686-', '-arm-']) {
+        final i = name.indexOf(marker);
+        if (i > 0) {
+          name = name.substring(0, i);
+          break;
+        }
+      }
+      names.add(name);
     }
     return names;
   }
