@@ -185,11 +185,24 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    final dart = dartVersion != null
-        ? await _ensureDartSdk(dartVersion)
-        : 'dart';
-    final cmd = buildCommand ??
-        '$dart pub get && $dart compile exe bin/server.dart -o build/app';
+    // Like Go/Node: put the versioned SDK on PATH so both the default command
+    // and user overrides (`dart compile …`) resolve `dart`. Custom commands
+    // used to fail with `dart: command not found` because PATH was scrubbed to
+    // /usr/bin and the full SDK path was only baked into the default command.
+    Map<String, String>? dartEnv;
+    if (dartVersion != null && dartVersion.isNotEmpty) {
+      final dartBin = await _ensureDartSdk(dartVersion);
+      final dartBinDir = File(dartBin).parent.path;
+      dartEnv = {
+        'PATH':
+            '$dartBinDir:${Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}',
+      };
+    }
+    // `dart compile -o build/app` does not create the parent directory; without
+    // mkdir the AOT step dies with PathNotFoundException on build/app.
+    final compile = buildCommand ??
+        'dart pub get && dart compile exe bin/server.dart -o build/app';
+    final cmd = 'mkdir -p build && $compile';
     // Same HOME trap as Node/Python: passwd home `/home/<app>` is never
     // created (`useradd --no-create-home`), so `dart pub get` tries to mkdir
     // it for the pub cache and dies with EACCES. Keep cache under workDir.
@@ -197,15 +210,58 @@ class Builders {
       user,
       src,
       cmd,
-      _appUserEnv(workDir, extra: {
+      _appUserEnv(workDir, base: dartEnv, extra: {
         'PUB_CACHE': '$workDir/.pub-cache',
       }),
     );
+    final artifact = _resolveCompiledArtifact(
+      src,
+      buildCommand: buildCommand,
+      defaultRelative: 'build/app',
+    );
     await ShellExec.run('install', [
       '-m', '0755', '-o', user, '-g', user,
-      '$src/build/app',
+      artifact,
       '$workDir/current/app',
     ]);
+  }
+
+  /// Locate the binary produced by a compile step.
+  ///
+  /// Prefers [defaultRelative] when present (panel convention), otherwise
+  /// parses `-o` / `--output` from [buildCommand], then a few common fallbacks.
+  static String _resolveCompiledArtifact(
+    String src, {
+    String? buildCommand,
+    required String defaultRelative,
+  }) {
+    final preferred = '$src/$defaultRelative';
+    if (File(preferred).existsSync()) return preferred;
+
+    final fromFlag = _outputPathFromBuildCommand(buildCommand);
+    if (fromFlag != null) {
+      final path = fromFlag.startsWith('/') ? fromFlag : '$src/$fromFlag';
+      if (File(path).existsSync()) return path;
+    }
+
+    for (final rel in const [
+      'bin/server.exe',
+      'bin/server',
+      'build/server',
+      'build/server.exe',
+    ]) {
+      final path = '$src/$rel';
+      if (File(path).existsSync()) return path;
+    }
+    return preferred;
+  }
+
+  static String? _outputPathFromBuildCommand(String? buildCommand) {
+    if (buildCommand == null || buildCommand.trim().isEmpty) return null;
+    final match = RegExp(
+      r'(?:^|\s)(?:-o|--output)(?:=|\s+)(\S+)',
+    ).firstMatch(buildCommand);
+    return match?.group(1);
   }
 
   static Future<void> buildGo({

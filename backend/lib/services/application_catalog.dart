@@ -174,7 +174,8 @@ const List<ApplicationDef> kApplicationCatalog = [
     availableVersions: _kDartVersions,
     defaultVersion: '3.12.2',
     defaultBuildCommand:
-        'dart pub get && dart compile exe bin/server.dart -o build/app',
+        'mkdir -p build && dart pub get && '
+        'dart compile exe bin/server.dart -o build/app',
     versionHint: 'e.g. 3.12.2',
     docsUrl: 'https://dart.dev/',
   ),

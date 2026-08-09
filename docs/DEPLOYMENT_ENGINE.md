@@ -72,7 +72,7 @@ implementation.
 
 | Runtime | Plugin | Supported deploy modes | Default build command | Default start command |
 |---|---|---|---|---|
-| dart | `DartPlugin` | `build_execute` | `dart pub get && dart compile exe bin/server.dart -o build/app` | `<work-dir>/current/app` |
+| dart | `DartPlugin` | `build_execute` | `mkdir -p build && dart pub get && dart compile exe bin/server.dart -o build/app` | `<work-dir>/current/app` |
 | go | `GoPlugin` | `build_execute` | `go build -o build/app ./...` | `<work-dir>/current/app` |
 | rust | `RustPlugin` | `build_execute` | `cargo build --release` | as specified by user |
 | node | `NodePlugin` | `build_execute` | `npm ci` | `node dist/index.js` |
