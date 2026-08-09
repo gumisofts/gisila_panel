@@ -157,7 +157,7 @@ export function ConsoleTab({ appId }: { appId: number }) {
             hideLabel
             value={command}
             onChange={(e) => setCommand(e.target.value)}
-            placeholder="e.g. python manage.py migrate · pip list · ls -la"
+            placeholder="e.g. dart run bin/migrate.dart up · python manage.py migrate"
             disabled={running}
           />
         </div>
@@ -181,7 +181,9 @@ export function ConsoleTab({ appId }: { appId: number }) {
       <p className="gisila-app__hint">
         Runs in the app&apos;s working directory. For Python apps the virtualenv
         is activated automatically, so <code>python</code>, <code>pip</code> and{" "}
-        <code>manage.py</code> use the app interpreter.
+        <code>manage.py</code> use the app interpreter. For Dart apps the source
+        tree and SDK are on PATH, e.g.{" "}
+        <code>dart run bin/migrate.dart up</code>.
       </p>
 
       <div className="gisila-term">

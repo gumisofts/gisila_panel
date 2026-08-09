@@ -47,6 +47,27 @@ class ExecWorker {
           '--source-subdir',
           app.sourceSubdir!,
         ],
+        if (app.runtime == 'dart' && app.dartVersion != null) ...[
+          '--dart-version',
+          app.dartVersion!,
+        ],
+        if (app.runtime == 'go' && app.goVersion != null) ...[
+          '--go-version',
+          app.goVersion!,
+        ],
+        if (app.runtime == 'node' && app.nodeVersion != null) ...[
+          '--node-version',
+          app.nodeVersion!,
+        ],
+        if (app.runtime == 'bun' && app.bunVersion != null) ...[
+          '--bun-version',
+          app.bunVersion!,
+        ],
+        if ((app.runtime == 'python' || app.runtime == 'celery') &&
+            app.pythonVersion != null) ...[
+          '--python-version',
+          app.pythonVersion!,
+        ],
         '--command', command,
       ], execId);
       await _log(execId, 'system', '__EXIT__:$exit');

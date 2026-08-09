@@ -722,6 +722,9 @@ Future<void> _logs(List<String> args) async {
 /// Run an arbitrary command as the app's Linux user, inside the app's working
 /// directory. For Python apps the project virtualenv is activated first so that
 /// `python`, `pip`, `manage.py`, etc. resolve against the app's interpreter.
+/// For Dart apps the source tree + versioned SDK are used so
+/// `dart run gisila_orm:migrate` / `dart run bin/migrate.dart` work the same
+/// way they do during build.
 ///
 /// stdout/stderr are streamed line-by-line to this process's stdout/stderr (the
 /// worker forwards them to the live console). The process exit code becomes this
@@ -734,6 +737,13 @@ Future<void> _exec(List<String> args) async {
     p.addOption('source-subdir');
     p.addOption('command', mandatory: true);
     p.addOption('timeout', defaultsTo: '300'); // seconds
+    // Version pins — same flags as `build`, so console commands resolve the
+    // same toolchain the deploy used (`dart`, `node`, `go`, …).
+    p.addOption('dart-version');
+    p.addOption('go-version');
+    p.addOption('node-version');
+    p.addOption('bun-version');
+    p.addOption('python-version');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -745,12 +755,15 @@ Future<void> _exec(List<String> args) async {
   final timeout = int.tryParse(r['timeout'] as String? ?? '300') ?? 300;
 
   final isPython = runtime == 'python';
-  // Python source (with .venv), and the Node/Bun build tree (package.json +
-  // node_modules), live under releases/current_build — current/ holds no
-  // manifest for them, so `pnpm db:migrate` there fails with
-  // ERR_PNPM_NO_PKG_MANIFEST. Only binary/static keep their artifact in current/.
-  final isSourceTree =
-      isPython || runtime == 'node' || runtime == 'bun';
+  // Source trees live under releases/current_build (pubspec.yaml, package.json,
+  // manage.py, go.mod). `current/` only holds the compiled binary for dart/go
+  // and the .venv symlink for Python — running `dart run …` / `pnpm …` there
+  // fails with missing manifests.
+  final isSourceTree = isPython ||
+      runtime == 'node' ||
+      runtime == 'bun' ||
+      runtime == 'dart' ||
+      runtime == 'go';
   final runDir = isSourceTree
       ? Builders.resolveSrc(workDir, sourceSubdir)
       : '$workDir/current';
@@ -759,10 +772,10 @@ Future<void> _exec(List<String> args) async {
       : '';
 
   // Load the app's configured env vars (DATABASE_URL, …) so a console command
-  // like `pnpm db:migrate` or `python manage.py migrate` hits the real service
-  // instead of the framework's local fallback (Django's sqlite, etc.). Sourced
-  // before the infra exports below so HOME/COREPACK_* always win over anything
-  // the user set with the same name.
+  // like `pnpm db:migrate` or `dart run bin/migrate.dart up` hits the real
+  // service instead of the framework's local fallback. Sourced before the infra
+  // exports below so HOME/COREPACK_* always win over anything the user set with
+  // the same name.
   final loadEnv = 'set -a; [ -f "$workDir/.env" ] && . "$workDir/.env"; set +a; ';
 
   // The app's Linux user is created with `useradd --no-create-home`, so its
@@ -811,7 +824,22 @@ Future<void> _exec(List<String> args) async {
           'export pnpm_config_confirm_modules_purge=false; '
       : '';
 
-  final script = '$loadEnv$infraEnv$pnpmEnv'
+  // Put the same versioned toolchain on PATH that `build` used. Without this,
+  // Dart console commands fail with `dart: command not found` (SDK lives under
+  // /opt/dart-versions/<v>, never on the scrubbed app-user PATH).
+  final pathPrefix = _execToolchainPathPrefix(
+    runtime: runtime,
+    workDir: workDir,
+    dartVersion: r['dart-version'] as String?,
+    goVersion: r['go-version'] as String?,
+    nodeVersion: r['node-version'] as String?,
+    bunVersion: r['bun-version'] as String?,
+  );
+  final pathEnv = pathPrefix.isEmpty
+      ? ''
+      : 'export PATH="$pathPrefix:\$PATH"; ';
+
+  final script = '$loadEnv$infraEnv$pnpmEnv$pathEnv'
       'cd "$runDir" 2>/dev/null || cd "$workDir"; $activate$command';
 
   final invocation = _isRoot
@@ -845,6 +873,62 @@ Future<void> _exec(List<String> args) async {
   }
   await stdout.flush();
   exitCode = code;
+}
+
+/// Bin directories to prepend on PATH for console [runtime], mirroring build.
+String _execToolchainPathPrefix({
+  required String runtime,
+  required String workDir,
+  String? dartVersion,
+  String? goVersion,
+  String? nodeVersion,
+  String? bunVersion,
+}) {
+  switch (runtime) {
+    case 'dart':
+      final bin = _dartSdkBinDir(dartVersion);
+      return bin ?? '';
+    case 'go':
+      final v = (goVersion != null && goVersion.isNotEmpty) ? goVersion : null;
+      if (v == null) return '';
+      final goBin = '/opt/go-versions/$v/go/bin';
+      return Directory(goBin).existsSync() ? goBin : '';
+    case 'node':
+      // Prefer the per-app runtime symlink written at build time.
+      final linked = '$workDir/current/.runtime/bin';
+      if (Directory(linked).existsSync()) return linked;
+      return '';
+    case 'bun':
+      final linked = '$workDir/current';
+      // Bun is symlinked as current/.runtime (the binary itself).
+      if (File('$workDir/current/.runtime').existsSync()) {
+        return linked;
+      }
+      return '';
+    default:
+      return '';
+  }
+}
+
+/// Resolve `/opt/dart-versions/<v>/dart-sdk/bin` for [preferred] version, or
+/// the newest installed SDK when the app has no pin.
+String? _dartSdkBinDir(String? preferred) {
+  const base = '/opt/dart-versions';
+  if (preferred != null && preferred.isNotEmpty) {
+    final bin = '$base/$preferred/dart-sdk/bin';
+    if (File('$bin/dart').existsSync()) return bin;
+  }
+  final root = Directory(base);
+  if (!root.existsSync()) return null;
+  final versions = root
+      .listSync()
+      .whereType<Directory>()
+      .map((d) => d.path.split('/').last)
+      .where((v) => File('$base/$v/dart-sdk/bin/dart').existsSync())
+      .toList()
+    ..sort();
+  if (versions.isEmpty) return null;
+  return '$base/${versions.last}/dart-sdk/bin';
 }
 
 // ── Resource sampling ────────────────────────────────────────────────────────
