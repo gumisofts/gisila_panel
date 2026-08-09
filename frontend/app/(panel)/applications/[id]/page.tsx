@@ -497,7 +497,7 @@ function DefaultsForm({
               labelText="Default version"
               className="gisila-field--mono"
               value={version}
-              placeholder={def?.versionHint ?? "e.g. 3.12.4"}
+              placeholder={def?.versionHint ?? "e.g. 3.13.15"}
               helperText={def?.versionHint}
               onChange={(e) => setVersion(e.target.value)}
               disabled={!isSuperuser}

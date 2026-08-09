@@ -17,7 +17,7 @@ class DartPlugin extends RuntimePlugin {
     if (version == null || version.isEmpty) {
       // Returning quietly here used to mark the Application installed in the
       // panel while nothing had been put on disk.
-      throw ArgumentError('dart requires --version, e.g. --version 3.5.4');
+      throw ArgumentError('dart requires --version, e.g. --version 3.12.2');
     }
     await Builders.installDartToolchain(version);
   }

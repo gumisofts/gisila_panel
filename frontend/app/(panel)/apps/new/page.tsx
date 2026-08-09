@@ -79,7 +79,7 @@ export default function NewAppPage() {
     buildCommand: "",
     startCommand: "",
     // Python-specific
-    pythonVersion: "3.12.4",
+    pythonVersion: "3.13.15",
     pythonMode: "wsgi",
     wsgiApp: "",
     // Gunicorn tuning
@@ -90,11 +90,11 @@ export default function NewAppPage() {
     gunicornExtraArgs: "",
     // Runtime version pins. These are only the initial selection — the option
     // lists themselves come from the Application catalog.
-    nodeVersion: "24.16.0",
-    dartVersion: "3.5.4",
-    goVersion: "1.23.4",
+    nodeVersion: "24.19.0",
+    dartVersion: "3.12.2",
+    goVersion: "1.26.5",
     rustVersion: "stable",
-    bunVersion: "1.1.38",
+    bunVersion: "1.3.14",
     // Celery-specific
     celeryApp: "",
     celeryWorkerCount: "2",

@@ -119,38 +119,47 @@ class ApplicationDef {
 
 /// CPython releases installable through pyenv, newest first.
 const List<String> _kPythonVersions = [
-  '3.13.2', '3.13.1', '3.13.0', //
-  '3.12.9', '3.12.8', '3.12.7', '3.12.4', //
-  '3.11.11', '3.11.10', '3.11.9', //
-  '3.10.16', '3.10.15', //
+  '3.14.7', '3.14.0', //
+  '3.13.15', '3.13.5', '3.13.2', //
+  '3.12.13', '3.12.9', '3.12.8', //
+  '3.11.15', '3.11.11', //
+  '3.10.20', '3.10.16', //
 ];
 
 /// Node releases installable through fnm. Active LTS first, then older LTS
 /// lines, the current line, and finally releases kept only for legacy apps.
 const List<String> _kNodeVersions = [
-  '24.16.0', '24.15.0', '24.14.1', // LTS "Krypton"
-  '22.22.3', '22.20.0', '22.13.0', '22.12.0', // LTS "Jod"
-  '20.20.2', '20.19.6', '20.18.1', // LTS "Iron"
-  '26.3.0', // current line — shorter support window
+  '24.19.0', '24.18.1', '24.16.0', // LTS "Krypton"
+  '22.23.2', '22.22.3', '22.20.0', // LTS "Jod"
+  '20.20.2', '20.19.6', // LTS "Iron" (EOL upstream)
+  '26.7.0', '26.5.1', // current line — shorter support window
   '18.20.8', // EOL upstream, kept for older apps
 ];
 
 const List<String> _kDartVersions = [
-  '3.5.4', '3.5.3', '3.4.4', '3.4.3', '3.3.4', '3.3.3', '3.2.6', '3.1.5', //
+  '3.12.2', '3.12.1', '3.12.0', //
+  '3.11.6', '3.11.4', '3.11.0', //
+  '3.10.9', '3.10.4', '3.10.0', //
+  '3.9.4', '3.8.3', '3.7.3', '3.6.2', //
+  '3.5.4', '3.5.3', '3.4.4', '3.3.4', // legacy apps
 ];
 
 const List<String> _kGoVersions = [
-  '1.23.4', '1.23.3', '1.23.2', '1.22.10', '1.22.9', '1.22.8', '1.21.13', //
+  '1.26.5', '1.26.4', '1.26.0', //
+  '1.25.12', '1.25.11', '1.25.0', //
+  '1.24.13', '1.23.12', //
 ];
 
 /// rustup toolchains — the rolling channel names are versions in their own
 /// right here, and install side by side with the pinned releases.
 const List<String> _kRustVersions = [
-  'stable', '1.83.0', '1.82.0', '1.81.0', '1.80.1', '1.79.0', 'nightly', //
+  'stable', '1.97.1', '1.96.1', '1.95.0', '1.94.1', '1.93.1', 'nightly', //
 ];
 
 const List<String> _kBunVersions = [
-  '1.1.38', '1.1.34', '1.1.30', '1.1.21', '1.1.13', '1.0.36', //
+  '1.3.14', '1.3.13', '1.3.12', '1.3.10', //
+  '1.2.23', '1.2.19', //
+  '1.1.38', // legacy apps
 ];
 
 const List<ApplicationDef> kApplicationCatalog = [
@@ -163,10 +172,10 @@ const List<ApplicationDef> kApplicationCatalog = [
     defaultDeployMode: DeployMode.buildExecute,
     versioned: true,
     availableVersions: _kDartVersions,
-    defaultVersion: '3.5.4',
+    defaultVersion: '3.12.2',
     defaultBuildCommand:
         'dart pub get && dart compile exe bin/server.dart -o build/app',
-    versionHint: 'e.g. 3.4.4',
+    versionHint: 'e.g. 3.12.2',
     docsUrl: 'https://dart.dev/',
   ),
   ApplicationDef(
@@ -177,9 +186,9 @@ const List<ApplicationDef> kApplicationCatalog = [
     defaultDeployMode: DeployMode.buildExecute,
     versioned: true,
     availableVersions: _kGoVersions,
-    defaultVersion: '1.23.4',
+    defaultVersion: '1.26.5',
     defaultBuildCommand: 'go build -o build/app ./...',
-    versionHint: 'e.g. 1.22.9',
+    versionHint: 'e.g. 1.26.5',
     docsUrl: 'https://go.dev/',
   ),
   ApplicationDef(
@@ -192,7 +201,7 @@ const List<ApplicationDef> kApplicationCatalog = [
     availableVersions: _kRustVersions,
     defaultVersion: 'stable',
     defaultBuildCommand: 'cargo build --release',
-    versionHint: 'e.g. stable | 1.81.0 | nightly',
+    versionHint: 'e.g. stable | 1.97.1 | nightly',
     docsUrl: 'https://www.rust-lang.org/',
   ),
   ApplicationDef(
@@ -213,10 +222,10 @@ const List<ApplicationDef> kApplicationCatalog = [
     defaultDeployMode: DeployMode.buildExecute,
     versioned: true,
     availableVersions: _kBunVersions,
-    defaultVersion: '1.1.38',
+    defaultVersion: '1.3.14',
     defaultBuildCommand: 'bun install',
     defaultStartCommand: 'bun run start',
-    versionHint: 'e.g. 1.1.38',
+    versionHint: 'e.g. 1.3.14',
     docsUrl: 'https://bun.sh/',
   ),
   ApplicationDef(
@@ -229,10 +238,10 @@ const List<ApplicationDef> kApplicationCatalog = [
     defaultDeployMode: DeployMode.buildExecute,
     versioned: true,
     availableVersions: _kNodeVersions,
-    defaultVersion: '22.20.0',
+    defaultVersion: '24.19.0',
     defaultBuildCommand: 'npm ci',
     defaultStartCommand: 'node dist/index.js',
-    versionHint: 'e.g. 20.18.0 | 22.11.0',
+    versionHint: 'e.g. 24.19.0 | 22.23.2',
     docsUrl: 'https://nodejs.org/',
   ),
   ApplicationDef(
@@ -245,10 +254,10 @@ const List<ApplicationDef> kApplicationCatalog = [
     defaultDeployMode: DeployMode.directRun,
     versioned: true,
     availableVersions: _kPythonVersions,
-    defaultVersion: '3.12.8',
+    defaultVersion: '3.13.15',
     defaultBuildCommand:
         'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt',
-    versionHint: 'pyenv version string, e.g. 3.12.4',
+    versionHint: 'pyenv version string, e.g. 3.13.15',
     docsUrl: 'https://www.python.org/',
   ),
   ApplicationDef(
@@ -258,7 +267,7 @@ const List<ApplicationDef> kApplicationCatalog = [
         'Packaged the same way as Python, run as one or more worker units.',
     deployModes: [DeployMode.buildExecute],
     defaultDeployMode: DeployMode.buildExecute,
-    versionHint: 'pyenv version string, e.g. 3.12.4',
+    versionHint: 'pyenv version string, e.g. 3.13.15',
     docsUrl: 'https://docs.celeryq.dev/',
   ),
   ApplicationDef(
