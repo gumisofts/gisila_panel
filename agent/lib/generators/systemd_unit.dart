@@ -343,6 +343,39 @@ class SystemdUnit {
   /// Nuxt/Nitro temp). Set for Node/Bun server apps.
   final bool writableSource;
 
+  /// Resolve [startCommand] so systemd accepts ExecStart.
+  ///
+  /// Systemd allows a bare executable name (`node`, `true`) — looked up on
+  /// PATH — or an absolute path. A relative path with a slash (`bin/server.exe`)
+  /// is rejected as a "bad unit file setting". Those are resolved against
+  /// [workingDirectory].
+  static String absolutizeExecStart(
+    String startCommand, {
+    required String workingDirectory,
+  }) {
+    final trimmed = startCommand.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('startCommand must not be empty');
+    }
+    final parts = trimmed.split(RegExp(r'\s+'));
+    var exe = parts.first;
+    if (exe.startsWith('/')) {
+      return trimmed;
+    }
+    if (exe.startsWith('./')) {
+      exe = exe.substring(2);
+    }
+    // Bare command name (no slash) — valid; systemd resolves via PATH.
+    if (!exe.contains('/')) {
+      return trimmed;
+    }
+    final abs = workingDirectory.endsWith('/')
+        ? '$workingDirectory$exe'
+        : '$workingDirectory/$exe';
+    parts[0] = abs;
+    return parts.join(' ');
+  }
+
   String render() {
     final src = '$workDir/releases/current_build';
 
@@ -370,6 +403,11 @@ class SystemdUnit {
     final workingDir = workingDirectory ??
         ((isPython || isJit) ? src : '$workDir/current');
 
+    final execStart = absolutizeExecStart(
+      startCommand,
+      workingDirectory: workingDir,
+    );
+
     // User-defined env vars live in <workDir>/.env, pulled in via the
     // EnvironmentFile= line below (rather than inlined as Environment= lines).
     // The single file is also what a developer sources before running
@@ -379,7 +417,7 @@ class SystemdUnit {
 
     // For Node.js / Bun apps pinned to a specific version, prepend the
     // versioned runtime's bin directory to PATH so `node` / `bun` in the
-    // start command resolves to the right binary.
+    // start command resolves to the right version.
     final pathLine = runtimeBinDir != null
         ? 'Environment=PATH=$runtimeBinDir:/usr/local/bin:/usr/bin:/bin\n'
         : '';
@@ -454,7 +492,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$workingDir
-ExecStart=$startCommand
+ExecStart=$execStart
 Restart=always
 RestartSec=5
 

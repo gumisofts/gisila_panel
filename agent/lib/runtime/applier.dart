@@ -161,11 +161,36 @@ class Applier {
     await ShellExec.run('apparmor_parser', ['-r', apparmorPath],
         requireSuccess: false);
 
+    // systemd rejects relative ExecStart paths with a slash (e.g. bin/server.exe)
+    // as a "bad unit file setting". Resolve those against the unit working dir.
+    // For compiled runtimes the real binary is always installed at current/app.
+    final unitWorkingDir = workingDir ??
+        ((isPython || isJit)
+            ? '$workDir/releases/current_build'
+            : '$workDir/current');
+    var resolvedStart = SystemdUnit.absolutizeExecStart(
+      startCommand,
+      workingDirectory: unitWorkingDir,
+    );
+    if (!isPython && !isJit) {
+      final exe = resolvedStart.split(RegExp(r'\s+')).first;
+      final installed = '$workDir/current/app';
+      if (exe != installed &&
+          !File(exe).existsSync() &&
+          File(installed).existsSync()) {
+        stdout.writeln(
+          '[agent] start command "$startCommand" resolved to missing "$exe"; '
+          'using installed artifact $installed',
+        );
+        resolvedStart = installed;
+      }
+    }
+
     final unit = SystemdUnit(
       appId: appId,
       linuxUser: linuxUser,
       workDir: workDir,
-      startCommand: startCommand,
+      startCommand: resolvedStart,
       port: port,
       memoryMb: memoryMb,
       cpuQuotaPercent: cpuQuotaPercent,
@@ -181,6 +206,13 @@ class Applier {
     final unitPath = '$systemdDir/gisila-$linuxUser.service';
     File(unitPath).writeAsStringSync(unit.render());
     await ShellExec.run('systemctl', ['daemon-reload']);
+    // Catch bad ExecStart / missing settings before enable/restart so the
+    // deploy log shows a clear verify error instead of a opaque restart failure.
+    final verify = await Process.run('systemd-analyze', ['verify', unitPath]);
+    if (verify.exitCode != 0) {
+      final err = '${verify.stderr}\n${verify.stdout}'.trim();
+      throw StateError('Invalid systemd unit $unitPath:\n$err');
+    }
     await ShellExec.run('systemctl', ['enable', 'gisila-$linuxUser.service']);
   }
 
@@ -756,8 +788,30 @@ class Applier {
       await ShellExec.run('supervisorctl', ['restart', 'gisila-$linuxUser'],
           requireSuccess: false);
     } else {
-      await ShellExec.run(
-          'systemctl', ['restart', 'gisila-$linuxUser.service']);
+      final unit = 'gisila-$linuxUser.service';
+      final result = await Process.run('systemctl', ['restart', unit]);
+      if (result.exitCode != 0) {
+        final detail = '${result.stderr}\n${result.stdout}'.trim();
+        final load = await Process.run('systemctl', [
+          'show',
+          unit,
+          '-p',
+          'LoadState',
+          '-p',
+          'LoadError',
+          '--value',
+        ]);
+        throw ProcessException(
+          'systemctl',
+          ['restart', unit],
+          'Failed to restart $unit.\n$detail\n'
+              'systemctl show: ${load.stdout.toString().trim()}\n'
+              'Hint: relative ExecStart paths like bin/server.exe are invalid — '
+              'clear the app start command (use /srv/apps/<app>/current/app) '
+              'and redeploy so apply-unit rewrites the unit.',
+          result.exitCode,
+        );
+      }
     }
   }
 
