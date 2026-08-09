@@ -338,18 +338,20 @@ class Builders {
     final pkgMgr = _detectNodePackageManager(src);
     stdout.writeln('[agent] detected Node.js package manager: $pkgMgr');
 
-    // 2. Optionally set up a pinned Node.js version via fnm.
-    Map<String, String>? env;
-    if (nodeVersion != null) {
-      env = await _ensureFnmNode(nodeVersion);
-      // Stable symlink so the systemd unit can prepend the right bin dir to PATH.
-      final nodeInstallDir =
-          '/opt/fnm/node-versions/v$nodeVersion/installation';
-      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-      await ShellExec.run('ln', [
-        '-sfn', nodeInstallDir, '$workDir/current/.runtime'
-      ], requireSuccess: false);
-    }
+    // 2. Put a Node.js toolchain on PATH. Versioned installs live under
+    //    /opt/fnm/node-versions/… and are never on the scrubbed app-user PATH
+    //    (`/usr/bin` only), so without this step `npm`/`npx`/`node` fail with
+    //    "command not found" even after the admin installed Node in Applications.
+    //    Prefer the app pin; otherwise use the newest installed fnm version.
+    final resolvedNode = await _resolveNodeVersion(nodeVersion);
+    final env = await _ensureFnmNode(resolvedNode);
+    // Stable symlink so the systemd unit can prepend the right bin dir to PATH.
+    final nodeInstallDir =
+        '/opt/fnm/node-versions/v$resolvedNode/installation';
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('ln', [
+      '-sfn', nodeInstallDir, '$workDir/current/.runtime'
+    ], requireSuccess: false);
 
     // 3. Neutralise corepack.  Its shims intercept package-manager calls and
     //    try to download the version pinned in package.json's `packageManager`
@@ -402,7 +404,7 @@ class Builders {
     final installEnv = _appUserEnv(
       workDir,
       base: {
-        ...?env,
+        ...env,
         ...?appEnv,
       },
       extra: nodeEnv,
@@ -502,7 +504,7 @@ class Builders {
     //     this exact pnpm directly. Multiple apps pinning different versions
     //     coexist in the store and are installed once each.
     if (pkgMgr == 'pnpm') {
-      final pnpmVersion = _resolvePnpmVersion(src, nodeVersion);
+      final pnpmVersion = _resolvePnpmVersion(src, resolvedNode);
       stdout.writeln('[agent] pnpm $pnpmVersion (corepack-free, shared store)');
       final pnpmBinDir = await _ensurePnpm(pnpmVersion, installEnv);
       // Put the real pnpm first on PATH for the install + build steps below.
@@ -535,7 +537,7 @@ class Builders {
       '$src/package.json',
     ], [
       'pm:$pkgMgr',
-      'node:${nodeVersion ?? 'system'}',
+      'node:$resolvedNode',
       // Bump when the install semantics change. 'with-dev' marks node_modules
       // installed with devDependencies forced on (see depInstallEnv); it also
       // invalidates any cache marker left by an older prod-only install that
@@ -1357,6 +1359,7 @@ class Builders {
     required String workDir,
     required String user,
     String? buildCommand,
+    String? nodeVersion,
     Map<String, String>? appEnv,
     bool noCache = false,
     String? sourceSubdir,
@@ -1364,11 +1367,13 @@ class Builders {
     if (buildCommand != null && buildCommand.trim().isNotEmpty) {
       // Install deps first (npm ci / bun install), then run the build. appEnv is
       // forwarded so the build bakes the app's configured env vars (e.g.
-      // VITE_*/REACT_APP_* backend URLs) into the static bundle.
+      // VITE_*/REACT_APP_* backend URLs) into the static bundle. nodeVersion is
+      // optional — buildNode falls back to the newest installed fnm Node.
       await buildNode(
         workDir: workDir,
         user: user,
         buildCommand: buildCommand,
+        nodeVersion: nodeVersion,
         appEnv: appEnv,
         noCache: noCache,
         sourceSubdir: sourceSubdir,
@@ -1585,6 +1590,42 @@ class Builders {
 
   static const _fnmDir = '/opt/fnm';
   static const _fnmBin = '/usr/local/bin/fnm';
+
+  /// Pick the Node version for a build: explicit pin, else newest installed
+  /// under fnm. Throws a clear error when nothing is installed so the admin
+  /// knows to install the Node.js Application in the panel first.
+  static Future<String> _resolveNodeVersion(String? preferred) async {
+    if (preferred != null && preferred.trim().isNotEmpty) {
+      return preferred.trim();
+    }
+    final installed = listNodeVersions();
+    if (installed.isEmpty) {
+      throw StateError(
+        'No Node.js runtime is installed on this host. '
+        'Install a Node.js version under Applications, then redeploy. '
+        'npm/node live under /opt/fnm and are not on the default PATH.',
+      );
+    }
+    // Semver-ish sort: "24.19.0" > "22.12.0" > "20.18.1"
+    installed.sort((a, b) {
+      List<int> parts(String v) => v
+          .split('.')
+          .map((p) => int.tryParse(p.replaceAll(RegExp(r'[^0-9].*$'), '')) ?? 0)
+          .toList();
+      final pa = parts(a);
+      final pb = parts(b);
+      for (var i = 0; i < 3; i++) {
+        final d = (pa.length > i ? pa[i] : 0) - (pb.length > i ? pb[i] : 0);
+        if (d != 0) return d;
+      }
+      return a.compareTo(b);
+    });
+    final picked = installed.last;
+    stdout.writeln(
+      '[agent] no Node version pin — using installed $picked',
+    );
+    return picked;
+  }
 
   /// Ensure fnm is installed at [_fnmBin] and the requested Node version is
   /// available. Returns an env map suitable for `_runAsUserWithEnv`.

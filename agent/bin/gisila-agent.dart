@@ -231,6 +231,8 @@ Future<void> _build(List<String> args) async {
         'go': r['go-version'] as String?,
         'rust': r['rust-version'] as String?,
         'node': r['node-version'] as String?,
+        // Static sites with a Node build (Vite/Next export/…) use the same pin.
+        'static': r['node-version'] as String?,
         'bun': r['bun-version'] as String?,
         'python': r['python-version'] as String?,
         'celery': r['python-version'] as String?,

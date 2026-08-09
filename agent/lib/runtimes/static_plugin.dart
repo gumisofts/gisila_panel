@@ -23,6 +23,7 @@ class StaticPlugin extends RuntimePlugin {
         workDir: ctx.workDir,
         user: ctx.user,
         buildCommand: ctx.buildCommand,
+        nodeVersion: ctx.version,
         appEnv: ctx.appEnv,
         noCache: ctx.noCache,
         sourceSubdir: ctx.sourceSubdir,

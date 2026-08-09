@@ -207,7 +207,7 @@ export default function NewAppPage() {
         payload.celeryBeatEnabled = form.celeryBeatEnabled;
         payload.celeryExtraArgs   = form.celeryExtraArgs || undefined;
       }
-      if (isNode)  payload.nodeVersion = form.nodeVersion || undefined;
+      if (isNode || isStatic) payload.nodeVersion = form.nodeVersion || undefined;
       if (isBun)   payload.bunVersion  = form.bunVersion  || undefined;
       if (isDart)  payload.dartVersion = form.dartVersion || undefined;
       if (isGo)    payload.goVersion   = form.goVersion   || undefined;
@@ -516,17 +516,19 @@ export default function NewAppPage() {
             )}
 
             {/* ── Runtime version pickers ──────────────────────────────────── */}
-            {(isNode || isBun || isDart || isGo || isRust) && (
+            {(isNode || isBun || isDart || isGo || isRust || isStatic) && (
               <Tile>
                 <Stack gap={5}>
                   <div className="gisila-app-form__banner">
                     <Tag type="cyan" size="sm">Runtime version</Tag>
                     <span className="gisila-app-form__hint">
-                      Pin a specific runtime version. Leave as-is to use the latest shown below.
+                      {isStatic
+                        ? "Node.js used for the static build (npm / Vite / …)."
+                        : "Pin a specific runtime version. Leave as-is to use the latest shown below."}
                     </span>
                   </div>
 
-                  {isNode && (
+                  {(isNode || isStatic) && (
                     <Select
                       id="nodeVersion"
                       labelText="Node.js version"

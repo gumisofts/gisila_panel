@@ -198,7 +198,8 @@ class DeploymentWorker {
           app.pythonVersion!
         ],
         // Runtime version pins for other runtimes.
-        if (app.runtime == 'node' && app.nodeVersion != null) ...[
+        if ((app.runtime == 'node' || app.runtime == 'static') &&
+            app.nodeVersion != null) ...[
           '--node-version', app.nodeVersion!
         ],
         if (app.runtime == 'bun' && app.bunVersion != null) ...[

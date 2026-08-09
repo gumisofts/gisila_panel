@@ -215,7 +215,7 @@ export function SettingsTab({
         patch.celeryBeatEnabled = form.celeryBeatEnabled;
         patch.celeryExtraArgs   = form.celeryExtraArgs || undefined;
       }
-      if (isNode)  patch.nodeVersion = form.nodeVersion || undefined;
+      if (isNode || isStatic) patch.nodeVersion = form.nodeVersion || undefined;
       if (isBun)   patch.bunVersion  = form.bunVersion  || undefined;
       if (isDart)  patch.dartVersion = form.dartVersion || undefined;
       if (isGo)    patch.goVersion   = form.goVersion   || undefined;
@@ -485,15 +485,17 @@ export function SettingsTab({
         )}
 
         {/* Runtime version */}
-        {(isNode || isBun || isDart || isGo || isRust) && (
+        {(isNode || isBun || isDart || isGo || isRust || isStatic) && (
           <Tile>
             <h3 className="gisila-app__tile-title">Runtime version</h3>
             <Stack gap={5}>
               <p className="gisila-app__label">
-                Changing the version takes effect on the next deployment.
+                {isStatic
+                  ? "Node.js used for the static build command (npm / Vite / …). Takes effect on the next deployment."
+                  : "Changing the version takes effect on the next deployment."}
               </p>
 
-              {isNode && (
+              {(isNode || isStatic) && (
                 <VersionSelect
                   id="s-node-version"
                   labelText="Node.js version"
