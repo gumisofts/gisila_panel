@@ -221,8 +221,10 @@ export function SettingsTab({
       if (isGo)    patch.goVersion   = form.goVersion   || undefined;
       if (isRust)  patch.rustVersion = form.rustVersion || undefined;
       if (isStatic) {
-        patch.staticRoot = form.staticRoot || undefined;
-        patch.staticSpa  = form.staticSpa;
+        // Always send both keys so an emptied directory clears the stored
+        // value (JSON.stringify drops `undefined`, which left the old path).
+        patch.staticRoot = form.staticRoot;
+        patch.staticSpa = form.staticSpa;
       } else {
         // Local disk media (Model A) — not applicable to static sites.
         patch.mediaEnabled = form.mediaEnabled;
@@ -669,7 +671,7 @@ export function SettingsTab({
                 placeholder="dist"
                 value={form.staticRoot}
                 onChange={(e) => set("staticRoot", e.target.value)}
-                helperText="Path relative to the repository root that Nginx serves, e.g. dist or build/public. Leave blank for the repo root."
+                helperText="Path relative to the repository root that Nginx serves, e.g. dist, build, or out. Leave blank to auto-detect. Takes effect on the next deployment."
               />
 
               <div className="gisila-app__choice">

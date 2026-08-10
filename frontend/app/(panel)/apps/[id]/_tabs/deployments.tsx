@@ -91,6 +91,21 @@ function lineClass(stream: BuildLog["stream"]): string {
   return "gisila-term__line";
 }
 
+/** Live WS lines use `Date.now()` ids; persisted rows use small serial ids. */
+function isLiveLogId(id: number): boolean {
+  return id >= 1_000_000_000_000;
+}
+
+/** Merge a DB snapshot with any live lines that arrived during the fetch. */
+function mergeBuildLogs(fromApi: BuildLog[], prev: BuildLog[]): BuildLog[] {
+  const live = prev.filter((l) => isLiveLogId(l.id));
+  if (live.length === 0) return fromApi;
+  // Drop live copies of lines already in the snapshot (HTTP + Redis replay overlap).
+  const seen = new Set(fromApi.map((l) => `${l.stream}\n${l.line}`));
+  const tail = live.filter((l) => !seen.has(`${l.stream}\n${l.line}`));
+  return [...fromApi, ...tail].slice(-2000);
+}
+
 // ── Stepper ───────────────────────────────────────────────────────────────────
 function Stepper({
   current,
@@ -135,14 +150,24 @@ function LogPanel({
 
   // Load stored logs
   useEffect(() => {
+    let cancelled = false;
     setLines([]);
     setLoading(true);
     api<{ results: BuildLog[] }>(
       `/apps/${appId}/deployments/${deployment.id}/logs`
     )
-      .then((d) => setLines(d.results))
+      .then((d) => {
+        if (cancelled) return;
+        // Merge so a slow refetch cannot wipe live lines that arrived first.
+        setLines((prev) => mergeBuildLogs(d.results ?? [], prev));
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [appId, deployment.id]);
 
   // Live stream for active deployments
@@ -175,7 +200,17 @@ function LogPanel({
           line: parsed.line ?? raw,
           createdAt: data.ts ?? new Date().toISOString(),
         };
-        setLines((prev) => [...prev, line].slice(-2000));
+        setLines((prev) => {
+          // Replay frames overlap the HTTP snapshot — skip those dupes only.
+          // Live lines must not be deduped (identical output can repeat).
+          if (data.replay) {
+            const already = prev.some(
+              (p) => p.stream === line.stream && p.line === line.line,
+            );
+            if (already) return prev;
+          }
+          return [...prev, line].slice(-2000);
+        });
       } catch { /* ignore */ }
     };
     return () => { ws.close(); wsRef.current = null; };

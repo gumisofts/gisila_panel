@@ -138,8 +138,15 @@ class AppsApi {
       if (form.bunVersion.value != null) 'bunVersion': form.bunVersion.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
       if (form.internalPort.value != null) 'internalPort': form.internalPort.value,
-      if (form.staticRoot.value != null) 'staticRoot': form.staticRoot.value,
-      if (form.staticSpa.value != null) 'staticSpa': form.staticSpa.value,
+      // Static settings are always sent together from the panel. Empty
+      // staticRoot binds as null (clear). Gate on staticSpa so a clear still
+      // persists — `value != null` alone would skip an emptied directory.
+      if (form.staticSpa.value != null) ...{
+        'staticSpa': form.staticSpa.value,
+        'staticRoot': form.staticRoot.value,
+      } else if (form.staticRoot.value != null) ...{
+        'staticRoot': form.staticRoot.value,
+      },
       if (form.mediaEnabled.value != null)
         'mediaEnabled': form.mediaEnabled.value,
       if (form.mediaMaxUploadMb.value != null)
@@ -152,8 +159,7 @@ class AppsApi {
     // live. Re-render the vhost against the current release — no rebuild — so
     // the change (e.g. enabling SPA mode to stop deep-link refreshes 404ing)
     // takes effect immediately.
-    if (app.runtime == 'static' &&
-        (form.staticRoot.value != null || form.staticSpa.value != null)) {
+    if (app.runtime == 'static' && form.staticSpa.value != null) {
       await RedisClient.instance.rpush(
         'gisila:queue:vhosts',
         jsonEncode(<String, Object?>{

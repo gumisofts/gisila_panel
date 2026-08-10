@@ -607,10 +607,21 @@ class DeploymentWorker {
       'stream': stream,
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).run(database.context());
-    await RedisClient.instance.publish(
-      'gisila:logs:build:$deploymentId',
-      jsonEncode({'stream': stream, 'line': line}),
-    );
+    final payload = jsonEncode({'stream': stream, 'line': line});
+    try {
+      // Cap a Redis replay buffer so reconnecting clients (leave tab / come
+      // back mid-build) see lines published while they were away.
+      final historyKey = 'gisila:logs:build:$deploymentId:history';
+      await RedisClient.instance.rpush(historyKey, payload);
+      await RedisClient.instance.ltrim(historyKey, -2000, -1);
+      await RedisClient.instance.expire(historyKey, 86400);
+      await RedisClient.instance.publish(
+        'gisila:logs:build:$deploymentId',
+        payload,
+      );
+    } catch (e) {
+      logger.w('deployment_worker: failed to publish build log: $e');
+    }
   }
 
   /// Generate `user:password` credentials for Flower's `--basic-auth`.
@@ -646,13 +657,19 @@ class DeploymentWorker {
     logger.i('worker: agent ${cmd.join(' ')}');
     final process = await Process.start(cmd.first, cmd.skip(1).toList());
 
+    // Collect lines and persist them concurrently, but wait for every insert
+    // to finish before treating the agent run as done — otherwise leaving the
+    // Deployments tab mid-build and coming back shows a truncated DB log.
+    final pending = <Future<void>>[];
     final outputs = await Future.wait([
       process.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .map((line) {
         if (deploymentId != null) {
-          _publishBuildLog(deploymentId, stream: 'stdout', line: line);
+          pending.add(
+            _publishBuildLog(deploymentId, stream: 'stdout', line: line),
+          );
         }
         return line;
       }).toList(),
@@ -661,11 +678,14 @@ class DeploymentWorker {
           .transform(const LineSplitter())
           .map((line) {
         if (deploymentId != null) {
-          _publishBuildLog(deploymentId, stream: 'stderr', line: line);
+          pending.add(
+            _publishBuildLog(deploymentId, stream: 'stderr', line: line),
+          );
         }
         return line;
       }).toList(),
     ]);
+    if (pending.isNotEmpty) await Future.wait(pending);
 
     final exit = await process.exitCode;
     if (exit != 0) {

@@ -548,26 +548,65 @@ class Applier {
   /// When the configured [staticDir] already has an `index.html`, use it as-is.
   /// Otherwise the user likely left the static root blank for a framework that
   /// builds into a subdirectory (Vite → `dist`, CRA → `build`, Astro → `dist`,
-  /// Nuxt generate → `.output/public`). Probe the conventional output folders
-  /// and serve the first one that contains an `index.html`. Falls back to the
-  /// original path when nothing matches, so behaviour is never worse than before.
+  /// Nuxt generate → `.output/public`, Next export → `out`). Probe the
+  /// conventional output folders and serve the first one that contains an
+  /// `index.html`.
+  ///
+  /// If [staticDir] itself is missing (wrong setting, or build wrote elsewhere),
+  /// probe the parent directory the same way before failing with a clear error.
   static String _resolveStaticDir(String staticDir) {
-    if (File('$staticDir/index.html').existsSync()) return staticDir;
-    for (final sub in const [
+    const candidates = <String>[
       'dist',
       'build',
       'out',
       '.output/public',
       'dist/public',
       'public',
-    ]) {
-      if (File('$staticDir/$sub/index.html').existsSync()) {
-        stdout.writeln(
-            '[agent] static root has no index.html — serving detected build '
-            'output "$sub" instead.');
-        return '$staticDir/$sub';
+    ];
+
+    String? withIndex(String dir) {
+      if (File('$dir/index.html').existsSync()) return dir;
+      for (final sub in candidates) {
+        if (File('$dir/$sub/index.html').existsSync()) {
+          stdout.writeln(
+              '[agent] static root has no index.html — serving detected build '
+              'output "$sub" instead.');
+          return '$dir/$sub';
+        }
       }
+      return null;
     }
+
+    final direct = withIndex(staticDir);
+    if (direct != null) return direct;
+
+    if (!Directory(staticDir).existsSync()) {
+      final parent = Directory(staticDir).parent.path;
+      final fromParent = withIndex(parent);
+      if (fromParent != null) {
+        stdout.writeln(
+            '[agent] configured static root "$staticDir" is missing — '
+            'using detected build output at "$fromParent" instead.');
+        return fromParent;
+      }
+      final hint = candidates
+          .where((s) => Directory('$parent/$s').existsSync())
+          .toList();
+      final hintText = hint.isEmpty
+          ? 'No conventional build output (dist/build/out/…) was found under '
+              '$parent either.'
+          : 'Found folder(s) without index.html: ${hint.join(', ')}.';
+      throw StateError(
+        'Static files directory does not exist: $staticDir\n'
+        '$hintText\n'
+        'Set "Static files directory" to your build output (e.g. dist, build, '
+        'out) or leave it blank to auto-detect, and ensure the build command '
+        'produces an index.html there.',
+      );
+    }
+
+    // Directory exists but has no index.html and no known subfolder — publish
+    // it as-is (plain asset trees without index are unusual but valid).
     return staticDir;
   }
 

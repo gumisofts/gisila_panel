@@ -201,7 +201,7 @@ export function EnvsTab({ appId }: { appId: number }) {
             {/* Parsed editable rows */}
             {parsed.length > 0 && (
               <>
-                <TableContainer>
+                <TableContainer className="gisila-app__envs">
                   <Table size="sm">
                     <TableHead>
                       <TableRow>
@@ -350,7 +350,7 @@ export function EnvsTab({ appId }: { appId: number }) {
 
       {/* ── Existing vars ─────────────────────────────────────────────────── */}
       {envs.length > 0 ? (
-        <TableContainer>
+        <TableContainer className="gisila-app__envs">
           <Table size="sm">
             <TableHead>
               <TableRow>
@@ -433,7 +433,7 @@ function EnvRow({
     return (
       <TableRow>
         <TableCell>
-          <span className="gisila-app__mono">{env.name}</span>
+          <span className="gisila-app__mono gisila-app__env-value">{env.name}</span>
         </TableCell>
         <TableCell>
           <div className="gisila-app__form-row">
@@ -489,12 +489,12 @@ function EnvRow({
   return (
     <TableRow>
       <TableCell>
-        <span className="gisila-app__mono">{env.name}</span>
+        <span className="gisila-app__mono gisila-app__env-value">{env.name}</span>
       </TableCell>
       <TableCell>
         <span className="gisila-app__inline">
           <span
-            className="gisila-app__mono"
+            className="gisila-app__mono gisila-app__env-value"
             onClick={() => !env.isSecret && setEditing(true)}
           >
             {env.isSecret && !revealed

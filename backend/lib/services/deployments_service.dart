@@ -117,14 +117,17 @@ class DeploymentsService extends Service {
   }
 
   Future<List<BuildLog>> buildLogs(User actor, int appId, int deploymentId,
-      {int limit = 1000}) async {
+      {int limit = 2000}) async {
     final appsSvc = AppsService()..attach(ctx);
     final app = await appsSvc.findForUser(actor, appId);
     assert(app.id != null);
-    return Query<BuildLog>(BuildLogTable.metadata)
+    // Newest-first then reverse so callers see chronological order but we keep
+    // the *tail* of long builds (a plain ASC + LIMIT would drop the end).
+    final newestFirst = await Query<BuildLog>(BuildLogTable.metadata)
         .where(BuildLogTable.deploymentId.eq(deploymentId))
-        .orderBy(BuildLogTable.id)
+        .orderBy(BuildLogTable.id, desc: true)
         .limit(limit)
         .all(_db.context());
+    return newestFirst.reversed.toList();
   }
 }

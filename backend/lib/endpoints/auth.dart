@@ -93,7 +93,7 @@ class AuthApi {
   }
 
   @Patch(
-    '/users/<id>',
+    '/users/{id}',
     summary: 'Update a user account (superuser only)',
   )
   @RequireAuth()
@@ -121,7 +121,7 @@ class AuthApi {
     return updated.toJson(exclude: ['password']);
   }
 
-  @Delete('/users/<id>', summary: 'Delete a user account (superuser only)')
+  @Delete('/users/{id}', summary: 'Delete a user account (superuser only)')
   @RequireAuth()
   Future<Map<String, Object?>> deleteUser(
     int id,

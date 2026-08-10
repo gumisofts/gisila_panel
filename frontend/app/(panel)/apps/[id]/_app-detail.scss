@@ -21,6 +21,44 @@
   color: theme.$text-secondary;
 }
 
+// Env tables: JWTs / connection strings have no spaces and would otherwise
+// stretch the page past the content column.
+.gisila-app__envs {
+  max-inline-size: 100%;
+  overflow-x: auto;
+
+  .cds--data-table {
+    table-layout: fixed;
+    inline-size: 100%;
+  }
+
+  // Name stays readable; actions stay fixed; value (and secret, when present)
+  // share the remaining width and wrap.
+  th:first-child,
+  td:first-child {
+    inline-size: 20%;
+  }
+
+  th:last-child,
+  td:last-child {
+    inline-size: 7.5rem;
+  }
+
+  .cds--text-input-wrapper {
+    max-inline-size: 100%;
+  }
+}
+
+.gisila-app__env-value {
+  display: block;
+  flex: 1 1 auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
 .gisila-app__hint {
   @include type.type-style('label-01');
 

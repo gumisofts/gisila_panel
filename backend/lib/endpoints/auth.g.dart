@@ -283,7 +283,7 @@ extension AuthApiGisilaDoc on AuthApi {
     }
     {
       final basePath = '$prefix/auth/users/<id>';
-      final openApiPath = '$prefix/auth/users/<id>';
+      final openApiPath = '$prefix/auth/users/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.patch(
@@ -294,8 +294,8 @@ extension AuthApiGisilaDoc on AuthApi {
             handler: (RequestContext ctx) async {
               try {
                 final request = ctx.request;
-                final id = coerce<int>(request.url.queryParameters['id'], 'id',
-                    required: true);
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
                 final form = await bindForm(request, UpdateUserForm.new);
                 final auth = ctx.service<AuthService>();
                 final result = await this.updateUser(id, form, auth, ctx);
@@ -317,7 +317,7 @@ extension AuthApiGisilaDoc on AuthApi {
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
-                location: 'query',
+                location: 'path',
                 required: true,
                 description: null,
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
@@ -340,7 +340,7 @@ extension AuthApiGisilaDoc on AuthApi {
     }
     {
       final basePath = '$prefix/auth/users/<id>';
-      final openApiPath = '$prefix/auth/users/<id>';
+      final openApiPath = '$prefix/auth/users/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.delete(
@@ -351,8 +351,8 @@ extension AuthApiGisilaDoc on AuthApi {
             handler: (RequestContext ctx) async {
               try {
                 final request = ctx.request;
-                final id = coerce<int>(request.url.queryParameters['id'], 'id',
-                    required: true);
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
                 final auth = ctx.service<AuthService>();
                 final result = await this.deleteUser(id, auth, ctx);
                 return jsonResponse(body: result, statusCode: 204);
@@ -373,7 +373,7 @@ extension AuthApiGisilaDoc on AuthApi {
             parameters: <Parameter>[
               Parameter(
                 name: 'id',
-                location: 'query',
+                location: 'path',
                 required: true,
                 description: null,
                 schema: <String, Object?>{'type': 'integer', 'format': 'int64'},

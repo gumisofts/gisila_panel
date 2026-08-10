@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:gisila_doc/gisila_doc.dart' hide Query;
 import 'package:gisila_orm/gisila.dart' hide PostgresErrorMapper;
+import 'package:shelf/shelf.dart' show HijackException;
 import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
 import 'package:gisila_panel/models/models.dart';
@@ -73,6 +74,19 @@ Future<Handler> application() async {
       defaultRouteConfig: const RouteConfig(
         rateLimit: RateLimitConfig(requestsPerMinute: 300),
       ),
+      // shelf_web_socket upgrades via HijackException (control flow). Gisila's
+      // error middleware must not turn that into a JSON 500 — shelf_io handles
+      // it. Kept as a safety net even though /ws is mounted outside the app.
+      errorHandler: (Object error, StackTrace stack) {
+        if (error is HijackException) throw error;
+        logger.e('Unhandled exception in handler', error: error, stackTrace: stack);
+        return Response(
+          500,
+          body:
+              '{"error":{"status":500,"code":"internal_error","message":"Internal server error"}}',
+          headers: const {'content-type': 'application/json; charset=utf-8'},
+        );
+      },
     ),
   );
 
@@ -118,12 +132,19 @@ Future<Handler> application() async {
       StorageApi().attachToApp(app, router, spec, prefix: prefix);
       MailApi().attachToApp(app, router, spec, prefix: prefix);
 
-      router.mount('/ws', live_logs.logsRouter(database: database).call);
       router.mount('/admin', adminHandler());
       router.mount('/docs', docsHandler(spec));
       router.mount('/', _panelUiHandler());
     },
   );
+
+  // WebSockets must sit outside GisilaApp's pipeline. Upgrading the connection
+  // throws shelf's HijackException as control flow; the framework's error
+  // middleware would otherwise catch it and answer with a JSON 500 on an
+  // already-hijacked request (and the 30s requestTimeout would also fire).
+  final apiHandler = app.buildHandler();
+  final wsRouter = Router()
+    ..mount('/ws', live_logs.logsRouter(database: database).call);
 
   // The panel is a client-routed SPA whose routes (`/apps/123`, `/projects`, …)
   // share the URL namespace with the API controllers above. Without this, a
@@ -133,7 +154,12 @@ Future<Handler> application() async {
   // and serve index.html so React Router can take over; real `fetch`/XHR API
   // calls (which send `Accept: */*` and the Bearer token) fall straight
   // through to the controllers untouched.
-  return _spaNavigationFallback(app.buildHandler());
+  return _spaNavigationFallback((Request req) {
+    final first =
+        req.url.pathSegments.isEmpty ? '' : req.url.pathSegments.first;
+    if (first == 'ws') return wsRouter.call(req);
+    return apiHandler(req);
+  });
 }
 
 /// Wrap [inner] so browser navigations (GET requests that ask for `text/html`)

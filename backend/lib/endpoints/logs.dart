@@ -87,6 +87,7 @@ Handler _buildLogSocket(Database database) =>
         await _bridgeRedis(
           webSocket,
           channel: 'gisila:logs:build:$deploymentId',
+          historyKey: 'gisila:logs:build:$deploymentId:history',
           closed: closed,
         );
       });
@@ -328,6 +329,8 @@ Future<void> _bridgeRedis(
           webSocket.sink.add(jsonEncode({
             'message': entry.toString(),
             'ts': DateTime.now().toUtc().toIso8601String(),
+            // Clients that already hydrated from the DB can skip these.
+            'replay': true,
           }));
         }
       }

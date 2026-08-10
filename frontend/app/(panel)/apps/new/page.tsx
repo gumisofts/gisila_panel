@@ -213,8 +213,8 @@ export default function NewAppPage() {
       if (isGo)    payload.goVersion   = form.goVersion   || undefined;
       if (isRust)  payload.rustVersion = form.rustVersion || undefined;
       if (isStatic) {
-        payload.staticRoot = form.staticRoot || undefined;
-        payload.staticSpa  = form.staticSpa;
+        payload.staticRoot = form.staticRoot;
+        payload.staticSpa = form.staticSpa;
       }
       if (form.sourceType === "git" && form.deployKeyId) {
         payload.deployKeyId = Number(form.deployKeyId);
