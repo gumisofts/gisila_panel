@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// Render a Nginx vhost that reverse-proxies a hostname to the local MinIO
 /// S3 API so the object store is reachable at a public URL.
 ///
@@ -114,7 +116,38 @@ server {
   }
 }
 
+/// Whether Let's Encrypt material exists for [hostname] on this host.
+bool letsEncryptReady(String hostname) {
+  final live = '/etc/letsencrypt/live/$hostname';
+  return File('$live/fullchain.pem').existsSync() &&
+      File('$live/privkey.pem').existsSync();
+}
+
+String _sslListenPreamble(String hostname) {
+  final live = '/etc/letsencrypt/live/$hostname';
+  final options = File('/etc/letsencrypt/options-ssl-nginx.conf');
+  final dhparam = File('/etc/letsencrypt/ssl-dhparams.pem');
+  final extras = StringBuffer();
+  if (options.existsSync()) {
+    extras.writeln('    include /etc/letsencrypt/options-ssl-nginx.conf;');
+  }
+  if (dhparam.existsSync()) {
+    extras.writeln('    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;');
+  }
+  return '''
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    ssl_certificate $live/fullchain.pem;
+    ssl_certificate_key $live/privkey.pem;
+${extras.toString()}''';
+}
+
 /// Render a Nginx vhost that serves static files directly from the filesystem.
+///
+/// One `server` block (or HTTP+HTTPS pair) is emitted **per hostname** so each
+/// domain can keep its own Let's Encrypt lineage. A shared `server_name a b`
+/// block cannot attach two different certificates, which broke multi-domain
+/// apps as soon as a second hostname was added or the vhost was re-rendered.
 ///
 /// When [isSpa] is true every request that does not match a real file falls
 /// back to `index.html` (SPA / client-side routing).
@@ -141,24 +174,20 @@ class StaticNginxVhost {
     if (hostnames.isEmpty) {
       return '# app=$appId has no hostnames yet — static vhost intentionally empty.\n';
     }
-    final names = hostnames.join(' ');
     final fallback = isSpa
         ? 'try_files \$uri \$uri/ /index.html;'
         : 'try_files \$uri \$uri/ =404;';
-    return '''
-# Managed by gisila-agent (static) — do not edit by hand.
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $names;
+    final body = StringBuffer()
+      ..writeln('# Managed by gisila-agent (static) — do not edit by hand.');
+    for (final host in hostnames) {
+      body.write(_serverFor(host, fallback));
+    }
+    return body.toString();
+  }
 
+  String _locations(String fallback) => '''
     root $staticDir;
     index index.html;
-
-    # ACME HTTP-01 challenges
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
 
     location / {
         $fallback
@@ -175,15 +204,51 @@ server {
     client_max_body_size 10M;
     access_log /var/log/nginx/gisila-app-$appId.access.log;
     error_log  /var/log/nginx/gisila-app-$appId.error.log;
+''';
+
+  String _serverFor(String hostname, String fallback) {
+    final locations = _locations(fallback);
+    if (!letsEncryptReady(hostname)) {
+      return '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+$locations}
+''';
+    }
+    return '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
+
+server {
+${_sslListenPreamble(hostname)}    server_name $hostname;
+$locations}
 ''';
   }
 }
 
 /// Render a Nginx reverse-proxy vhost for an app.
 ///
-/// HTTP-only by default; certbot rewrites the file to add 443 / managed
-/// SSL when [issueCert] is invoked.
+/// One HTTP (and optional HTTPS) `server` block per hostname — see
+/// [StaticNginxVhost] for why a shared `server_name` list cannot carry
+/// per-domain certificates. TLS is enabled automatically when
+/// `/etc/letsencrypt/live/<hostname>/` exists (written by [Applier.issueCert]).
 class NginxVhost {
   NginxVhost({
     required this.appId,
@@ -240,14 +305,9 @@ $cache        try_files \$uri =404;
 ''';
   }
 
-  String render() {
-    if (hostnames.isEmpty) {
-      return '# app=$appId has no hostnames yet — vhost intentionally empty.\n';
-    }
-    final names = hostnames.join(' ');
+  String get _appLocations {
     final staticBlock = _fileLocation(staticRoot, staticUrl, immutable: true);
     final mediaBlock = _fileLocation(mediaRoot, mediaUrl, immutable: false);
-    // Internal location for X-Accel-Redirect handoff of auth-gated media.
     final protectedBlock = (mediaRoot != null && protectedMedia)
         ? '''
 
@@ -258,16 +318,6 @@ $cache        try_files \$uri =404;
 '''
         : '';
     return '''
-# Managed by gisila-agent — do not edit by hand.
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $names;
-
-    # ACME HTTP-01 challenges
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
 $staticBlock$mediaBlock$protectedBlock
     location / {
         proxy_pass http://127.0.0.1:$port;
@@ -286,7 +336,54 @@ $staticBlock$mediaBlock$protectedBlock
     client_max_body_size ${maxUploadMb}M;
     access_log /var/log/nginx/gisila-app-$appId.access.log;
     error_log  /var/log/nginx/gisila-app-$appId.error.log;
+''';
+  }
+
+  String render() {
+    if (hostnames.isEmpty) {
+      return '# app=$appId has no hostnames yet — vhost intentionally empty.\n';
+    }
+    final body = StringBuffer()
+      ..writeln('# Managed by gisila-agent — do not edit by hand.');
+    for (final host in hostnames) {
+      body.write(_serverFor(host));
+    }
+    return body.toString();
+  }
+
+  String _serverFor(String hostname) {
+    final locations = _appLocations;
+    if (!letsEncryptReady(hostname)) {
+      return '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+$locations}
+''';
+    }
+    return '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
+
+server {
+${_sslListenPreamble(hostname)}    server_name $hostname;
+$locations}
 ''';
   }
 }

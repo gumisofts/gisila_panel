@@ -30,10 +30,27 @@ class DomainsService extends Service {
     appsSvc.attach(ctx);
     final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
 
+    final host = hostname.trim().toLowerCase();
+    final existing = await Query<Domain>(DomainTable.metadata)
+        .where(DomainTable.hostname.eq(host))
+        .first(_db.context());
+    if (existing != null) {
+      if (existing.appId == app.id) {
+        throw Conflict(
+          'This domain is already attached to this app.',
+          code: 'domain_already_attached',
+        );
+      }
+      throw Conflict(
+        'This domain is already attached to another app.',
+        code: 'domain_in_use',
+      );
+    }
+
     final domain =
         await Query<Domain>(DomainTable.metadata).insert(<String, Object?>{
       'appId': app.id,
-      'hostname': hostname.toLowerCase(),
+      'hostname': host,
       'isPrimary': isPrimary,
       'isVerified': false,
       'verificationToken': _randomToken(),

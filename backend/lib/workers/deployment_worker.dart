@@ -529,6 +529,7 @@ class DeploymentWorker {
   Future<void> onSsl(Map<String, Object?> payload) async {
     final domainId = payload['domainId'] as int?;
     final hostname = payload['hostname'] as String?;
+    final appId = payload['appId'] as int?;
     if (domainId == null || hostname == null) return;
 
     try {
@@ -543,6 +544,14 @@ class DeploymentWorker {
             .add(const Duration(days: 90))
             .toIso8601String(),
       }).run(database.context());
+      // Re-render the vhost so the new cert is wired into a dedicated 443
+      // server block for this hostname (and siblings keep theirs).
+      if (appId != null) {
+        await onVhost(<String, Object?>{
+          'appId': appId,
+          'reason': 'ssl_issued',
+        });
+      }
     } catch (e) {
       await Query<Domain>(DomainTable.metadata)
           .where(DomainTable.id.eq(domainId))
