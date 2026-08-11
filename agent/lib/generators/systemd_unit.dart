@@ -143,6 +143,10 @@ class CeleryBeatUnit {
     final venv = '$workDir/current/.venv';
     final src = '$workDir/releases/current_build';
     final tmp = '$workDir/tmp';
+    // Persist the schedule under shared/ — current_build is replaced on every
+    // deploy, and a truncated celerybeat-schedule shelve raises EOFError on
+    // the next beat start.
+    final schedule = '$workDir/shared/celerybeat-schedule';
 
     return '''
 [Unit]
@@ -155,7 +159,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp beat --loglevel=info --pidfile=$tmp/celerybeat.pid
+ExecStart=$venv/bin/celery -A $celeryApp beat --loglevel=info --pidfile=$tmp/celerybeat.pid --schedule=$schedule
 Restart=always
 RestartSec=10
 

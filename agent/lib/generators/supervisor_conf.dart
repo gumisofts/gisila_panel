@@ -112,9 +112,10 @@ environment=${_envPairs({})}
 
     // Beat scheduler (optional)
     if (beatEnabled) {
+      final schedule = '$workDir/shared/celerybeat-schedule';
       buf.write('''
 [program:gisila-$linuxUser-beat]
-command=$venv/bin/celery -A $celeryApp beat --loglevel=info --logfile=$logs/beat.log --pidfile=$tmp/celerybeat.pid
+command=$venv/bin/celery -A $celeryApp beat --loglevel=info --logfile=$logs/beat.log --pidfile=$tmp/celerybeat.pid --schedule=$schedule
 directory=$src
 user=$linuxUser
 autostart=true
