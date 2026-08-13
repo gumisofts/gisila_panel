@@ -736,7 +736,8 @@ class Applier {
 
   /// Obtain a cert AND let certbot rewrite the vhost to add the `listen 443 ssl`
   /// server block + HTTP→HTTPS redirect (installer mode, unlike [issueCert]
-  /// which only fetches the cert). Used for the standalone MinIO vhost.
+  /// which only fetches the cert). Used for pgAdmin / mongo-express vhosts
+  /// that are not re-rendered by gisila after issuance.
   Future<void> issueCertInstaller(String hostname) async {
     await ShellExec.run('certbot', [
       '--nginx',

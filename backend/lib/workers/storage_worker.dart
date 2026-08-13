@@ -133,10 +133,14 @@ class StorageWorker {
         await _runAgent(['storage', 'unexpose-minio']);
       } else {
         final uri = Uri.parse(url);
-        final consoleHost =
-            consoleUrl.isNotEmpty ? Uri.parse(consoleUrl).host : null;
-        // Only request a cert when the operator opted in AND the URL is https.
-        final wantCert = (issueCert ?? true) && uri.scheme == 'https';
+        final consoleUri =
+            consoleUrl.isNotEmpty ? Uri.parse(consoleUrl) : null;
+        final consoleHost = consoleUri?.host;
+        // Issue certs when the operator opted in AND any public URL is https
+        // (API, console, or both). The agent then re-renders listen 443.
+        final anyHttps =
+            uri.scheme == 'https' || consoleUri?.scheme == 'https';
+        final wantCert = (issueCert ?? true) && anyHttps;
         await _runAgent([
           'storage',
           'expose-minio',

@@ -4,7 +4,10 @@ import 'dart:io';
 /// S3 API so the object store is reachable at a public URL.
 ///
 /// MinIO binds 127.0.0.1 only, so without this the public hostname matches no
-/// server block and nginx returns 404. The settings here are the ones MinIO/S3
+/// server block and nginx returns 404. HTTPS is emitted the same way as app
+/// vhosts: a `listen 443 ssl` server block per hostname once Let's Encrypt
+/// material exists, rather than letting certbot rewrite this file (which the
+/// next expose would overwrite). The settings here are the ones MinIO/S3
 /// require behind a proxy:
 ///   - `client_max_body_size 0` — never cap object uploads.
 ///   - `ignore_invalid_headers off` — S3 signatures use headers with underscores.
@@ -29,17 +32,8 @@ class MinioNginxVhost {
   final String? consoleHostname;
   final int? consolePort;
 
-  String _apiServer() => '''
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $hostname;
-
-    # ACME HTTP-01 challenges
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
-
+  /// S3 API proxy settings. Shared by the :80 and :443 server blocks.
+  String get _apiLocations => '''
     # Allow arbitrarily large object uploads and pass S3 requests through
     # untouched (header names with underscores, streamed request bodies).
     ignore_invalid_headers off;
@@ -63,21 +57,10 @@ server {
 
     access_log /var/log/nginx/gisila-minio.access.log;
     error_log  /var/log/nginx/gisila-minio.error.log;
-}
 ''';
 
-  String _consoleServer() => '''
-
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $consoleHostname;
-
-    # ACME HTTP-01 challenges
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
-
+  /// Console proxy settings (websockets). Shared by the :80 and :443 blocks.
+  String get _consoleLocations => '''
     ignore_invalid_headers off;
     client_max_body_size 0;
     proxy_buffering off;
@@ -102,17 +85,43 @@ server {
 
     access_log /var/log/nginx/gisila-minio-console.access.log;
     error_log  /var/log/nginx/gisila-minio-console.error.log;
-}
 ''';
 
+  /// Dual-serve HTTP + HTTPS (no redirect), same rationale as [NginxVhost]:
+  /// origin must answer on :80 for ACME and for Cloudflare Flexible / mixed
+  /// edge SSL modes. TLS is enabled automatically when
+  /// `/etc/letsencrypt/live/<hostname>/` exists (written by [Applier.issueCert]).
+  String _serverFor(String hostname, String locations) {
+    final http = '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+$locations}
+''';
+    if (!letsEncryptReady(hostname)) return http;
+    return '''
+$http
+server {
+${_sslListenPreamble(hostname)}    server_name $hostname;
+$locations}
+''';
+  }
+
   String render() {
-    final console = (consoleHostname != null &&
-            consoleHostname!.isNotEmpty &&
-            consolePort != null)
-        ? _consoleServer()
-        : '';
-    return '# Managed by gisila-agent (minio) — do not edit by hand.\n'
-        '${_apiServer()}$console';
+    final body = StringBuffer()
+      ..writeln('# Managed by gisila-agent (minio) — do not edit by hand.')
+      ..write(_serverFor(hostname, _apiLocations));
+    if (consoleHostname != null &&
+        consoleHostname!.isNotEmpty &&
+        consolePort != null) {
+      body.write(_serverFor(consoleHostname!, _consoleLocations));
+    }
+    return body.toString();
   }
 }
 

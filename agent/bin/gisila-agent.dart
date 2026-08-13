@@ -2794,7 +2794,7 @@ Future<void> _storage(List<String> args) async {
   if (args.isEmpty) {
     stderr.writeln('Usage: gisila-agent storage '
         '<install-minio|uninstall-minio|start-minio|stop-minio|'
-        'create-bucket|delete-bucket> [flags]');
+        'expose-minio|unexpose-minio|create-bucket|delete-bucket> [flags]');
     exitCode = 64;
     return;
   }
@@ -3021,8 +3021,9 @@ Future<void> _minioUninstall({
 /// (MinIO itself only binds 127.0.0.1). When [consoleHostname] is set, a second
 /// vhost fronts the web console on [consolePort] and MinIO's
 /// MINIO_BROWSER_REDIRECT_URL is updated so console logins/redirects use that
-/// host. With [tls], certbot obtains certs and rewrites the vhosts for HTTPS.
-/// Idempotent.
+/// host. With [tls], certbot obtains certs (`certonly`) and the vhost is
+/// re-rendered with `listen 443 ssl` — the same pattern as app vhosts, so a
+/// later expose does not wipe HTTPS. Idempotent.
 Future<void> _minioExpose({
   required String hostname,
   required int apiPort,
@@ -3043,12 +3044,16 @@ Future<void> _minioExpose({
     await _minioSetBrowserRedirect('$scheme://$consoleHost');
   }
 
-  await Applier().applyMinioVhost(
-    hostname: host,
-    apiPort: apiPort,
-    consoleHostname: consoleHost,
-    consolePort: consoleHost != null ? consolePort : null,
-  );
+  Future<void> apply() => Applier().applyMinioVhost(
+        hostname: host,
+        apiPort: apiPort,
+        consoleHostname: consoleHost,
+        consolePort: consoleHost != null ? consolePort : null,
+      );
+
+  // HTTP vhost first so ACME HTTP-01 can complete. If certs already exist,
+  // this pass already includes :443 (letsEncryptReady).
+  await apply();
 
   // TLS is best-effort: the HTTP (port 80) vhost is already serving, so a failed
   // certificate (almost always a missing DNS A record or a blocked port 80)
@@ -3058,7 +3063,7 @@ Future<void> _minioExpose({
   if (tls) {
     for (final h in [host, if (consoleHost != null) consoleHost]) {
       try {
-        await Applier().issueCertInstaller(h);
+        await Applier().issueCert(h);
       } catch (e) {
         tlsFailures.add(h);
         stderr.writeln('[agent] WARNING: could not obtain a TLS certificate for '
@@ -3068,6 +3073,10 @@ Future<void> _minioExpose({
             'the Public URL again to retry. (certbot: $e)');
       }
     }
+    // Re-render so newly issued certs get dedicated listen 443 ssl blocks.
+    // Unlike certbot --nginx installer mode, this keeps the vhost owned by
+    // gisila-agent — a later expose no longer wipes HTTPS.
+    await apply();
   }
 
   if (tlsFailures.isEmpty) {
