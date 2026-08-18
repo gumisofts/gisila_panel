@@ -174,7 +174,62 @@ class Priv {
     return res.stdout as String?;
   }
 
+  /// Ports this agent will never remove a `ufw allow` rule for — see
+  /// [ufwDeny]. Always includes 22 (the OpenSSH default, protected even if
+  /// sshd_config is missing/unreadable), plus every `Port` directive actually
+  /// declared in `/etc/ssh/sshd_config` or its `sshd_config.d/*.conf`
+  /// drop-ins, since many hardened hosts move SSH to a non-standard port —
+  /// one that would otherwise sail straight through callers' own
+  /// `port >= 1024` validation (AppsService, PostgresService, …).
+  ///
+  /// Computed once per agent invocation (the agent is a short-lived CLI
+  /// process, spawned fresh per command), so this always reflects the
+  /// current sshd config, not a stale cached value.
+  static final Set<int> protectedPorts = _detectProtectedPorts();
+
+  static Set<int> _detectProtectedPorts() {
+    final ports = <int>{22};
+    for (final path in _sshdConfigPaths()) {
+      try {
+        for (final line in File(path).readAsLinesSync()) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+          final m = RegExp(r'^Port\s+(\d+)', caseSensitive: false)
+              .firstMatch(trimmed);
+          final p = m != null ? int.tryParse(m.group(1)!) : null;
+          if (p != null) ports.add(p);
+        }
+      } catch (_) {
+        // Missing/unreadable (permissions, non-OpenSSH host, …) — harmless;
+        // 22 is already covered by the default above.
+      }
+    }
+    return ports;
+  }
+
+  static List<String> _sshdConfigPaths() {
+    final paths = <String>['/etc/ssh/sshd_config'];
+    try {
+      final dropIns = Directory('/etc/ssh/sshd_config.d');
+      if (dropIns.existsSync()) {
+        paths.addAll(
+          dropIns
+              .listSync()
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.conf'))
+              .map((f) => f.path),
+        );
+      }
+    } catch (_) {
+      // Directory not present/listable — fine, just no drop-ins to scan.
+    }
+    return paths;
+  }
+
   /// Open a TCP port on the host firewall (no-op when ufw is absent).
+  ///
+  /// Unlike [ufwDeny], this only ever *adds* access, so it can't lock anyone
+  /// out and needs no [protectedPorts] guard.
   static Future<void> ufwAllow(int port) async {
     final has = await Process.run('sh', ['-c', 'command -v ufw']);
     if (has.exitCode != 0) return;
@@ -182,7 +237,24 @@ class Priv {
   }
 
   /// Close a previously-opened TCP port on the host firewall.
+  ///
+  /// Refuses to touch a port in [protectedPorts] (the host's SSH port(s)) —
+  /// on a host where ufw's default incoming policy is "deny", removing that
+  /// allow rule would cut off remote access with no way back in short of
+  /// console/rescue access. This is the one firewall operation the agent
+  /// performs that can *remove* reachability rather than only add it, so it
+  /// gets the extra safety net. Callers (Postgres/Mongo/App public exposure)
+  /// already reject ports below 1024, but a hardened host commonly moves SSH
+  /// to a non-standard high port, which that check alone wouldn't catch.
   static Future<void> ufwDeny(int port) async {
+    if (protectedPorts.contains(port)) {
+      stderr.writeln(
+        '[agent] refusing to close port $port/tcp on the host firewall — '
+        'it matches the configured SSH port, and removing that rule could '
+        'lock out remote access to this host.',
+      );
+      return;
+    }
     final has = await Process.run('sh', ['-c', 'command -v ufw']);
     if (has.exitCode != 0) return;
     await sudo('ufw', ['delete', 'allow', '$port/tcp'], failOk: true);

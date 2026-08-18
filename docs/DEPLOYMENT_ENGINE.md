@@ -20,6 +20,7 @@ Redis lists used as work queues:
 | `gisila:queue:lifecycle` | `LifecycleService.{start,stop,restart}` | worker | `{appId, action}` |
 | `gisila:queue:vhosts` | `DomainsService` | worker | `{appId, reason}` |
 | `gisila:queue:ssl` | `DomainsService.issueCert` | worker | `{appId, domainId, hostname}` |
+| `gisila:queue:network` | `AppsService.setNetworkExposure` | worker (`onNetworkExposure`) | `{appId, reason: 'expose'\|'unexpose'}` — reconciles the host firewall for a `tcp` app's port, no rebuild |
 | `gisila:queue:applications` | `ApplicationService.{install,remove}` | `ApplicationWorker` | `{action, applicationId, version?, applicationVersionId?, dropFamily?}` |
 
 Redis pubsub channels for live logs:
@@ -39,7 +40,10 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 
 1. `queued` — row inserted, message on the queue.
 2. `building` — worker picked it up, agent is provisioning + compiling.
-3. `deploying` — artifact ready, `apply-unit` + `apply-vhost` + restart.
+3. `deploying` — artifact ready, `apply-unit` + restart, plus (depending on
+   `App.exposeMode`) either `apply-vhost` (`web`) or `expose-port`/
+   `unexpose-port` (`tcp`; `internal` gets neither — see [Network exposure
+   modes](#network-exposure-modes)).
 4. `succeeded` — `App.status='running'`, `Deployment.isActive=true`,
    all previous deployments for this app have `isActive=false`.
 5. `failed` — `App.status='failed'`, `failureReason` captured.
@@ -52,8 +56,9 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 |---|---|---|
 | `provision` | Ensure Linux user + work-dir layout + `.env` file | ✓ |
 | `build` | Fetch source (git / zip / binary) and dispatch to the app's `RuntimePlugin.build()` via `--deploy-mode` | ✓ (per artifact) |
-| `apply-unit` | Render + write `gisila-<user>.service` and AppArmor profile, reload systemd | ✓ |
+| `apply-unit` | Render + write `gisila-<user>.service` and AppArmor profile, reload systemd. `--expose-mode` (`web`\|`tcp`\|`internal`) raises `LimitNOFILE` (see [Network exposure modes](#network-exposure-modes)) | ✓ |
 | `apply-vhost` | Render + write nginx vhost, `nginx -t`, reload | ✓ |
+| `expose-port` / `unexpose-port` | `ufw allow`/`ufw delete allow <port>/tcp` — opens/closes the host firewall for a `tcp` app's port (no nginx involved) | ✓ |
 | `issue-cert` | `certbot --nginx -d <host>` + reload nginx | ✓ (skip if cert exists & valid) |
 | `start` / `stop` / `restart` | `systemctl <action> gisila-<user>.service` | ✓ |
 | `uninstall` | Stop + disable unit, drop unit / profile / vhost | ✓ |
@@ -109,6 +114,59 @@ default promotes another installed version in its place.
 
 The build is always run as the **app's** Linux user via `runuser -u`, so
 even a compromised build step can only touch the app's own work-dir.
+
+## Network exposure modes
+
+`App.exposeMode` (`web` | `tcp` | `internal`, set at creation, immutable
+afterward) determines which network-facing step runs during a deployment
+instead of `apply-vhost`:
+
+- **`web`** (default) — unchanged from above: `apply-vhost` renders the
+  nginx reverse proxy (+ optional `issue-cert` once a Domain is attached).
+- **`tcp`** — no nginx, no domain. The app must bind `0.0.0.0:<internalPort>`
+  itself (nothing proxies to it). After `apply-unit`/`restart`, the worker
+  calls `expose-port --port <internalPort>` if `App.publiclyReachable` or
+  `unexpose-port` otherwise — this is the exact same `ufw allow`/`ufw delete
+  allow` mechanism `PostgresService`/`MongoService` already use for public
+  database access, just applied to an app's own port instead of a database
+  port. Flipping `publiclyReachable` later (`POST /apps/{id}/network`)
+  re-runs just this step via `gisila:queue:network`, without a redeploy.
+
+  **File descriptors.** A `web` app never holds more than a handful of
+  sockets open — Nginx terminates every client connection and pools a small,
+  bounded number of upstream connections to the app regardless of how many
+  clients it's serving. A `tcp` (or `internal`) app has no such multiplexer:
+  every client connection is a raw socket, and therefore a file descriptor,
+  held by the app process itself. `apply-unit` takes `--expose-mode`
+  precisely for this — `SystemdUnit` raises `LimitNOFILE` from `4096` to
+  `65536` whenever `exposeMode != 'web'`, mirroring the same distinction
+  already made for direct-socket services like MongoDB (`LimitNOFILE=64000`)
+  and MinIO (`65536`) vs. nginx-proxied ones like pgAdmin (`4096`).
+- **`internal`** — no nginx, no domain, no firewall rule ever opened. The app
+  is reachable only via `127.0.0.1:<internalPort>` from other local
+  processes (e.g. a sidecar/worker fronted by a `web` app on the same host).
+
+`DomainsService.add` rejects attaching a Domain to a `tcp`/`internal` app
+(422) since there is no vhost for a hostname to point at. Teardown
+(`_destroyApp`) always runs `unexpose-port` first for a `tcp` app so the
+firewall hole never outlives the app.
+
+**Never locking out SSH.** `expose-port`/`unexpose-port` are thin wrappers
+around [`Priv.ufwAllow`/`Priv.ufwDeny`](../agent/lib/runtime/priv.dart) — the
+same helpers `PostgresService`/`MongoService` public exposure already use
+(the Postgres agent code has its own `_ufwAllow`/`_ufwDeny`, but they now just
+delegate to `Priv`'s, so this applies there too). Opening a port
+(`ufwAllow`) can never lock anyone out, but *closing* one (`ufwDeny`) can —
+if it happens to be the port an operator is SSH'd in on, and ufw's default
+incoming policy is deny, removing that rule cuts off remote access with no
+way back in short of console/rescue access. `Priv.ufwDeny` guards against
+this unconditionally: it refuses to touch a port matching `22` or any `Port`
+directive it finds in `/etc/ssh/sshd_config`/`sshd_config.d/*.conf` (many
+hardened hosts move SSH off 22, which alone would sail past every caller's
+own `port >= 1024` validation). Neither this feature nor any existing caller
+ever runs `ufw enable`/`ufw --force enable`/`ufw default …`/`ufw reset` — the
+panel only ever adds or removes single `allow <port>/tcp` rules on a
+firewall the operator chose to enable themselves.
 
 ## Filesystem layout per app
 

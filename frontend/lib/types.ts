@@ -107,6 +107,15 @@ export interface App {
   mediaEnabled?: boolean | null;
   mediaMaxUploadMb?: number | null;
   deployKeyId?: number | null;
+  // Network exposure. Set at creation, immutable afterward.
+  //   web      — Nginx reverse proxy + optional Domain/TLS (default).
+  //   tcp      — direct port, no Nginx/domain; publiclyReachable controls
+  //              whether the host firewall has the port open.
+  //   internal — no public exposure at all.
+  exposeMode: ExposeMode;
+  // Only meaningful when exposeMode === "tcp". Editable post-creation via
+  // POST /apps/{id}/network.
+  publiclyReachable?: boolean | null;
   memoryMbLimit: number;
   cpuQuotaPercent: number;
   tasksLimit: number;
@@ -303,6 +312,14 @@ export const DEPLOY_MODE_LABEL: Record<DeployMode, string> = {
   build_execute: "Build → Execute",
   direct_run: "Direct Run",
   static_publish: "Static Publish",
+};
+
+export type ExposeMode = "web" | "tcp" | "internal";
+
+export const EXPOSE_MODE_LABEL: Record<ExposeMode, string> = {
+  web: "Web",
+  tcp: "TCP service",
+  internal: "Internal only",
 };
 
 // ── Managed services ─────────────────────────────────────────────────────────

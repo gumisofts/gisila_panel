@@ -33,12 +33,13 @@ import type {
   Application,
   ApplicationDef,
   DeployMode,
+  ExposeMode,
   ListResponse,
   Project,
   SshKey,
   Team,
 } from "@/lib/types";
-import { DEPLOY_MODE_LABEL } from "@/lib/types";
+import { DEPLOY_MODE_LABEL, EXPOSE_MODE_LABEL } from "@/lib/types";
 import { versionItems } from "../_runtime-versions";
 import "../_apps.scss";
 
@@ -109,6 +110,10 @@ export default function NewAppPage() {
     deployKeyId: "" as string | number,
     // Internal port
     internalPort: "",
+    // Network exposure — web (default) | tcp | internal. Immutable after
+    // creation.
+    exposeMode: "web" as ExposeMode,
+    publiclyReachable: true,
   });
   const [loading, setLoading] = useState(false);
 
@@ -187,6 +192,12 @@ export default function NewAppPage() {
         sourceSubdir: form.sourceSubdir || undefined,
         buildCommand: form.buildCommand || undefined,
         startCommand: form.startCommand || undefined,
+        // Static sites are always web-exposed (Nginx serves the files
+        // directly) — exposeMode only applies to process-backed runtimes.
+        exposeMode: isStatic ? "web" : form.exposeMode,
+        ...(!isStatic && form.exposeMode === "tcp"
+          ? { publiclyReachable: form.publiclyReachable }
+          : {}),
       };
       if (isPython) {
         payload.pythonVersion = form.pythonVersion;
@@ -365,6 +376,67 @@ export default function NewAppPage() {
                 }
                 helperText="The port your app listens on (1024–65535). Must be unique across all apps."
               />
+            )}
+
+            {/* Exposure — how the app reaches the network. Static sites are
+                always Nginx-served, so the picker doesn't apply to them. */}
+            {!isStatic && (
+              <div className="gisila-tile-grid gisila-tile-grid--3">
+                <TileGroup
+                  name="exposeMode"
+                  legend="Exposure"
+                  valueSelected={form.exposeMode}
+                  onChange={(selection) =>
+                    set("exposeMode", selection as ExposeMode)
+                  }
+                >
+                  {(["web", "tcp", "internal"] as ExposeMode[]).map((m) => (
+                    <RadioTile key={m} id={`expose-mode-${m}`} value={m}>
+                      <span className="gisila-app-form__tile-title">
+                        {EXPOSE_MODE_LABEL[m]}
+                      </span>
+                      <span className="gisila-app-form__tile-desc">
+                        {m === "web"
+                          ? "Nginx reverse proxy + a domain, TLS included."
+                          : m === "tcp"
+                            ? "Direct TCP port, no Nginx/domain — for custom protocols (game servers, MQTT, gRPC, …)."
+                            : "No public exposure — background workers, sidecars reachable only from localhost."}
+                      </span>
+                    </RadioTile>
+                  ))}
+                </TileGroup>
+              </div>
+            )}
+
+            {!isStatic && form.exposeMode === "tcp" && (
+              <Tile>
+                <Stack gap={5}>
+                  <div className="gisila-app-form__banner">
+                    <Tag type="purple" size="sm">TCP service</Tag>
+                    <span className="gisila-app-form__hint">
+                      No reverse proxy in front — the app talks directly to clients
+                    </span>
+                  </div>
+
+                  <Checkbox
+                    id="publiclyReachable"
+                    labelText="Publicly reachable"
+                    checked={form.publiclyReachable}
+                    onChange={(_event, { checked }) =>
+                      set("publiclyReachable", checked)
+                    }
+                    helperText="Opens the port on the host firewall. Turn this off to keep the app reachable only from other local processes."
+                  />
+
+                  <InlineNotification
+                    kind="warning"
+                    lowContrast
+                    hideCloseButton
+                    title="Bind to 0.0.0.0, not 127.0.0.1"
+                    subtitle="Your app must listen on 0.0.0.0:$PORT — there is no Nginx in front to reach it via loopback."
+                  />
+                </Stack>
+              </Tile>
             )}
 
             {/* ── Python-specific section ──────────────────────────────────── */}

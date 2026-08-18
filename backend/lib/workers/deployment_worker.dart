@@ -236,6 +236,10 @@ class DeploymentWorker {
         '--memory-mb', '${app.memoryMbLimit ?? 256}',
         '--cpu-quota', '${app.cpuQuotaPercent ?? 50}',
         '--tasks-max', '${app.tasksLimit ?? 100}',
+        // tcp/internal apps bind their port directly and terminate every
+        // client socket themselves (no nginx multiplexing) — the agent uses
+        // this to raise the unit's file-descriptor ceiling accordingly.
+        '--expose-mode', app.exposeMode ?? 'web',
         // Python-specific unit options.
         if (app.runtime == 'python') ...[
           '--python-mode',
@@ -289,6 +293,25 @@ class DeploymentWorker {
           if (app.celeryBeatEnabled == true) '--celery-beat',
         ],
       ], deploymentId: deploymentId);
+
+      // Non-web exposure (tcp/internal) has no Nginx vhost or Domain at all —
+      // reconcile the firewall instead (tcp) or leave the app reachable only
+      // via 127.0.0.1 (internal). Either way, skip apply-vhost entirely.
+      if (app.exposeMode != null && app.exposeMode != 'web') {
+        if (app.exposeMode == 'tcp' && app.internalPort != null) {
+          await _runAgent([
+            app.publiclyReachable == true ? 'expose-port' : 'unexpose-port',
+            '--port', '${app.internalPort}',
+          ], deploymentId: deploymentId);
+        }
+        await _runAgent(
+            ['restart', '--user', app.linuxUser!, '--runtime', app.runtime],
+            deploymentId: deploymentId);
+        await _markStatus(deploymentId, 'succeeded', activate: true, app: app);
+        await _publishBuildLog(deploymentId,
+            stream: 'system', line: 'Deployment succeeded.');
+        return;
+      }
 
       final appDomains = await Query<Domain>(DomainTable.metadata)
           .where(DomainTable.appId.eq(app.id!))
@@ -421,6 +444,13 @@ class DeploymentWorker {
         .map((d) => d.hostname!)
         .toList();
 
+    // A tcp app's firewall hole must always be closed on teardown, even if
+    // it was never explicitly toggled off — otherwise the port stays open on
+    // the host after the app (and its record of ever having existed) is gone.
+    if (app.exposeMode == 'tcp' && app.internalPort != null) {
+      await _runAgent(['unexpose-port', '--port', '${app.internalPort}']);
+    }
+
     await _runAgent([
       'uninstall',
       '--app-id', '${app.id}',
@@ -477,6 +507,22 @@ class DeploymentWorker {
         .where(ProjectTable.id.eq(projectId))
         .delete()
         .run(database.context());
+  }
+
+  /// Reconcile a `tcp` app's firewall exposure without a full redeploy —
+  /// enqueued by `AppsService.setNetworkExposure` whenever the
+  /// `publiclyReachable` toggle changes.
+  Future<void> onNetworkExposure(Map<String, Object?> payload) async {
+    final appId = payload['appId'] as int?;
+    if (appId == null) return;
+    final app = await _findApp(appId);
+    if (app == null || app.exposeMode != 'tcp' || app.internalPort == null) {
+      return;
+    }
+    await _runAgent([
+      app.publiclyReachable == true ? 'expose-port' : 'unexpose-port',
+      '--port', '${app.internalPort}',
+    ]);
   }
 
   Future<void> onVhost(Map<String, Object?> payload) async {

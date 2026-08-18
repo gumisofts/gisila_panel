@@ -30,7 +30,7 @@ User ──< TeamMember >── Team ──< Project ──< App ──< Deploym
 | Table | Purpose |
 |---|---|
 | `projects` | A grouping of related apps within a team. |
-| `apps` | A deployable service. Holds the runtime, source config, sandbox limits, and the immutable Linux primitives (`linux_user`, `work_dir`, `internal_port`). |
+| `apps` | A deployable service. Holds the runtime, source config, sandbox limits, and the immutable Linux primitives (`linux_user`, `work_dir`, `internal_port`). `expose_mode` (`web`\|`tcp`\|`internal`, immutable) picks how it reaches the network — see [DEPLOYMENT_ENGINE.md](DEPLOYMENT_ENGINE.md#network-exposure-modes); `publicly_reachable` is only meaningful for `tcp` and is the one exposure field editable post-creation. |
 | `env_vars` | Per-app `KEY=value` pairs. `is_secret=true` hides the value in the UI; the worker still writes them into `<work_dir>/.env`. |
 
 ### Deployments & builds
@@ -44,7 +44,7 @@ User ──< TeamMember >── Team ──< Project ──< App ──< Deploym
 
 | Table | Purpose |
 |---|---|
-| `domains` | Custom hostnames + SSL state. `ssl_status` mirrors the certbot lifecycle. |
+| `domains` | Custom hostnames + SSL state. `ssl_status` mirrors the certbot lifecycle. Only valid for `expose_mode='web'` apps — rejected otherwise. |
 
 ### Observability
 

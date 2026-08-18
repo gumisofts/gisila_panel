@@ -80,6 +80,12 @@ class CreateAppForm extends Form {
   // The service requires it for every non-static runtime.
   final internalPort = IntField(name: 'internalPort');
 
+  // web (default) | tcp | internal — set once at creation, immutable
+  // afterward. See kExposeModes in apps_service.dart.
+  final exposeMode = StringField(name: 'exposeMode');
+  // Only meaningful when exposeMode = tcp.
+  final publiclyReachable = BoolField(name: 'publiclyReachable');
+
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[
         projectId,
@@ -122,6 +128,8 @@ class CreateAppForm extends Form {
         mediaMaxUploadMb,
         deployKeyId,
         internalPort,
+        exposeMode,
+        publiclyReachable,
       ];
 }
 
@@ -218,6 +226,16 @@ class BulkEnvVarForm extends Form {
 
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[entries];
+}
+
+/// `POST /apps/{id}/network` — toggle firewall exposure for a `tcp` app.
+class NetworkExposureForm extends Form {
+  final publiclyReachable =
+      BoolField(name: 'publiclyReachable', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() =>
+      <FormField<Object?>>[publiclyReachable];
 }
 
 /// `POST /apps/{id}/exec` — run a one-off command in the app environment.

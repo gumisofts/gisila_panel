@@ -29,6 +29,13 @@ class DomainsService extends Service {
     final appsSvc = AppsService();
     appsSvc.attach(ctx);
     final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
+    if (app.exposeMode != null && app.exposeMode != 'web') {
+      throw BadRequest(
+        'Domains are only supported for web apps. This app is exposed as '
+        '"${app.exposeMode}" — see its Overview tab for the direct '
+        'connection info.',
+      );
+    }
 
     final host = hostname.trim().toLowerCase();
     final existing = await Query<Domain>(DomainTable.metadata)

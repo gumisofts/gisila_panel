@@ -79,6 +79,8 @@ class AppsApi {
       mediaEnabled: form.mediaEnabled.value,
       mediaMaxUploadMb: form.mediaMaxUploadMb.value,
       deployKeyId: form.deployKeyId.value,
+      exposeMode: form.exposeMode.value,
+      publiclyReachable: form.publiclyReachable.value,
     );
     return app.toJson();
   }
@@ -241,6 +243,27 @@ class AppsApi {
         }),
       );
     }
+    return app.toJson();
+  }
+
+  // ── Network exposure (tcp apps) ─────────────────────────────────────
+
+  /// Toggle whether a `tcp`-exposed app's port is opened on the host
+  /// firewall. Reconciled by the worker via `expose-port`/`unexpose-port` —
+  /// see `DeploymentWorker.onNetworkExposure`.
+  @Post('/{id}/network', summary: 'Toggle public reachability for a tcp app')
+  Future<Map<String, Object?>> network(
+    int id,
+    NetworkExposureForm form,
+    AppsService apps,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final app = await apps.setNetworkExposure(
+      user,
+      id,
+      publiclyReachable: form.publiclyReachable.value!,
+    );
     return app.toJson();
   }
 

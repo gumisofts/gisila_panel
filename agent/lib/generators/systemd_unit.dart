@@ -309,6 +309,7 @@ class SystemdUnit {
     this.workingDirectory,
     this.writableSource = false,
     this.envVars = const {},
+    this.directSocket = false,
   });
 
   final int appId;
@@ -321,6 +322,16 @@ class SystemdUnit {
   final int tasksMax;
   final String? apparmorProfile;
   final Map<String, String> envVars;
+
+  /// True for `tcp`/`internal`-exposed apps, which bind their port and
+  /// terminate every client socket themselves — unlike a `web` app, where
+  /// Nginx sits in front and pools a small, bounded number of upstream
+  /// connections no matter how many clients it serves. Raises `LimitNOFILE`
+  /// well above the default so a single busy TCP service (game server, MQTT
+  /// broker, …) can't run out of file descriptors under normal load. Mirrors
+  /// the same distinction already made for MongoDB (`LimitNOFILE=64000`) and
+  /// MinIO (`65536`) vs. Nginx-proxied services like pgAdmin (`4096`).
+  final bool directSocket;
 
   /// When set (e.g. for Node.js or Bun deployments with a pinned version),
   /// this directory is prepended to the service's PATH so commands like
@@ -534,7 +545,7 @@ ${apparmorProfile != null ? 'AppArmorProfile=$apparmorProfile\n' : ''}# ── R
 MemoryMax=${memoryMb}M
 CPUQuota=$cpuQuotaPercent%
 TasksMax=$tasksMax
-LimitNOFILE=4096
+LimitNOFILE=${directSocket ? 65536 : 4096}
 
 [Install]
 WantedBy=multi-user.target

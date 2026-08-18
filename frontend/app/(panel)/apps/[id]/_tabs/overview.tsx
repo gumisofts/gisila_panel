@@ -8,8 +8,24 @@ import {
   Tile,
 } from "@carbon/react";
 import { formatRelative } from "@/lib/utils";
-import { DEPLOY_MODE_LABEL, type App } from "@/lib/types";
+import { DEPLOY_MODE_LABEL, EXPOSE_MODE_LABEL, type App } from "@/lib/types";
 import "../_app-detail.scss";
+
+/// Mirrors the header's connection-info line — see `bindAddressLabel` in
+/// `../page.tsx`. Duplicated rather than imported to keep this a pure
+/// presentational component with no dependency on the page module.
+function bindAddress(app: App): string {
+  if (!app.internalPort) return "—";
+  if (app.exposeMode === "tcp") {
+    return `0.0.0.0:${app.internalPort} (${
+      app.publiclyReachable ? "public" : "not publicly reachable"
+    })`;
+  }
+  if (app.exposeMode === "internal") {
+    return `127.0.0.1:${app.internalPort} (internal only)`;
+  }
+  return `127.0.0.1:${app.internalPort}`;
+}
 
 export function OverviewTab({ app }: { app: App }) {
   return (
@@ -46,10 +62,12 @@ export function OverviewTab({ app }: { app: App }) {
               <Row label="Linux user" value={app.linuxUser} mono />
               <Row label="Work dir" value={app.workDir} mono />
               <Row
-                label="Internal port"
-                value={`127.0.0.1:${app.internalPort}`}
-                mono
+                label="Exposure"
+                value={
+                  app.exposeMode ? EXPOSE_MODE_LABEL[app.exposeMode] : "Web"
+                }
               />
+              <Row label="Address" value={bindAddress(app)} mono />
               <Row label="Memory limit" value={`${app.memoryMbLimit} MB`} />
               <Row label="CPU quota" value={`${app.cpuQuotaPercent}%`} />
               <Row label="Tasks max" value={app.tasksLimit} />

@@ -76,6 +76,7 @@ class Applier {
     String? workingDir,
     bool writableSource = false,
     Map<String, String> envVars = const {},
+    bool directSocket = false,
   }) async {
     if (isDocker) {
       await _applyUnitDocker(
@@ -104,6 +105,7 @@ class Applier {
         workingDir: workingDir,
         writableSource: writableSource,
         envVars: envVars,
+        directSocket: directSocket,
       );
     }
   }
@@ -150,6 +152,7 @@ class Applier {
     String? workingDir,
     bool writableSource = false,
     Map<String, String> envVars = const {},
+    bool directSocket = false,
   }) async {
     final profile = ApparmorProfile(
       linuxUser: linuxUser,
@@ -202,6 +205,7 @@ class Applier {
       workingDirectory: workingDir,
       writableSource: writableSource,
       envVars: envVars,
+      directSocket: directSocket,
     );
     final unitPath = '$systemdDir/gisila-$linuxUser.service';
     File(unitPath).writeAsStringSync(unit.render());

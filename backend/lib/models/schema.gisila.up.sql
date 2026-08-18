@@ -147,6 +147,8 @@ CREATE TABLE "apps" (
   "static_spa" BOOLEAN DEFAULT FALSE,
   "media_enabled" BOOLEAN DEFAULT FALSE,
   "media_max_upload_mb" INTEGER DEFAULT 25,
+  "expose_mode" VARCHAR(255) DEFAULT 'web',
+  "publicly_reachable" BOOLEAN DEFAULT FALSE,
   "memory_mb_limit" INTEGER DEFAULT 256,
   "cpu_quota_percent" INTEGER DEFAULT 50,
   "tasks_limit" INTEGER DEFAULT 100,

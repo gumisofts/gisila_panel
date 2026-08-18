@@ -44,6 +44,12 @@ Future<void> main(List<String> args) async {
       case 'apply-vhost':
         await _applyVhost(rest);
         break;
+      case 'expose-port':
+        await _exposePort(rest, allow: true);
+        break;
+      case 'unexpose-port':
+        await _exposePort(rest, allow: false);
+        break;
       case 'issue-cert':
         await _issueCert(rest);
         break;
@@ -124,6 +130,26 @@ Future<void> _provision(List<String> args) async {
   // redeploy (or a build that fails before apply-unit) would leave the app with
   // an empty env and break console management commands that source it.
   await Provisioner.ensureEnvFile(workDir, user, const {}, onlyIfMissing: true);
+}
+
+/// Open (`expose-port`) or close (`unexpose-port`) a `tcp`-exposed app's
+/// internal port on the host firewall.
+///
+/// This is the app equivalent of the `postgres expose`/`unexpose` firewall
+/// step (see `_ufwAllow`/`_ufwDeny` below) but skips all the TLS/nginx
+/// machinery those carry — a raw TCP app has no HTTP semantics to reverse
+/// proxy, so there is nothing else to reconcile here. No-op when `ufw` isn't
+/// installed (same as the Postgres/Mongo paths), and idempotent either way.
+Future<void> _exposePort(List<String> args, {required bool allow}) async {
+  final r = _parse(args, (p) {
+    p.addOption('port', mandatory: true);
+  });
+  final port = AgentValidators.requirePort(r['port'] as String?);
+  if (allow) {
+    await Priv.ufwAllow(port);
+  } else {
+    await Priv.ufwDeny(port);
+  }
 }
 
 Future<void> _build(List<String> args) async {
@@ -360,11 +386,17 @@ Future<void> _applyUnit(List<String> args) async {
     p.addFlag('celery-beat', defaultsTo: false);
     // Node.js / Bun runtime bin dir for PATH injection
     p.addOption('runtime-bin-dir');
+    // web (default) | tcp | internal — see App.exposeMode. Only affects the
+    // unit's LimitNOFILE: tcp/internal apps bind their port and terminate
+    // every client socket themselves (no nginx multiplexing in front), so
+    // they get a much higher fd ceiling than a proxied web app.
+    p.addOption('expose-mode', defaultsTo: 'web');
   });
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
   final runtime = r['runtime'] as String;
+  final directSocket = (r['expose-mode'] as String) != 'web';
 
   // ── Static: no process unit, no port needed ──────────────────────────────
   if (runtime == 'static') {
@@ -548,6 +580,7 @@ Future<void> _applyUnit(List<String> args) async {
     workingDir: unitWorkingDir,
     writableSource: unitWritableSource,
     envVars: envVars,
+    directSocket: directSocket,
   );
 }
 
@@ -1664,14 +1697,10 @@ Future<bool> _hasCommand(String name) async =>
 /// Open the standard SMTP/IMAP/POP3 ports when `ufw` is present. Harmless
 /// (failOk) when ufw is not installed or not active.
 Future<void> _mailOpenFirewall() async {
-  final has = await Process.run('sh', ['-c', 'command -v ufw']);
-  if (has.exitCode != 0) return; // ufw not installed — nothing to open
   // Port 80 is included so the Let's Encrypt HTTP-01 challenge can reach the
   // host for certificate issuance and renewal.
-  for (final port in <String>[
-    '80', '25', '465', '587', '143', '993', '110', '995'
-  ]) {
-    await _sudo('ufw', ['allow', '$port/tcp'], failOk: true);
+  for (final port in [80, 25, 465, 587, 143, 993, 110, 995]) {
+    await Priv.ufwAllow(port);
   }
 }
 
@@ -3965,18 +3994,16 @@ Future<void> _pgHbaSetPublic(int version, bool enable) async {
 }
 
 /// Open a TCP port on the host firewall (no-op when ufw is absent).
-Future<void> _ufwAllow(int port) async {
-  final has = await Process.run('sh', ['-c', 'command -v ufw']);
-  if (has.exitCode != 0) return;
-  await _sudo('ufw', ['allow', '$port/tcp'], failOk: true);
-}
+///
+/// Delegates to `Priv.ufwAllow`/`Priv.ufwDeny` — the single implementation
+/// shared with MongoDB and App `tcp` exposure — rather than keeping a second
+/// copy here, so the SSH-port safety net in [Priv.ufwDeny] (see its doc
+/// comment) always applies regardless of which caller triggers a firewall
+/// change.
+Future<void> _ufwAllow(int port) => Priv.ufwAllow(port);
 
 /// Close a previously-opened TCP port on the host firewall.
-Future<void> _ufwDeny(int port) async {
-  final has = await Process.run('sh', ['-c', 'command -v ufw']);
-  if (has.exitCode != 0) return;
-  await _sudo('ufw', ['delete', 'allow', '$port/tcp'], failOk: true);
-}
+Future<void> _ufwDeny(int port) => Priv.ufwDeny(port);
 
 Future<void> _pgDropDatabase(
     int version, int port, String dbName, String role) async {
@@ -4279,8 +4306,14 @@ Subcommands:
                    any specific app — the Application Management lifecycle)
   apply-unit    --app-id ID --user app_xxx --work-dir PATH --port N \\
                 [--start-command CMD] [--env-json JSON] \\
-                [--memory-mb MB] [--cpu-quota PCT] [--tasks-max N]
+                [--memory-mb MB] [--cpu-quota PCT] [--tasks-max N] \\
+                [--expose-mode web|tcp|internal]
+                  (tcp/internal raise the unit's LimitNOFILE — no nginx
+                   multiplexing in front, so the app holds one fd per
+                   client connection itself)
   apply-vhost   --app-id ID --port N [--hostname host …]
+  expose-port   --port N     (tcp apps: open the port on the host firewall)
+  unexpose-port --port N     (tcp apps: close the port on the host firewall)
   issue-cert    --hostname HOSTNAME
   start|stop|restart  --user app_xxx
   uninstall     --user app_xxx [--app-id ID]

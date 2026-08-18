@@ -28,6 +28,7 @@ import type {
   ListResponse,
   SshKey,
 } from "@/lib/types";
+import { EXPOSE_MODE_LABEL } from "@/lib/types";
 import { versionItems } from "../../_runtime-versions";
 import "../_app-detail.scss";
 
@@ -59,6 +60,101 @@ function VersionSelect({
     >
       {children}
     </Select>
+  );
+}
+
+/// `exposeMode` itself is immutable after creation (see `AppsService.create`),
+/// so this only ever shows it read-only. For `tcp` apps, `publiclyReachable`
+/// is the one thing that IS editable post-creation — via its own endpoint
+/// (not the generic PATCH) since toggling it must also reconcile the host
+/// firewall through the worker. Mirrors the Postgres/Mongo "Public access"
+/// card's button-based toggle rather than an auto-saving checkbox, so it's
+/// unambiguous when the change has actually been submitted.
+function NetworkExposureCard({
+  app,
+  onSaved,
+}: {
+  app: App;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const exposeMode = app.exposeMode ?? "web";
+
+  async function toggle(publiclyReachable: boolean) {
+    setBusy(true);
+    try {
+      await api(`/apps/${app.id}/network`, {
+        method: "POST",
+        body: JSON.stringify({ publiclyReachable }),
+      });
+      toast.success(
+        publiclyReachable
+          ? "Port opened to the public internet."
+          : "Port closed to the public internet.",
+      );
+      onSaved();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile>
+      <h3 className="gisila-app__tile-title">
+        Network exposure{" "}
+        <Tag type="purple" size="sm">
+          {EXPOSE_MODE_LABEL[exposeMode]}
+        </Tag>
+      </h3>
+      <Stack gap={5}>
+        {exposeMode === "web" && (
+          <p className="gisila-app__hint">
+            Reachable through the Nginx reverse proxy — see the Domains tab to
+            attach a hostname and TLS certificate.
+          </p>
+        )}
+        {exposeMode === "internal" && (
+          <p className="gisila-app__hint">
+            Not publicly exposed. Reachable only from other local processes on
+            this host, via <code>127.0.0.1:{app.internalPort}</code>.
+          </p>
+        )}
+        {exposeMode === "tcp" && (
+          <>
+            <p className="gisila-app__hint">
+              No reverse proxy — the app binds{" "}
+              <code>0.0.0.0:{app.internalPort}</code> directly.{" "}
+              {app.publiclyReachable
+                ? "The host firewall currently allows inbound connections on this port."
+                : "The host firewall is currently blocking inbound connections on this port."}
+            </p>
+            <div>
+              {app.publiclyReachable ? (
+                <Button
+                  kind="danger--tertiary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => toggle(false)}
+                >
+                  Close port to the internet
+                </Button>
+              ) : (
+                <Button
+                  kind="tertiary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => toggle(true)}
+                >
+                  Open port to the internet
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </Stack>
+    </Tile>
   );
 }
 
@@ -285,6 +381,8 @@ export function SettingsTab({
             />
           </Stack>
         </Tile>
+
+        <NetworkExposureCard app={app} onSaved={onSaved} />
 
         {/* Source */}
         {!isBinary && !isStatic && (

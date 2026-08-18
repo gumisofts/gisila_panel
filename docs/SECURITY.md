@@ -29,9 +29,18 @@ able to reach the panel's database / Redis directly.
 5. **Resources** — cgroups v2 `MemoryMax`, `CPUQuota`, `TasksMax`,
    `LimitNOFILE`. OOM-kill is local to the cgroup; one runaway tenant
    cannot starve the host.
-6. **Network** — `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
-   Nginx is the only public ingress; apps only listen on
-   `127.0.0.1:<assigned-port>` and never on the public interface.
+6. **Network** — `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. A
+   `web` app (the default) only ever listens on `127.0.0.1:<port>`; Nginx
+   is its sole public ingress. A `tcp`/`internal` app (see
+   [Network exposure modes](DEPLOYMENT_ENGINE.md#network-exposure-modes))
+   binds `0.0.0.0:<port>` itself, with public reachability gated by a host
+   firewall (`ufw`) rule the panel opens/closes explicitly — never by
+   default. Firewall changes never touch `ufw`'s default policy, and
+   [`Priv.ufwDeny`](../agent/lib/runtime/priv.dart) refuses to remove a rule
+   for any port that matches the host's configured SSH port (always `22`,
+   plus whatever `Port` directive `sshd_config`/`sshd_config.d` declares) —
+   so no combination of app config or worker bug can firewall the operator
+   out of the box over SSH.
 7. **TLS** — Let's Encrypt via `certbot --nginx`. Certs are renewed by
    the standard cron, not by the panel.
 8. **Privilege separation** — the API and worker run as the unprivileged

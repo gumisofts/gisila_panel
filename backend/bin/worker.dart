@@ -35,6 +35,7 @@ Future<void> main(List<String> args) async {
   queue.on('gisila:queue:teardown', deploymentWorker.onTeardown);
   queue.on('gisila:queue:vhosts', deploymentWorker.onVhost);
   queue.on('gisila:queue:ssl', deploymentWorker.onSsl);
+  queue.on('gisila:queue:network', deploymentWorker.onNetworkExposure);
   queue.on('gisila:queue:services', serviceWorker.onServiceJob);
   queue.on('gisila:queue:applications', applicationWorker.onApplicationJob);
   queue.on('gisila:queue:postgres', postgresWorker.onPostgresJob);

@@ -1577,6 +1577,8 @@ class App with Preloadable {
   final bool? staticSpa;
   final bool? mediaEnabled;
   final int? mediaMaxUploadMb;
+  final String? exposeMode;
+  final bool? publiclyReachable;
   final int? memoryMbLimit;
   final int? cpuQuotaPercent;
   final int? tasksLimit;
@@ -1627,6 +1629,8 @@ class App with Preloadable {
     this.staticSpa,
     this.mediaEnabled,
     this.mediaMaxUploadMb,
+    this.exposeMode,
+    this.publiclyReachable,
     this.memoryMbLimit,
     this.cpuQuotaPercent,
     this.tasksLimit,
@@ -1678,6 +1682,8 @@ class App with Preloadable {
     staticSpa: row['static_spa'] as bool?,
     mediaEnabled: row['media_enabled'] as bool?,
     mediaMaxUploadMb: row['media_max_upload_mb'] as int?,
+    exposeMode: row['expose_mode'] as String?,
+    publiclyReachable: row['publicly_reachable'] as bool?,
     memoryMbLimit: row['memory_mb_limit'] as int?,
     cpuQuotaPercent: row['cpu_quota_percent'] as int?,
     tasksLimit: row['tasks_limit'] as int?,
@@ -1739,6 +1745,8 @@ class App with Preloadable {
     'static_spa': staticSpa,
     'media_enabled': mediaEnabled,
     'media_max_upload_mb': mediaMaxUploadMb,
+    'expose_mode': exposeMode,
+    'publicly_reachable': publiclyReachable,
     'memory_mb_limit': memoryMbLimit,
     'cpu_quota_percent': cpuQuotaPercent,
     'tasks_limit': tasksLimit,
@@ -1802,6 +1810,8 @@ class App with Preloadable {
     bool? staticSpa,
     bool? mediaEnabled,
     int? mediaMaxUploadMb,
+    String? exposeMode,
+    bool? publiclyReachable,
     int? memoryMbLimit,
     int? cpuQuotaPercent,
     int? tasksLimit,
@@ -1851,6 +1861,8 @@ class App with Preloadable {
     staticSpa: staticSpa ?? this.staticSpa,
     mediaEnabled: mediaEnabled ?? this.mediaEnabled,
     mediaMaxUploadMb: mediaMaxUploadMb ?? this.mediaMaxUploadMb,
+    exposeMode: exposeMode ?? this.exposeMode,
+    publiclyReachable: publiclyReachable ?? this.publiclyReachable,
     memoryMbLimit: memoryMbLimit ?? this.memoryMbLimit,
     cpuQuotaPercent: cpuQuotaPercent ?? this.cpuQuotaPercent,
     tasksLimit: tasksLimit ?? this.tasksLimit,
@@ -2171,6 +2183,14 @@ class AppTable {
     table: 'apps',
     column: 'media_max_upload_mb',
   );
+  static const ColumnRef<String?> exposeMode = ColumnRef<String?>(
+    table: 'apps',
+    column: 'expose_mode',
+  );
+  static const ColumnRef<bool?> publiclyReachable = ColumnRef<bool?>(
+    table: 'apps',
+    column: 'publicly_reachable',
+  );
   static const ColumnRef<int?> memoryMbLimit = ColumnRef<int?>(
     table: 'apps',
     column: 'memory_mb_limit',
@@ -2245,6 +2265,8 @@ class AppTable {
       'static_spa',
       'media_enabled',
       'media_max_upload_mb',
+      'expose_mode',
+      'publicly_reachable',
       'memory_mb_limit',
       'cpu_quota_percent',
       'tasks_limit',

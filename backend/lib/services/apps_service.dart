@@ -1,13 +1,19 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/application_service.dart';
 import 'package:gisila_panel/services/projects_service.dart';
 import 'package:gisila_panel/utils/slugs.dart';
+
+/// Network exposure modes an [App] can pick at creation time. See the
+/// `expose_mode` column doc in `schema.gisila.yaml` for the full rationale.
+const kExposeModes = <String>{'web', 'tcp', 'internal'};
 
 /// CRUD + lifecycle helpers for [App] records.
 ///
@@ -84,6 +90,13 @@ class AppsService extends Service {
     // Static sites are served directly by Nginx and have no listening port.
     // Required for every other (service) runtime.
     int? port,
+    // web (default) | tcp | internal — see kExposeModes. Immutable after
+    // creation; forced to 'web' for runtime = static below.
+    String? exposeMode,
+    // Only meaningful when exposeMode = tcp. Whether the agent should open
+    // the host firewall for `port`. Defaults to true for tcp apps (that's
+    // the point of picking tcp exposure) and is ignored otherwise.
+    bool? publiclyReachable,
     String? gitUrl,
     String? gitBranch,
     // Optional subdirectory within the repo to build/run from, so a single
@@ -167,6 +180,19 @@ class AppsService extends Service {
       await _validatePort(port);
     }
 
+    // Static sites are always Nginx-served — there is no process to bind a
+    // port, so 'tcp'/'internal' exposure (which are about how a *process*
+    // reaches the network) is meaningless for them.
+    final resolvedExposeMode = isStatic ? 'web' : (exposeMode ?? 'web');
+    if (!kExposeModes.contains(resolvedExposeMode)) {
+      throw BadRequest(
+          'Invalid exposeMode "$resolvedExposeMode". Must be one of: '
+          '${kExposeModes.join(', ')}.');
+    }
+    if (isStatic && exposeMode != null && exposeMode != 'web') {
+      throw BadRequest('Static sites only support exposeMode "web".');
+    }
+
     final slug = Slug.make(name);
     final shortId = _randomId(6);
     final linuxUser = 'app_$shortId';
@@ -181,6 +207,10 @@ class AppsService extends Service {
       'linuxUser': linuxUser,
       'workDir': workDir,
       'internalPort': port,
+      'exposeMode': resolvedExposeMode,
+      'publiclyReachable': resolvedExposeMode == 'tcp'
+          ? (publiclyReachable ?? true)
+          : false,
       'applicationId': application.id,
       'deploymentMode': deploymentMode,
       'runtime': runtime,
@@ -224,7 +254,8 @@ class AppsService extends Service {
 
     await _logEvent(created.id!, actor, 'create',
         message: 'App created '
-            '(${port != null ? 'port $port, ' : ''}user $linuxUser).');
+            '(${port != null ? 'port $port, ' : ''}'
+            'exposure $resolvedExposeMode, user $linuxUser).');
     return created;
   }
 
@@ -238,6 +269,13 @@ class AppsService extends Service {
     if (patch.isEmpty) {
       throw BadRequest('No updatable fields provided.');
     }
+    // exposeMode is set once at creation — switching a live app between
+    // nginx-vhost wiring and firewall wiring is a teardown/rebuild operation,
+    // not a simple field edit. Use setNetworkExposure to flip the
+    // publiclyReachable toggle on an existing 'tcp' app instead.
+    if (patch.containsKey('exposeMode')) {
+      throw BadRequest('exposeMode cannot be changed after creation.');
+    }
     if (patch.containsKey('internalPort') && patch['internalPort'] != null) {
       await _validatePort(patch['internalPort'] as int, excludeAppId: app.id);
     }
@@ -247,6 +285,48 @@ class AppsService extends Service {
         .update(patch)
         .run(_db.context());
     return rows.first;
+  }
+
+  /// Toggle whether a `tcp`-exposed app's port is opened on the host
+  /// firewall. Mirrors `PostgresService.setPublicExposure` — patches the row
+  /// then enqueues a worker job that reconciles `ufw` without a full
+  /// redeploy. No-op on the DB side if the value is unchanged, but the job is
+  /// still enqueued so a previously-failed firewall reconcile can be retried
+  /// by re-submitting the same value.
+  Future<App> setNetworkExposure(
+    User actor,
+    int appId, {
+    required bool publiclyReachable,
+  }) async {
+    final app = await requireAppRole(actor, appId, TeamRole.developer);
+    if (app.exposeMode != 'tcp') {
+      throw BadRequest(
+          'Network exposure only applies to apps with exposeMode "tcp".');
+    }
+    if (app.internalPort == null) {
+      throw BadRequest('App has no internal port to expose.');
+    }
+    await Query<App>(AppTable.metadata)
+        .where(AppTable.id.eq(app.id!))
+        .update(<String, Object?>{
+      'publiclyReachable': publiclyReachable,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    }).run(_db.context());
+
+    await RedisClient.instance.rpush(
+      'gisila:queue:network',
+      jsonEncode(<String, Object?>{
+        'appId': app.id,
+        'reason': publiclyReachable ? 'expose' : 'unexpose',
+      }),
+    );
+
+    await _logEvent(app.id!, actor, 'network',
+        message: publiclyReachable
+            ? 'Port ${app.internalPort} opened to the public internet.'
+            : 'Port ${app.internalPort} closed to the public internet.');
+
+    return findForUser(actor, appId);
   }
 
   Future<void> _validatePort(int port, {int? excludeAppId}) async {

@@ -94,7 +94,9 @@ extension AppsApiGisilaDoc on AppsApi {
           'format': 'int64'
         },
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
+        'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'exposeMode': <String, Object?>{'type': 'string'},
+        'publiclyReachable': <String, Object?>{'type': 'boolean'}
       }
     });
     spec.putSchema('UpdateAppForm', <String, Object?>{
@@ -159,6 +161,12 @@ extension AppsApiGisilaDoc on AppsApi {
         },
         'deployKeyId': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'internalPort': <String, Object?>{'type': 'integer', 'format': 'int64'}
+      }
+    });
+    spec.putSchema('NetworkExposureForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'publiclyReachable': <String, Object?>{'type': 'boolean'}
       }
     });
     spec.putSchema('ExecCommandForm', <String, Object?>{
@@ -463,6 +471,63 @@ extension AppsApiGisilaDoc on AppsApi {
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/apps/<id>/network';
+      final openApiPath = '$prefix/apps/{id}/network';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, NetworkExposureForm.new);
+                final apps = ctx.service<AppsService>();
+                final result = await this.network(id, form, apps, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Toggle public reachability for a tcp app',
+            tags: <String>['Apps'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/NetworkExposureForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

@@ -434,6 +434,30 @@ App:
     media_max_upload_mb:
       type: integer
       default: 25            # per-app nginx client_max_body_size for uploads
+    # Network exposure. Set at creation and immutable afterward — changing it
+    # would mean tearing down one wiring (nginx vhost) and building the other
+    # (firewall rule) for a live app, which is a much riskier operation than
+    # picking it up front.
+    #   web      — Nginx reverse proxy + optional Domain/TLS (default, current
+    #              behavior for every existing app).
+    #   tcp      — no Nginx/domain; the app binds 0.0.0.0:internal_port itself
+    #              and the agent opens the host firewall for that port when
+    #              publicly_reachable is true. For arbitrary TCP-based custom
+    #              protocols (game servers, MQTT, gRPC, bespoke binary
+    #              protocols, …) that don't speak HTTP.
+    #   internal — no public exposure at all (background workers, sidecars
+    #              reachable only via 127.0.0.1 from other local processes).
+    # Forced to 'web' when runtime = static (Nginx serves static sites
+    # directly; there is no process to bind a port).
+    expose_mode:
+      type: varchar
+      default: web
+    # Only meaningful when expose_mode = tcp. Toggles whether the agent has
+    # opened the host firewall (ufw) for internal_port. Editable post-creation
+    # (unlike expose_mode itself) — mirrors PostgresInstance.is_public.
+    publicly_reachable:
+      type: boolean
+      default: false
     # Resource limits (translated into systemd MemoryMax / CPUQuota / TasksMax).
     memory_mb_limit:
       type: integer

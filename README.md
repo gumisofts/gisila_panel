@@ -12,6 +12,10 @@ Works like Heroku / Railway / Render / Coolify — but instead of relying on Doc
 - Minimal overhead — straight `exec` of native binaries via systemd.
 - Secure multi-tenant — every app gets its own Linux user + sandbox.
 - Optimized for compiled backend apps.
+- Not just HTTP — first-class support for arbitrary TCP-based custom
+  applications (game servers, MQTT/gRPC/bespoke binary protocols), with the
+  same sandboxing/resource limits as a web app but no forced Nginx vhost or
+  domain (see [Network exposure modes](docs/ARCHITECTURE.md#network-exposure-modes)).
 - Open-source first, self-hostable, modern UI/UX.
 
 ## Tech stack

@@ -32,6 +32,7 @@ import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { App } from "@/lib/types";
+import { EXPOSE_MODE_LABEL } from "@/lib/types";
 import { Page, PageHeader } from "@/components/page";
 import { OverviewTab } from "./_tabs/overview";
 import { DeploymentsTab } from "./_tabs/deployments";
@@ -65,6 +66,24 @@ function statusTagType(status: string): TagType {
     default:
       return "gray";
   }
+}
+
+/// How the app's `internalPort` reaches the network, for the header/overview
+/// connection-info line. `web` apps are only ever proxied via Nginx from
+/// loopback; `tcp` apps bind every interface themselves (and are reachable
+/// from the internet iff `publiclyReachable`); `internal` apps never leave
+/// the box.
+function bindAddressLabel(app: App): string {
+  if (!app.internalPort) return "no port";
+  if (app.exposeMode === "tcp") {
+    return `0.0.0.0:${app.internalPort} (${
+      app.publiclyReachable ? "public" : "not publicly reachable"
+    })`;
+  }
+  if (app.exposeMode === "internal") {
+    return `127.0.0.1:${app.internalPort} (internal only)`;
+  }
+  return `127.0.0.1:${app.internalPort}`;
 }
 
 export default function AppDetailPage() {
@@ -161,11 +180,16 @@ export default function AppDetailPage() {
               <Tag type={statusTagType(app.status)} size="sm">
                 {app.status}
               </Tag>
+              {app.exposeMode && app.exposeMode !== "web" && (
+                <Tag type="purple" size="sm">
+                  {EXPOSE_MODE_LABEL[app.exposeMode]}
+                </Tag>
+              )}
             </span>
           }
           description={
             <span className="gisila-app__mono">
-              {app.linuxUser} · 127.0.0.1:{app.internalPort} · deployed{" "}
+              {app.linuxUser} · {bindAddressLabel(app)} · deployed{" "}
               {formatRelative(app.lastDeployedAt)}
             </span>
           }
@@ -252,38 +276,53 @@ export default function AppDetailPage() {
 
         {/* Carbon renders every TabPanel and only hides the inactive ones, so the
             body of each tab is gated on the selected index. Several tabs open a
-            WebSocket or start polling the moment they mount. */}
-        <Tabs
-          selectedIndex={tabIndex}
-          onChange={({ selectedIndex }) => setTabIndex(selectedIndex)}
-        >
-          <TabList aria-label="App sections" contained>
-            <Tab>Overview</Tab>
-            <Tab>Deployments</Tab>
-            <Tab>Environment</Tab>
-            <Tab>Domains</Tab>
-            <Tab>Logs</Tab>
-            <Tab>Console</Tab>
-            <Tab>Metrics</Tab>
-            <Tab>Storage</Tab>
-            <Tab>Settings</Tab>
-          </TabList>
-          <TabPanels>
-            <TabPanel>{tabIndex === 0 && <OverviewTab app={app} />}</TabPanel>
-            <TabPanel>
-              {tabIndex === 1 && <DeploymentsTab appId={appId} />}
-            </TabPanel>
-            <TabPanel>{tabIndex === 2 && <EnvsTab appId={appId} />}</TabPanel>
-            <TabPanel>{tabIndex === 3 && <DomainsTab appId={appId} />}</TabPanel>
-            <TabPanel>{tabIndex === 4 && <LogsTab appId={appId} />}</TabPanel>
-            <TabPanel>{tabIndex === 5 && <ConsoleTab appId={appId} />}</TabPanel>
-            <TabPanel>{tabIndex === 6 && <MetricsTab appId={appId} />}</TabPanel>
-            <TabPanel>{tabIndex === 7 && <StorageTab appId={appId} />}</TabPanel>
-            <TabPanel>
-              {tabIndex === 8 && <SettingsTab app={app} onSaved={mutate} />}
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
+            WebSocket or start polling the moment they mount.
+
+            Domains only make sense for `web` apps (nginx vhost + TLS) — `tcp`/
+            `internal` apps have no domain to attach, so the tab is omitted
+            rather than shown empty/disabled. Since tabs are matched by
+            position, this is built from an array instead of a fixed JSX list. */}
+        {(() => {
+          const isWeb = !app.exposeMode || app.exposeMode === "web";
+          const tabs: { label: string; content: React.ReactNode }[] = [
+            { label: "Overview", content: <OverviewTab app={app} /> },
+            {
+              label: "Deployments",
+              content: <DeploymentsTab appId={appId} />,
+            },
+            { label: "Environment", content: <EnvsTab appId={appId} /> },
+            ...(isWeb
+              ? [{ label: "Domains", content: <DomainsTab appId={appId} /> }]
+              : []),
+            { label: "Logs", content: <LogsTab appId={appId} /> },
+            { label: "Console", content: <ConsoleTab appId={appId} /> },
+            { label: "Metrics", content: <MetricsTab appId={appId} /> },
+            { label: "Storage", content: <StorageTab appId={appId} /> },
+            {
+              label: "Settings",
+              content: <SettingsTab app={app} onSaved={mutate} />,
+            },
+          ];
+          return (
+            <Tabs
+              selectedIndex={Math.min(tabIndex, tabs.length - 1)}
+              onChange={({ selectedIndex }) => setTabIndex(selectedIndex)}
+            >
+              <TabList aria-label="App sections" contained>
+                {tabs.map((t) => (
+                  <Tab key={t.label}>{t.label}</Tab>
+                ))}
+              </TabList>
+              <TabPanels>
+                {tabs.map((t, i) => (
+                  <TabPanel key={t.label}>
+                    {tabIndex === i && t.content}
+                  </TabPanel>
+                ))}
+              </TabPanels>
+            </Tabs>
+          );
+        })()}
       </div>
     </Page>
   );
