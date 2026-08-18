@@ -7,6 +7,7 @@ import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
+import 'package:gisila_panel/workers/health_monitor_worker.dart';
 import 'package:gisila_panel/workers/host_stats_sampler.dart';
 import 'package:gisila_panel/workers/job_queue.dart';
 import 'package:gisila_panel/workers/mail_worker.dart';
@@ -54,6 +55,11 @@ Future<void> main(List<String> args) async {
   // Self-driven evaluator that walks enabled alert rules and fires/resolves
   // notifications + alert emails.
   AlertEvaluator(database).start();
+
+  // Self-driven prober for mail stack / managed service / runtime toolchain
+  // health — beyond lifecycle status, catches drift like a crashed daemon or
+  // a broken toolchain, and auto-repairs mail + services.
+  HealthMonitorWorker(database).start();
 
   logger.i('gisila-worker: starting');
 

@@ -247,6 +247,15 @@ class MailService extends Service {
         'gisila:queue:mail',
         jsonEncode({'action': 'setup'}),
       );
+
+  /// Manually trigger a repair (restart → reinstall escalation). The same
+  /// action [HealthMonitorWorker] enqueues automatically when a periodic
+  /// probe finds the stack unhealthy, exposed here for the panel's
+  /// superuser-only "Repair now" button.
+  Future<void> enqueueRepair() => RedisClient.instance.rpush(
+        'gisila:queue:mail',
+        jsonEncode({'action': 'repair'}),
+      );
 }
 
 /// Standard ports the agent configures for mail clients.

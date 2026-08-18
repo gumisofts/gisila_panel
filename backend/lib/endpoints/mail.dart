@@ -3,6 +3,7 @@ import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/mail_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/mail_service.dart';
+import 'package:gisila_panel/workers/health_monitor_worker.dart';
 
 part 'mail.g.dart';
 
@@ -21,6 +22,21 @@ class MailApi {
     requireSuperuser(ctx);
     await svc.enqueueInstall();
     return {'detail': 'Installation queued.'};
+  }
+
+  // ── Health ────────────────────────────────────────────────────────────────
+
+  @Get('/health', summary: 'Cached live health of the mail stack')
+  Future<Map<String, Object?>> health() async {
+    final cached = await readCachedHealth(mailHealthRedisKey);
+    return cached ?? {'healthy': null, 'checkedAt': null};
+  }
+
+  @Post('/repair', summary: 'Manually trigger a mail stack repair')
+  Future<Map<String, Object?>> repair(MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
+    await svc.enqueueRepair();
+    return {'detail': 'Repair queued.'};
   }
 
   // ── Domains ────────────────────────────────────────────────────────────────

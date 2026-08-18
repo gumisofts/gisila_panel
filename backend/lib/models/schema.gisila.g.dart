@@ -1240,12 +1240,38 @@ class Application with Preloadable {
         childMeta: AppTable.metadata,
       );
 
+  static final Relation<Application, AlertRule> alertRules =
+      HasManyRelation<Application, AlertRule>(
+        parentTable: 'applications',
+        childTable: 'alert_rules',
+        name: 'alertRules',
+        childForeignKey: 'application_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<Application, AlertEvent> alertEvents =
+      HasManyRelation<Application, AlertEvent>(
+        parentTable: 'applications',
+        childTable: 'alert_events',
+        name: 'alertEvents',
+        childForeignKey: 'application_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
   /// Preloaded versions; empty list when not preloaded.
   List<ApplicationVersion> get versionsList =>
       preloaded<List<ApplicationVersion>>('versions') ?? const [];
 
   /// Preloaded apps; empty list when not preloaded.
   List<App> get appsList => preloaded<List<App>>('apps') ?? const [];
+
+  /// Preloaded alertRules; empty list when not preloaded.
+  List<AlertRule> get alertRulesList =>
+      preloaded<List<AlertRule>>('alertRules') ?? const [];
+
+  /// Preloaded alertEvents; empty list when not preloaded.
+  List<AlertEvent> get alertEventsList =>
+      preloaded<List<AlertEvent>>('alertEvents') ?? const [];
 }
 
 class ApplicationTable {
@@ -3267,6 +3293,32 @@ class ManagedService with Preloadable {
     final errors = <String>[];
     return errors;
   }
+
+  static final Relation<ManagedService, AlertRule> alertRules =
+      HasManyRelation<ManagedService, AlertRule>(
+        parentTable: 'managed_services',
+        childTable: 'alert_rules',
+        name: 'alertRules',
+        childForeignKey: 'managed_service_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<ManagedService, AlertEvent> alertEvents =
+      HasManyRelation<ManagedService, AlertEvent>(
+        parentTable: 'managed_services',
+        childTable: 'alert_events',
+        name: 'alertEvents',
+        childForeignKey: 'managed_service_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
+  /// Preloaded alertRules; empty list when not preloaded.
+  List<AlertRule> get alertRulesList =>
+      preloaded<List<AlertRule>>('alertRules') ?? const [];
+
+  /// Preloaded alertEvents; empty list when not preloaded.
+  List<AlertEvent> get alertEventsList =>
+      preloaded<List<AlertEvent>>('alertEvents') ?? const [];
 }
 
 class ManagedServiceTable {
@@ -6200,6 +6252,8 @@ class AlertRule with Preloadable {
   final int? appId;
   final int? postgresInstanceId;
   final int? mongoInstanceId;
+  final int? managedServiceId;
+  final int? applicationId;
   final String metric;
   final String? comparison;
   final int? thresholdPercent;
@@ -6218,6 +6272,8 @@ class AlertRule with Preloadable {
     this.appId,
     this.postgresInstanceId,
     this.mongoInstanceId,
+    this.managedServiceId,
+    this.applicationId,
     required this.metric,
     this.comparison,
     this.thresholdPercent,
@@ -6237,6 +6293,8 @@ class AlertRule with Preloadable {
     appId: row['app_id'] as int?,
     postgresInstanceId: row['postgres_instance_id'] as int?,
     mongoInstanceId: row['mongo_instance_id'] as int?,
+    managedServiceId: row['managed_service_id'] as int?,
+    applicationId: row['application_id'] as int?,
     metric: row['metric'] as String,
     comparison: row['comparison'] as String?,
     thresholdPercent: row['threshold_percent'] as int?,
@@ -6266,6 +6324,8 @@ class AlertRule with Preloadable {
     'app_id': appId,
     'postgres_instance_id': postgresInstanceId,
     'mongo_instance_id': mongoInstanceId,
+    'managed_service_id': managedServiceId,
+    'application_id': applicationId,
     'metric': metric,
     'comparison': comparison,
     'threshold_percent': thresholdPercent,
@@ -6298,6 +6358,8 @@ class AlertRule with Preloadable {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     String? metric,
     String? comparison,
     int? thresholdPercent,
@@ -6315,6 +6377,8 @@ class AlertRule with Preloadable {
     appId: appId ?? this.appId,
     postgresInstanceId: postgresInstanceId ?? this.postgresInstanceId,
     mongoInstanceId: mongoInstanceId ?? this.mongoInstanceId,
+    managedServiceId: managedServiceId ?? this.managedServiceId,
+    applicationId: applicationId ?? this.applicationId,
     metric: metric ?? this.metric,
     comparison: comparison ?? this.comparison,
     thresholdPercent: thresholdPercent ?? this.thresholdPercent,
@@ -6363,6 +6427,24 @@ class AlertRule with Preloadable {
         childMeta: MongoInstanceTable.metadata,
       );
 
+  static final Relation<AlertRule, ManagedService> managedService =
+      BelongsToRelation<AlertRule, ManagedService>(
+        parentTable: 'alert_rules',
+        childTable: 'managed_services',
+        name: 'managedService',
+        parentForeignKey: 'managed_service_id',
+        childMeta: ManagedServiceTable.metadata,
+      );
+
+  static final Relation<AlertRule, Application> application =
+      BelongsToRelation<AlertRule, Application>(
+        parentTable: 'alert_rules',
+        childTable: 'applications',
+        name: 'application',
+        parentForeignKey: 'application_id',
+        childMeta: ApplicationTable.metadata,
+      );
+
   static final Relation<AlertRule, User> createdBy =
       BelongsToRelation<AlertRule, User>(
         parentTable: 'alert_rules',
@@ -6391,6 +6473,13 @@ class AlertRule with Preloadable {
   /// Preloaded mongoInstance; null when not preloaded or absent.
   MongoInstance? get mongoInstanceLoaded =>
       preloaded<MongoInstance>('mongoInstance');
+
+  /// Preloaded managedService; null when not preloaded or absent.
+  ManagedService? get managedServiceLoaded =>
+      preloaded<ManagedService>('managedService');
+
+  /// Preloaded application; null when not preloaded or absent.
+  Application? get applicationLoaded => preloaded<Application>('application');
 
   /// Preloaded createdBy; null when not preloaded or absent.
   User? get createdByLoaded => preloaded<User>('createdBy');
@@ -6421,6 +6510,14 @@ class AlertRuleTable {
   static const ColumnRef<int?> mongoInstanceId = ColumnRef<int?>(
     table: 'alert_rules',
     column: 'mongo_instance_id',
+  );
+  static const ColumnRef<int?> managedServiceId = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'managed_service_id',
+  );
+  static const ColumnRef<int?> applicationId = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'application_id',
   );
   static const ColumnRef<String> metric = ColumnRef<String>(
     table: 'alert_rules',
@@ -6476,6 +6573,8 @@ class AlertRuleTable {
       'app_id',
       'postgres_instance_id',
       'mongo_instance_id',
+      'managed_service_id',
+      'application_id',
       'metric',
       'comparison',
       'threshold_percent',
@@ -6501,6 +6600,8 @@ class AlertEvent with Preloadable {
   final int? appId;
   final int? postgresInstanceId;
   final int? mongoInstanceId;
+  final int? managedServiceId;
+  final int? applicationId;
   final String metric;
   final int? observedPercent;
   final int? thresholdPercent;
@@ -6519,6 +6620,8 @@ class AlertEvent with Preloadable {
     this.appId,
     this.postgresInstanceId,
     this.mongoInstanceId,
+    this.managedServiceId,
+    this.applicationId,
     required this.metric,
     this.observedPercent,
     this.thresholdPercent,
@@ -6538,6 +6641,8 @@ class AlertEvent with Preloadable {
     appId: row['app_id'] as int?,
     postgresInstanceId: row['postgres_instance_id'] as int?,
     mongoInstanceId: row['mongo_instance_id'] as int?,
+    managedServiceId: row['managed_service_id'] as int?,
+    applicationId: row['application_id'] as int?,
     metric: row['metric'] as String,
     observedPercent: row['observed_percent'] as int?,
     thresholdPercent: row['threshold_percent'] as int?,
@@ -6567,6 +6672,8 @@ class AlertEvent with Preloadable {
     'app_id': appId,
     'postgres_instance_id': postgresInstanceId,
     'mongo_instance_id': mongoInstanceId,
+    'managed_service_id': managedServiceId,
+    'application_id': applicationId,
     'metric': metric,
     'observed_percent': observedPercent,
     'threshold_percent': thresholdPercent,
@@ -6599,6 +6706,8 @@ class AlertEvent with Preloadable {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     String? metric,
     int? observedPercent,
     int? thresholdPercent,
@@ -6616,6 +6725,8 @@ class AlertEvent with Preloadable {
     appId: appId ?? this.appId,
     postgresInstanceId: postgresInstanceId ?? this.postgresInstanceId,
     mongoInstanceId: mongoInstanceId ?? this.mongoInstanceId,
+    managedServiceId: managedServiceId ?? this.managedServiceId,
+    applicationId: applicationId ?? this.applicationId,
     metric: metric ?? this.metric,
     observedPercent: observedPercent ?? this.observedPercent,
     thresholdPercent: thresholdPercent ?? this.thresholdPercent,
@@ -6673,6 +6784,24 @@ class AlertEvent with Preloadable {
         childMeta: MongoInstanceTable.metadata,
       );
 
+  static final Relation<AlertEvent, ManagedService> managedService =
+      BelongsToRelation<AlertEvent, ManagedService>(
+        parentTable: 'alert_events',
+        childTable: 'managed_services',
+        name: 'managedService',
+        parentForeignKey: 'managed_service_id',
+        childMeta: ManagedServiceTable.metadata,
+      );
+
+  static final Relation<AlertEvent, Application> application =
+      BelongsToRelation<AlertEvent, Application>(
+        parentTable: 'alert_events',
+        childTable: 'applications',
+        name: 'application',
+        parentForeignKey: 'application_id',
+        childMeta: ApplicationTable.metadata,
+      );
+
   static final Relation<AlertEvent, Notification> notifications =
       HasManyRelation<AlertEvent, Notification>(
         parentTable: 'alert_events',
@@ -6695,6 +6824,13 @@ class AlertEvent with Preloadable {
   /// Preloaded mongoInstance; null when not preloaded or absent.
   MongoInstance? get mongoInstanceLoaded =>
       preloaded<MongoInstance>('mongoInstance');
+
+  /// Preloaded managedService; null when not preloaded or absent.
+  ManagedService? get managedServiceLoaded =>
+      preloaded<ManagedService>('managedService');
+
+  /// Preloaded application; null when not preloaded or absent.
+  Application? get applicationLoaded => preloaded<Application>('application');
 
   /// Preloaded notifications; empty list when not preloaded.
   List<Notification> get notificationsList =>
@@ -6726,6 +6862,14 @@ class AlertEventTable {
   static const ColumnRef<int?> mongoInstanceId = ColumnRef<int?>(
     table: 'alert_events',
     column: 'mongo_instance_id',
+  );
+  static const ColumnRef<int?> managedServiceId = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'managed_service_id',
+  );
+  static const ColumnRef<int?> applicationId = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'application_id',
   );
   static const ColumnRef<String> metric = ColumnRef<String>(
     table: 'alert_events',
@@ -6778,6 +6922,8 @@ class AlertEventTable {
       'app_id',
       'postgres_instance_id',
       'mongo_instance_id',
+      'managed_service_id',
+      'application_id',
       'metric',
       'observed_percent',
       'threshold_percent',

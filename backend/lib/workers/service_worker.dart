@@ -9,7 +9,7 @@ import 'package:gisila_panel/models/models.dart';
 
 /// Handles async service lifecycle jobs from the [gisila:queue:services] queue.
 ///
-/// Actions: install | configure | start | stop | uninstall
+/// Actions: install | configure | start | stop | uninstall | repair
 class ServiceWorker {
   ServiceWorker(this.database);
 
@@ -37,6 +37,8 @@ class ServiceWorker {
         await _stop(svc);
       case 'uninstall':
         await _uninstall(svc);
+      case 'repair':
+        await _repair(svc);
       default:
         logger.w('service_worker: unknown action $action — skipping');
     }
@@ -146,6 +148,56 @@ class ServiceWorker {
     }
   }
 
+  /// Restart-then-reinstall repair, triggered manually (`POST
+  /// /services/{id}/repair`) or automatically by [HealthMonitorWorker] when a
+  /// periodic probe finds the service unhealthy.
+  Future<void> _repair(ManagedService svc) async {
+    final id = svc.id!;
+    try {
+      await _log(id, 'system', 'Repairing ${svc.displayName}…');
+      final output = await _runAgent(
+        ['service', 'repair', '--type', svc.serviceType, '--config', jsonEncode(_config(svc))],
+        serviceId: id,
+      );
+      final report = _findJsonWith(output, 'healthy');
+      final healthy = report?['healthy'] == true;
+      await _patch(id, {
+        'status': healthy ? 'running' : 'failed',
+        'errorMessage': healthy ? null : 'Repair could not bring the service back up.',
+      });
+      await _log(
+        id,
+        'system',
+        healthy ? 'Repair complete — service is running.' : 'Repair failed — service is still unhealthy.',
+      );
+    } catch (e) {
+      await _log(id, 'stderr', 'Repair failed: $e');
+      await _patch(id, {'status': 'failed', 'errorMessage': e.toString()});
+      rethrow;
+    }
+  }
+
+  /// Scan agent stdout bottom-up for the last JSON object that contains [key]
+  /// — the agent's `main()` always prints a trailing `{"ok":true,...}`
+  /// wrapper line after a command's real output, so a naive last-line parse
+  /// would return that instead. Mirrors `MailWorker._findJsonWith`.
+  Map<String, Object?>? _findJsonWith(String text, String key) {
+    final lines = text.trim().split('\n');
+    for (var i = lines.length - 1; i >= 0; i--) {
+      final line = lines[i].trim();
+      if (!line.startsWith('{') || !line.contains('"$key"')) continue;
+      try {
+        final decoded = jsonDecode(line);
+        if (decoded is Map<String, Object?> && decoded.containsKey(key)) {
+          return decoded;
+        }
+      } catch (_) {
+        // Not the line we want — keep scanning upward.
+      }
+    }
+    return null;
+  }
+
   Future<void> _uninstall(ManagedService svc) async {
     try {
       await _log(svc.id!, 'system', 'Uninstalling service…');
@@ -188,15 +240,16 @@ class ServiceWorker {
           .update(data)
           .run(database.context());
 
-  /// Run the agent. When [serviceId] is provided the agent's stdout/stderr are
-  /// streamed live to the service's log channel (and buffered for replay).
-  Future<void> _runAgent(List<String> args, {int? serviceId}) async {
+  /// Run the agent and return its stdout. When [serviceId] is provided the
+  /// agent's stdout/stderr are also streamed live to the service's log
+  /// channel (and buffered for replay).
+  Future<String> _runAgent(List<String> args, {int? serviceId}) async {
     if (hostConfig.agentMode == 'dev') {
       final line = 'agent (dev) ${args.join(' ')}';
       logger.i('service_worker (dev): $line');
       if (serviceId != null) await _log(serviceId, 'system', line);
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      return;
+      return '';
     }
 
     final cmd = buildAgentCmd(args);
@@ -210,7 +263,7 @@ class ServiceWorker {
           'Agent exited ${result.exitCode}: ${result.stderr}'.trim(),
         );
       }
-      return;
+      return result.stdout as String? ?? '';
     }
 
     // Streaming path: pipe each line to Redis as it arrives.
@@ -238,6 +291,7 @@ class ServiceWorker {
         'Agent exited $exit: ${outputs[1].join('\n')}'.trim(),
       );
     }
+    return outputs[0].join('\n');
   }
 
   // ── Live log streaming ──────────────────────────────────────────────────────

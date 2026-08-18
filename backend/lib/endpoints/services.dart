@@ -4,6 +4,7 @@ import 'package:gisila_panel/forms/service_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/catalog.dart';
 import 'package:gisila_panel/services/managed_service_service.dart';
+import 'package:gisila_panel/workers/health_monitor_worker.dart';
 
 part 'services.g.dart';
 
@@ -103,6 +104,23 @@ class ServicesApi {
     requireSuperuser(ctx);
     final updated = await svc.stop(id);
     return _serialize(updated);
+  }
+
+  @Get('/{id}/health', summary: 'Cached live health of a service')
+  Future<Map<String, Object?>> health(int id) async {
+    final cached = await readCachedHealth(serviceHealthRedisKey(id));
+    return cached ?? {'healthy': null, 'checkedAt': null};
+  }
+
+  @Post('/{id}/repair', summary: 'Manually trigger a service repair')
+  Future<Map<String, Object?>> repair(
+    int id,
+    ManagedServiceService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    await svc.repair(id);
+    return {'detail': 'Repair queued.'};
   }
 
   @Delete('/{id}', summary: 'Uninstall a service')

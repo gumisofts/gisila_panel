@@ -33,10 +33,13 @@ import {
   Toggle,
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
+import { AlertRulesManager } from "@/components/alert-rules-manager";
+import { HealthBadge, RepairButton } from "@/components/health-badge";
 import { api, fetcher, getToken, getWsBase } from "@/lib/api";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";
 import type {
+  HealthStatus,
   ManagedService,
   ServiceDef,
   ConfigField,
@@ -99,6 +102,31 @@ export default function ServiceDetailPage() {
 
   const def = svc?._def as ServiceDef | undefined;
 
+  // Cached live health, published by HealthMonitorWorker and auto-repaired
+  // on a cooldown — only meaningful for services with something on the host
+  // to probe (apt + systemd), same gate as the list page's badge.
+  const { data: health, mutate: mutateHealth } = useSWR<HealthStatus>(
+    def?.requiresInstall ? `/services/${id}/health` : null,
+    fetcher,
+    { refreshInterval: 15_000 },
+  );
+  const { isSuperuser } = usePermissions();
+  const [repairing, setRepairing] = useState(false);
+
+  async function handleRepair() {
+    if (!svc) return;
+    setRepairing(true);
+    try {
+      await api(`/services/${svc.id}/repair`, { method: "POST" });
+      toast.success("Repair queued.");
+      setTimeout(() => mutateHealth(), 3_000);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue repair.");
+    } finally {
+      setRepairing(false);
+    }
+  }
+
   if (isLoading) return <PageSkeleton />;
   if (!svc) return null;
 
@@ -116,7 +144,15 @@ export default function ServiceDetailPage() {
       <PageHeader
         title={svc.displayName}
         description={<span className="gisila-detail__key">{svc.serviceType}</span>}
-        actions={<StatusIndicator status={svc.status} />}
+        actions={
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <HealthBadge health={health} />
+            {isSuperuser && health?.healthy === false && (
+              <RepairButton onRepair={handleRepair} busy={repairing} />
+            )}
+            <StatusIndicator status={svc.status} />
+          </div>
+        }
       />
 
       {(svc.errorMessage || def?.docsUrl) && (
@@ -170,6 +206,18 @@ export default function ServiceDetailPage() {
       )}
 
       <ServiceActions svc={svc} onDone={() => router.push("/services")} />
+
+      {def?.requiresInstall && (
+        <PageSection>
+          <AlertRulesManager
+            scope="service"
+            managedServiceId={svc.id}
+            canWrite={isSuperuser}
+            title="Alert rules"
+            description="Fires when the periodic health monitor finds this service unhealthy."
+          />
+        </PageSection>
+      )}
     </Page>
   );
 }

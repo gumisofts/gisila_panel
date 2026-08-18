@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR, { mutate } from "swr";
-import { Add, ArrowRight, Launch, Save, Star, TrashCan } from "@carbon/icons-react";
+import { Add, ArrowRight, Launch, Renew, Save, Star, TrashCan } from "@carbon/icons-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -34,6 +34,7 @@ import {
   Tile,
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
+import { AlertRulesManager } from "@/components/alert-rules-manager";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import type {
@@ -42,6 +43,7 @@ import type {
   ApplicationDef,
   ApplicationVersion,
   DeployMode,
+  HealthStatus,
   ListResponse,
 } from "@/lib/types";
 import { DEPLOY_MODE_LABEL } from "@/lib/types";
@@ -82,6 +84,7 @@ function StatusIndicator({ status }: { status: string }) {
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { isSuperuser } = usePermissions();
 
   const { data: app, isLoading } = useSWR<Application>(
     `/applications/${id}`,
@@ -171,6 +174,18 @@ export default function ApplicationDetailPage() {
         app={app}
         onDone={() => router.push("/runtimes")}
       />
+
+      {def?.versioned && (
+        <PageSection>
+          <AlertRulesManager
+            scope="runtime"
+            applicationId={app.id}
+            canWrite={isSuperuser}
+            title="Alert rules"
+            description="Fires when the periodic health monitor finds any installed version of this runtime broken. No auto-repair — reinstall the flagged version above."
+          />
+        </PageSection>
+      )}
     </Page>
   );
 }
@@ -297,59 +312,16 @@ function VersionsSection({
             </TableHead>
             <TableBody>
               {app.versions.map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell>
-                    <span className="gisila-versions__version">{v.version}</span>
-                    {v.errorMessage && (
-                      <span className="gisila-versions__error">
-                        {v.errorMessage}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <StatusIndicator status={v.status} />
-                  </TableCell>
-                  <TableCell>
-                    {v.isDefault ? (
-                      <Tag type="blue" size="sm" renderIcon={Star}>
-                        Default
-                      </Tag>
-                    ) : (
-                      <span className="gisila-versions__muted">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {v.installedAt
-                      ? new Date(v.installedAt).toLocaleDateString()
-                      : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="gisila-versions__actions">
-                      {isSuperuser && !v.isDefault && v.status === "installed" && (
-                        <Button
-                          kind="ghost"
-                          size="sm"
-                          renderIcon={Star}
-                          disabled={busy}
-                          onClick={() => void makeDefault(v)}
-                        >
-                          Make default
-                        </Button>
-                      )}
-                      {isSuperuser && (
-                        <Button
-                          kind="danger--ghost"
-                          size="sm"
-                          hasIconOnly
-                          renderIcon={TrashCan}
-                          iconDescription={`Remove ${v.version}`}
-                          disabled={busy || v.status === "removing"}
-                          onClick={() => setRemoving(v)}
-                        />
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <VersionRow
+                  key={v.id}
+                  app={app}
+                  v={v}
+                  busy={busy}
+                  isSuperuser={isSuperuser}
+                  onMakeDefault={() => void makeDefault(v)}
+                  onRemove={() => setRemoving(v)}
+                  onChanged={onChanged}
+                />
               ))}
             </TableBody>
           </Table>
@@ -409,6 +381,130 @@ function VersionsSection({
         </p>
       </Modal>
     </PageSection>
+  );
+}
+
+// ── Single installed version row ──────────────────────────────────────────────
+
+/// A row gets its own cached-health probe (only once actually installed) so
+/// a broken toolchain — e.g. a binary that no longer runs — surfaces without
+/// polling every version from the parent on a shared interval. Unlike mail
+/// and services, runtimes are flag-only: no auto-repair, just a manual
+/// "Reinstall" a superuser can click.
+function VersionRow({
+  app,
+  v,
+  busy,
+  isSuperuser,
+  onMakeDefault,
+  onRemove,
+  onChanged,
+}: {
+  app: Application;
+  v: ApplicationVersion;
+  busy: boolean;
+  isSuperuser: boolean;
+  onMakeDefault: () => void;
+  onRemove: () => void;
+  onChanged: () => void;
+}) {
+  const { data: health } = useSWR<HealthStatus>(
+    v.status === "installed"
+      ? `/applications/${app.id}/versions/${v.id}/health`
+      : null,
+    fetcher,
+    { refreshInterval: 30_000 },
+  );
+  const [reinstalling, setReinstalling] = useState(false);
+  const unhealthy = health?.healthy === false;
+
+  async function reinstall() {
+    setReinstalling(true);
+    try {
+      await api(`/applications/${app.id}/versions/${v.id}/reinstall`, {
+        method: "POST",
+      });
+      toast.success(`${v.version} reinstall queued.`);
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Reinstall failed.");
+    } finally {
+      setReinstalling(false);
+    }
+  }
+
+  return (
+    <TableRow>
+      <TableCell>
+        <span className="gisila-versions__version">{v.version}</span>
+        {v.errorMessage && (
+          <span className="gisila-versions__error">{v.errorMessage}</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <StatusIndicator status={v.status} />
+          {unhealthy && (
+            <Tag type="red" size="sm" title={health?.detail ?? undefined}>
+              Unhealthy
+            </Tag>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        {v.isDefault ? (
+          <Tag type="blue" size="sm" renderIcon={Star}>
+            Default
+          </Tag>
+        ) : (
+          <span className="gisila-versions__muted">—</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {v.installedAt ? new Date(v.installedAt).toLocaleDateString() : "—"}
+      </TableCell>
+      <TableCell>
+        <div className="gisila-versions__actions">
+          {isSuperuser && unhealthy && (
+            reinstalling ? (
+              <InlineLoading status="active" description="Reinstalling…" />
+            ) : (
+              <Button
+                kind="ghost"
+                size="sm"
+                renderIcon={Renew}
+                disabled={busy}
+                onClick={() => void reinstall()}
+              >
+                Reinstall
+              </Button>
+            )
+          )}
+          {isSuperuser && !v.isDefault && v.status === "installed" && (
+            <Button
+              kind="ghost"
+              size="sm"
+              renderIcon={Star}
+              disabled={busy}
+              onClick={onMakeDefault}
+            >
+              Make default
+            </Button>
+          )}
+          {isSuperuser && (
+            <Button
+              kind="danger--ghost"
+              size="sm"
+              hasIconOnly
+              renderIcon={TrashCan}
+              iconDescription={`Remove ${v.version}`}
+              disabled={busy || v.status === "removing"}
+              onClick={onRemove}
+            />
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 

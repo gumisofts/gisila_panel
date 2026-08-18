@@ -291,6 +291,30 @@ Future<void> _runtime(List<String> args) async {
         'installed': plugin.versioned ? versions.isNotEmpty : true,
       });
       return;
+    case 'health':
+      // Unlike `status` (directory listing only), this actually invokes each
+      // version's binary — flags a broken toolchain (partial download,
+      // wrong-arch binary) that's still present on disk but doesn't work.
+      // Read-only; no repair counterpart — broken runtimes are surfaced for a
+      // superuser to manually reinstall.
+      final targets = !plugin.versioned
+          ? const <String>[]
+          : (version != null && version.isNotEmpty)
+              ? [version]
+              : await plugin.installedVersions();
+      final results = <Map<String, Object?>>[];
+      for (final v in targets) {
+        results.add({'version': v, 'healthy': await Builders.versionHealthy(key, v)});
+      }
+      _ok({
+        'key': key,
+        'versioned': plugin.versioned,
+        'healthy': plugin.versioned
+            ? (results.isNotEmpty && results.every((r) => r['healthy'] == true))
+            : true,
+        'versions': results,
+      });
+      return;
     default:
       throw ArgumentError('Unknown runtime action: $action');
   }
@@ -1050,7 +1074,8 @@ Future<(int, int, String)> _statFromProc(String program) async {
 
 Future<void> _mail(List<String> args) async {
   if (args.isEmpty) {
-    stderr.writeln('Usage: gisila-agent mail <status|setup|sync> [flags]');
+    stderr.writeln(
+        'Usage: gisila-agent mail <status|setup|sync|health|repair> [flags]');
     exitCode = 64;
     return;
   }
@@ -1079,9 +1104,77 @@ Future<void> _mail(List<String> args) async {
           .whereType<Map>()
           .toList();
       await _mailSync(domains, accounts);
+    case 'health':
+      // Read-only live probe — no privileges required. Polled periodically by
+      // the panel's health monitor, and by `mail repair` to decide what to fix.
+      stdout.writeln(jsonEncode(await _mailHealthReport()));
+    case 'repair':
+      stdout.writeln(jsonEncode(await _mailRepairStack()));
     default:
       throw ArgumentError('Unknown mail action: $action');
   }
+}
+
+/// Live health snapshot for the mail stack: whether each daemon's systemd
+/// unit is active, plus TCP reachability on the standard mail ports. A daemon
+/// can be "active" per systemd yet still refuse connections (e.g. crashed
+/// listener thread), so both signals are checked.
+Future<Map<String, Object?>> _mailHealthReport() async {
+  final daemons = <String, Object?>{};
+  for (final unit in const ['postfix', 'dovecot', 'opendkim']) {
+    daemons[unit] = {'active': await _unitIsActive(unit)};
+  }
+  final ports = <String, bool>{
+    'smtp': await _tcpOpen('127.0.0.1', 25),
+    'submission': await _tcpOpen('127.0.0.1', 587),
+    'smtps': await _tcpOpen('127.0.0.1', 465),
+    'imaps': await _tcpOpen('127.0.0.1', 993),
+    'milter': await _tcpOpen('127.0.0.1', 8891),
+  };
+  final daemonsHealthy =
+      daemons.values.every((d) => (d as Map)['active'] == true);
+  final portsHealthy = ports.values.every((v) => v);
+  return {
+    'healthy': daemonsHealthy && portsHealthy,
+    'daemons': daemons,
+    'ports': ports,
+  };
+}
+
+/// Restart unhealthy mail daemons; if that isn't enough, force-reinstall the
+/// underlying packages and re-run the full stack setup. Returns the health
+/// report taken after repair so the caller can tell whether it worked.
+Future<Map<String, Object?>> _mailRepairStack() async {
+  final before = await _mailHealthReport();
+  if (before['healthy'] == true) return before;
+
+  stdout.writeln('[agent] mail repair: restarting unhealthy daemons…');
+  for (final unit in const ['opendkim', 'postfix', 'dovecot']) {
+    try {
+      await _serviceCtl(
+          unit == 'postfix' ? 'restart' : 'reload-or-restart', unit);
+    } catch (e) {
+      stderr.writeln('[agent] mail repair: restart $unit failed: $e');
+    }
+  }
+
+  var after = await _mailHealthReport();
+  if (after['healthy'] != true) {
+    stdout.writeln(
+        '[agent] mail repair: restart insufficient, reinstalling packages…');
+    await _aptReinstall(const [
+      'postfix',
+      'dovecot-core',
+      'dovecot-imapd',
+      'dovecot-pop3d',
+      'dovecot-lmtpd',
+      'opendkim',
+      'opendkim-tools',
+    ]);
+    await _mailEnsureStack();
+    after = await _mailHealthReport();
+  }
+  return after;
 }
 
 /// Whether the core mail daemons are present on this host. The panel calls this
@@ -1828,9 +1921,96 @@ Future<void> _service(List<String> args) async {
       await _serviceCtl('stop', type);
     case 'uninstall':
       await _serviceUninstall(type);
+    case 'health':
+      // Read-only live probe — no privileges required.
+      stdout.writeln(jsonEncode(await _serviceHealthReport(type, config)));
+    case 'repair':
+      stdout.writeln(jsonEncode(await _serviceRepair(type, config)));
     default:
       throw ArgumentError('Unknown service action: $action');
   }
+}
+
+/// Live health snapshot for a managed service: whether its systemd unit is
+/// active, plus a TCP reachability check on whatever port(s) it's configured
+/// to listen on. Config-only services (e.g. smtp relay) have no host process
+/// to probe and are always reported healthy.
+Future<Map<String, Object?>> _serviceHealthReport(
+  String type,
+  Map<String, dynamic> config,
+) async {
+  if (type == 'smtp') {
+    return {'healthy': true, 'active': true, 'unit': null, 'ports': <String, bool>{}};
+  }
+
+  final unit = _unitName(type);
+  final active = await _unitIsActive(unit);
+
+  final ports = <String, bool>{};
+  switch (type) {
+    case 'redis':
+      ports['port'] =
+          await _tcpOpen('127.0.0.1', int.tryParse('${config['port']}') ?? 6380);
+    case 'memcached':
+      ports['port'] = await _tcpOpen(
+          '127.0.0.1', int.tryParse('${config['port']}') ?? 11211);
+    case 'mailpit':
+      ports['smtp_port'] = await _tcpOpen(
+          '127.0.0.1', int.tryParse('${config['smtp_port']}') ?? 1025);
+      ports['ui_port'] = await _tcpOpen(
+          '127.0.0.1', int.tryParse('${config['ui_port']}') ?? 8025);
+    case 'pgbouncer':
+      final bindAddr = _redisVal(config['listen_addr'], '127.0.0.1');
+      ports['listen_port'] = await _tcpOpen(
+        bindAddr == '0.0.0.0' ? '127.0.0.1' : bindAddr,
+        int.tryParse('${config['listen_port']}') ?? 6432,
+      );
+    case 'pgadmin':
+      ports['port'] =
+          await _tcpOpen('127.0.0.1', int.tryParse('${config['port']}') ?? 5050);
+    case 'mongo-express':
+      ports['port'] =
+          await _tcpOpen('127.0.0.1', int.tryParse('${config['port']}') ?? 8081);
+    default:
+      // Handler-managed or unknown types — active-state alone is the signal.
+      break;
+  }
+
+  final portsHealthy = ports.values.every((v) => v);
+  return {
+    'healthy': active && portsHealthy,
+    'active': active,
+    'unit': unit,
+    'ports': ports,
+  };
+}
+
+/// Restart an unhealthy service; if that isn't enough, re-run its install
+/// routine (idempotent — apt install + configure + enable + start) to repair
+/// a corrupted config or missing package. Returns the health report taken
+/// after repair.
+Future<Map<String, Object?>> _serviceRepair(
+  String type,
+  Map<String, dynamic> config,
+) async {
+  final before = await _serviceHealthReport(type, config);
+  if (before['healthy'] == true) return before;
+
+  stdout.writeln('[agent] service repair: restarting $type…');
+  try {
+    await _serviceCtl('restart', type);
+  } catch (e) {
+    stderr.writeln('[agent] service repair: restart $type failed: $e');
+  }
+
+  var after = await _serviceHealthReport(type, config);
+  if (after['healthy'] != true) {
+    stdout.writeln(
+        '[agent] service repair: restart insufficient, reinstalling $type…');
+    await _serviceInstall(type, config);
+    after = await _serviceHealthReport(type, config);
+  }
+  return after;
 }
 
 Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
@@ -2386,6 +2566,49 @@ Future<void> _serviceCtl(String action, String type) async {
       await _sudo('systemctl', [action, unitName]);
     }
   }
+}
+
+/// Whether [unitName] is currently active, without requiring privileges:
+/// `systemctl is-active` (or `service … status` under Docker) is readable by
+/// any user.
+Future<bool> _unitIsActive(String unitName) async {
+  final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
+  if (isDocker) {
+    final r = await Process.run('service', [unitName, 'status']);
+    return r.exitCode == 0;
+  }
+  final r = await Process.run('systemctl', ['is-active', unitName]);
+  return (r.stdout as String? ?? '').trim() == 'active';
+}
+
+/// Whether a TCP connection to `host:port` succeeds within [timeout] — used
+/// to tell "systemd says active" apart from "actually accepting connections".
+Future<bool> _tcpOpen(
+  String host,
+  int port, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  try {
+    final socket = await Socket.connect(host, port, timeout: timeout);
+    socket.destroy();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Force-reinstall already-installed apt packages — repairs a daemon that's
+/// enabled and "installed" but whose binary or config is corrupted in a way a
+/// plain restart can't fix.
+Future<void> _aptReinstall(List<String> packages) async {
+  final cmd = _priv('sh', [
+    '-c',
+    'DEBIAN_FRONTEND=noninteractive apt-get -qq -y '
+        '-o Dpkg::Options::=--force-confdef '
+        '-o Dpkg::Options::=--force-confold '
+        'install --reinstall ${packages.join(' ')}',
+  ]);
+  await _run(cmd.first, cmd.skip(1).toList());
 }
 
 Future<void> _serviceUninstall(String type) async {

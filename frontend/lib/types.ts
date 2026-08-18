@@ -664,7 +664,14 @@ export interface AppStorageLink {
 // managed database health, delivered via the in-panel notification inbox and
 // (optionally) email through a panel-wide SMTP config.
 
-export type AlertScope = "system" | "app" | "postgres" | "mongo";
+export type AlertScope =
+  | "system"
+  | "app"
+  | "postgres"
+  | "mongo"
+  | "mail"
+  | "service"
+  | "runtime";
 
 export type AlertMetric =
   | "cpu_percent"
@@ -701,6 +708,8 @@ export interface AlertRule {
   appId?: ID | null;
   postgresInstanceId?: ID | null;
   mongoInstanceId?: ID | null;
+  managedServiceId?: ID | null;
+  applicationId?: ID | null;
   metric: AlertMetric;
   comparison: AlertComparison;
   thresholdPercent?: number | null;
@@ -721,6 +730,8 @@ export interface AlertEvent {
   appId?: ID | null;
   postgresInstanceId?: ID | null;
   mongoInstanceId?: ID | null;
+  managedServiceId?: ID | null;
+  applicationId?: ID | null;
   metric: AlertMetric;
   observedPercent?: number | null;
   thresholdPercent?: number | null;
@@ -778,4 +789,23 @@ export const ALERT_SCOPE_LABEL: Record<AlertScope, string> = {
   app: "App",
   postgres: "Postgres instance",
   mongo: "Mongo instance",
+  mail: "Mail stack",
+  service: "Service",
+  runtime: "Runtime",
 };
+
+// ── Health monitoring (mail stack / managed services / runtime toolchains) ──
+//
+// Shared cached-health shape published by `HealthMonitorWorker` to Redis and
+// read straight back by `GET /mail/health`, `GET /services/{id}/health`, and
+// `GET /applications/{id}/versions/{versionId}/health`.
+export interface HealthStatus {
+  healthy: boolean | null;
+  checkedAt?: string | null;
+  detail?: string | null;
+  unhealthySince?: string | null;
+  lastRepairAt?: string | null;
+  // Present for `/mail/health` (per-daemon) and `/services/{id}/health`
+  // (per-port) — kept loose since the shape differs by resource type.
+  [key: string]: unknown;
+}

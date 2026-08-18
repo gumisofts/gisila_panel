@@ -8,6 +8,7 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/notification_service.dart';
+import 'package:gisila_panel/workers/health_monitor_worker.dart';
 import 'package:gisila_panel/workers/host_stats_sampler.dart';
 
 /// Self-driven [Timer] loop that walks every enabled [AlertRule], samples the
@@ -103,6 +104,9 @@ class AlertEvaluator {
       'app' => 'App ${obs.targetLabel ?? '#${rule.appId}'}',
       'postgres' => 'Postgres instance ${obs.targetLabel ?? '#${rule.postgresInstanceId}'}',
       'mongo' => 'Mongo instance ${obs.targetLabel ?? '#${rule.mongoInstanceId}'}',
+      'mail' => 'The mail stack',
+      'service' => 'Service ${obs.targetLabel ?? '#${rule.managedServiceId}'}',
+      'runtime' => 'Runtime ${obs.targetLabel ?? '#${rule.applicationId}'}',
       _ => 'A resource',
     };
     if (rule.metric == 'status_down') return '$target is down.';
@@ -124,6 +128,9 @@ class AlertEvaluator {
         'app' => _observeApp(rule),
         'postgres' => _observePostgres(rule),
         'mongo' => _observeMongo(rule),
+        'mail' => _observeMail(rule),
+        'service' => _observeService(rule),
+        'runtime' => _observeRuntime(rule),
         _ => Future.value(null),
       };
 
@@ -307,6 +314,65 @@ class AlertEvaluator {
     } finally {
       await conn?.close();
     }
+  }
+
+  /// The mail stack is a system-wide singleton — no target to look up, just
+  /// the cached health snapshot [HealthMonitorWorker] publishes.
+  Future<_Observation?> _observeMail(AlertRule rule) async {
+    if (rule.metric != 'status_down') return null; // nothing else sampled yet
+    final cached = await readCachedHealth(mailHealthRedisKey);
+    if (cached == null) return null; // no probe has landed yet
+    return _Observation(percent: null, isDown: cached['healthy'] != true, targetLabel: null);
+  }
+
+  Future<_Observation?> _observeService(AlertRule rule) async {
+    final id = rule.managedServiceId;
+    if (id == null) return null;
+    final svc = await Query<ManagedService>(ManagedServiceTable.metadata)
+        .where(ManagedServiceTable.id.eq(id))
+        .first(database.context());
+    if (svc == null) return null;
+    if (rule.metric != 'status_down') return null; // nothing else sampled yet
+
+    final cached = await readCachedHealth(serviceHealthRedisKey(id));
+    if (cached == null) return null; // no probe has landed yet
+    return _Observation(
+      percent: null,
+      isDown: cached['healthy'] != true,
+      targetLabel: svc.displayName,
+    );
+  }
+
+  /// Runtime alerts are per-family (not per-version, see the schema comment
+  /// on `AlertRule.application`) — down when *any* installed version's
+  /// cached probe reports unhealthy, since a broken toolchain version still
+  /// needs a superuser's attention even if a sibling version works fine.
+  Future<_Observation?> _observeRuntime(AlertRule rule) async {
+    final id = rule.applicationId;
+    if (id == null) return null;
+    final app = await Query<Application>(ApplicationTable.metadata)
+        .where(ApplicationTable.id.eq(id))
+        .first(database.context());
+    if (app == null) return null;
+    if (rule.metric != 'status_down') return null; // nothing else sampled yet
+
+    final versions = await Query<ApplicationVersion>(ApplicationVersionTable.metadata)
+        .where(ApplicationVersionTable.applicationId.eq(id))
+        .where(ApplicationVersionTable.status.eq('installed'))
+        .all(database.context());
+    if (versions.isEmpty) return null; // nothing installed yet — no data
+
+    var anyChecked = false;
+    var anyUnhealthy = false;
+    for (final v in versions) {
+      final cached = await readCachedHealth(runtimeHealthRedisKey(v.id!));
+      if (cached == null) continue;
+      anyChecked = true;
+      if (cached['healthy'] != true) anyUnhealthy = true;
+    }
+    if (!anyChecked) return null; // no probe has landed yet
+
+    return _Observation(percent: null, isDown: anyUnhealthy, targetLabel: app.displayName);
   }
 
   static int _toInt(Object? v) {

@@ -286,6 +286,13 @@ export default function NotificationSettingsPage() {
       >
         <AlertRulesManager scope="system" canWrite />
       </PageSection>
+
+      <PageSection
+        title="Mail stack alerts"
+        description="Fires when the mail stack (Postfix / Dovecot / OpenDKIM) is found unhealthy by the periodic health monitor. Delivered to every superuser."
+      >
+        <AlertRulesManager scope="mail" canWrite />
+      </PageSection>
     </Page>
   );
 }

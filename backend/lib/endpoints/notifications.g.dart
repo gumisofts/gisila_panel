@@ -57,6 +57,14 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
           'type': 'integer',
           'format': 'int64'
         },
+        'managedServiceId': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
+        'applicationId': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
         'metric': <String, Object?>{'type': 'string'},
         'comparison': <String, Object?>{'type': 'string'},
         'thresholdPercent': <String, Object?>{
@@ -295,8 +303,24 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                     request.url.queryParameters['mongoInstanceId'],
                     'mongoInstanceId',
                     required: false);
-                final result = await this.listRules(notifications, apps, ctx,
-                    scope, appId, postgresInstanceId, mongoInstanceId);
+                final managedServiceId = coerce<int?>(
+                    request.url.queryParameters['managedServiceId'],
+                    'managedServiceId',
+                    required: false);
+                final applicationId = coerce<int?>(
+                    request.url.queryParameters['applicationId'],
+                    'applicationId',
+                    required: false);
+                final result = await this.listRules(
+                    notifications,
+                    apps,
+                    ctx,
+                    scope,
+                    appId,
+                    postgresInstanceId,
+                    mongoInstanceId,
+                    managedServiceId,
+                    applicationId);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -344,6 +368,26 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
               ),
               Parameter(
                 name: 'mongoInstanceId',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              ),
+              Parameter(
+                name: 'managedServiceId',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              ),
+              Parameter(
+                name: 'applicationId',
                 location: 'query',
                 required: false,
                 description: null,
@@ -606,11 +650,28 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                     request.url.queryParameters['mongoInstanceId'],
                     'mongoInstanceId',
                     required: false);
+                final managedServiceId = coerce<int?>(
+                    request.url.queryParameters['managedServiceId'],
+                    'managedServiceId',
+                    required: false);
+                final applicationId = coerce<int?>(
+                    request.url.queryParameters['applicationId'],
+                    'applicationId',
+                    required: false);
                 final limit = coerce<int?>(
                     request.url.queryParameters['limit'], 'limit',
                     required: false);
-                final result = await this.listEvents(notifications, apps, ctx,
-                    scope, appId, postgresInstanceId, mongoInstanceId, limit);
+                final result = await this.listEvents(
+                    notifications,
+                    apps,
+                    ctx,
+                    scope,
+                    appId,
+                    postgresInstanceId,
+                    mongoInstanceId,
+                    managedServiceId,
+                    applicationId,
+                    limit);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -658,6 +719,26 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
               ),
               Parameter(
                 name: 'mongoInstanceId',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              ),
+              Parameter(
+                name: 'managedServiceId',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              ),
+              Parameter(
+                name: 'applicationId',
                 location: 'query',
                 required: false,
                 description: null,

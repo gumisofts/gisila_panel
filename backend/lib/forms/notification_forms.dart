@@ -40,6 +40,8 @@ class CreateAlertRuleForm extends Form {
   final appId = IntField(name: 'appId');
   final postgresInstanceId = IntField(name: 'postgresInstanceId');
   final mongoInstanceId = IntField(name: 'mongoInstanceId');
+  final managedServiceId = IntField(name: 'managedServiceId');
+  final applicationId = IntField(name: 'applicationId');
   final metric = StringField(name: 'metric', required: true, maxLength: 32);
   final comparison = StringField(name: 'comparison', maxLength: 8);
   final thresholdPercent = IntField(name: 'thresholdPercent', min: 0, max: 100);
@@ -54,6 +56,8 @@ class CreateAlertRuleForm extends Form {
         appId,
         postgresInstanceId,
         mongoInstanceId,
+        managedServiceId,
+        applicationId,
         metric,
         comparison,
         thresholdPercent,

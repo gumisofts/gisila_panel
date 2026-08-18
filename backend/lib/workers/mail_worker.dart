@@ -22,6 +22,10 @@ class MailWorker {
         await _runAgent(['mail', 'setup']);
       case 'sync':
         await _sync();
+      case 'repair':
+        // Triggered manually (POST /mail/repair) or by HealthMonitorWorker
+        // when a periodic probe finds the stack unhealthy.
+        await _runAgent(['mail', 'repair']);
       default:
         return;
     }

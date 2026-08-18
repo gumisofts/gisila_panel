@@ -1268,7 +1268,7 @@ SmtpConfig:
 AlertRule:
   columns:
     scope:
-      type: varchar            # system | app | postgres | mongo
+      type: varchar            # system | app | postgres | mongo | mail | service | runtime
       is_null: false
       is_index: true
     app:
@@ -1286,6 +1286,22 @@ AlertRule:
     mongo_instance:
       type: foreign_key
       references: MongoInstance
+      is_null: true
+      reverse_name: alert_rules
+      on_delete: cascade
+    # `mail` is system-wide (singleton, no target — like `system`).
+    managed_service:
+      type: foreign_key
+      references: ManagedService
+      is_null: true
+      reverse_name: alert_rules
+      on_delete: cascade
+    # Runtime alerts are per-family (Python, Node, …), not per-version — a
+    # version can be added/removed independently of the alert configured for
+    # the toolchain as a whole.
+    application:
+      type: foreign_key
+      references: Application
       is_null: true
       reverse_name: alert_rules
       on_delete: cascade
@@ -1360,6 +1376,18 @@ AlertEvent:
     mongo_instance:
       type: foreign_key
       references: MongoInstance
+      is_null: true
+      reverse_name: alert_events
+      on_delete: cascade
+    managed_service:
+      type: foreign_key
+      references: ManagedService
+      is_null: true
+      reverse_name: alert_events
+      on_delete: cascade
+    application:
+      type: foreign_key
+      references: Application
       is_null: true
       reverse_name: alert_events
       on_delete: cascade

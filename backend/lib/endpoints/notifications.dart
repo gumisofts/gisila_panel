@@ -13,8 +13,9 @@ part 'notifications.g.dart';
 /// per-user notification inbox.
 ///
 /// Access rules (mirroring `NotificationCore.recipientsForRule`):
-///  * `system` / `postgres` / `mongo` scoped rules + the SMTP config are
-///    superuser-only — none of those resources are team-owned.
+///  * `system` / `postgres` / `mongo` / `mail` / `service` / `runtime` scoped
+///    rules + the SMTP config are superuser-only — none of those resources
+///    are team-owned.
 ///  * `app` scoped rules follow normal team RBAC: any member can read,
 ///    `developer`+ can write (same bar as editing the app's resource quota
 ///    in `AppsApi.update`).
@@ -84,6 +85,8 @@ class NotificationsApi {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
   ) async {
     await _requireReadAccess(ctx, apps, scope: scope, appId: appId);
     final rules = await notifications.listAlertRules(
@@ -91,6 +94,8 @@ class NotificationsApi {
       appId: appId,
       postgresInstanceId: postgresInstanceId,
       mongoInstanceId: mongoInstanceId,
+      managedServiceId: managedServiceId,
+      applicationId: applicationId,
     );
     return <String, Object?>{'results': rules.map((r) => r.toJson()).toList()};
   }
@@ -125,6 +130,8 @@ class NotificationsApi {
       appId: form.appId.value,
       postgresInstanceId: form.postgresInstanceId.value,
       mongoInstanceId: form.mongoInstanceId.value,
+      managedServiceId: form.managedServiceId.value,
+      applicationId: form.applicationId.value,
       metric: form.metric.value!,
       comparison: form.comparison.value ?? 'gte',
       thresholdPercent: form.thresholdPercent.value,
@@ -184,6 +191,8 @@ class NotificationsApi {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     int? limit,
   ) async {
     await _requireReadAccess(ctx, apps, scope: scope, appId: appId);
@@ -192,6 +201,8 @@ class NotificationsApi {
       appId: appId,
       postgresInstanceId: postgresInstanceId,
       mongoInstanceId: mongoInstanceId,
+      managedServiceId: managedServiceId,
+      applicationId: applicationId,
       limit: limit ?? 50,
     );
     return <String, Object?>{'results': events.map((e) => e.toJson()).toList()};

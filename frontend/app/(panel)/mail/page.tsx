@@ -46,8 +46,12 @@ import {
   Tile,
 } from "@carbon/react";
 import { Page, PageHeader } from "@/components/page";
+import { HealthBadge, RepairButton } from "@/components/health-badge";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
+import { toast } from "@/lib/toast";
 import type {
+  HealthStatus,
   ListResponse,
   MailDomain,
   MailAccount,
@@ -67,6 +71,30 @@ export default function MailPage() {
     { refreshInterval: (d) => (d?.installed ? 0 : 4_000) }
   );
   const installed = status?.installed ?? false;
+  const { isSuperuser } = usePermissions();
+
+  // Cached live health of the mail daemons, published by HealthMonitorWorker
+  // and auto-repaired on a cooldown — this just surfaces that state and lets
+  // a superuser nudge a repair sooner.
+  const { data: health, mutate: mutateHealth } = useSWR<HealthStatus>(
+    installed ? "/mail/health" : null,
+    fetcher,
+    { refreshInterval: 15_000 },
+  );
+  const [repairing, setRepairing] = useState(false);
+
+  async function handleRepair() {
+    setRepairing(true);
+    try {
+      await api("/mail/repair", { method: "POST" });
+      toast.success("Mail stack repair queued.");
+      setTimeout(() => mutateHealth(), 3_000);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue repair.");
+    } finally {
+      setRepairing(false);
+    }
+  }
 
   const { data, isLoading } = useSWR<ListResponse<MailDomain>>(
     installed ? "/mail/domains" : null,
@@ -132,9 +160,15 @@ export default function MailPage() {
         }
         actions={
           installed && (
-            <Button size="sm" renderIcon={Add} onClick={() => setShowAdd(true)}>
-              Add domain
-            </Button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <HealthBadge health={health} />
+              {isSuperuser && health?.healthy === false && (
+                <RepairButton onRepair={handleRepair} busy={repairing} />
+              )}
+              <Button size="sm" renderIcon={Add} onClick={() => setShowAdd(true)}>
+                Add domain
+              </Button>
+            </div>
           )
         }
       />

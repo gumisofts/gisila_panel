@@ -4,6 +4,7 @@ import 'package:gisila_panel/forms/application_forms.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/application_catalog.dart';
 import 'package:gisila_panel/services/application_service.dart';
+import 'package:gisila_panel/workers/health_monitor_worker.dart';
 
 part 'applications.g.dart';
 
@@ -145,6 +146,35 @@ class ApplicationsApi {
   ) async {
     requireSuperuser(ctx);
     final row = await svc.setDefaultVersion(id, versionId);
+    return row.toJson();
+  }
+
+  @Get(
+    '/{id}/versions/{versionId}/health',
+    summary: 'Cached live health of a runtime version',
+  )
+  Future<Map<String, Object?>> versionHealth(
+    int id,
+    int versionId,
+    ApplicationService svc,
+  ) async {
+    await svc.findVersion(id, versionId); // validates existence
+    final cached = await readCachedHealth(runtimeHealthRedisKey(versionId));
+    return cached ?? {'healthy': null, 'checkedAt': null};
+  }
+
+  @Post(
+    '/{id}/versions/{versionId}/reinstall',
+    summary: 'Manually reinstall an unhealthy runtime version',
+  )
+  Future<Map<String, Object?>> reinstallVersion(
+    int id,
+    int versionId,
+    ApplicationService svc,
+    RequestContext ctx,
+  ) async {
+    requireSuperuser(ctx);
+    final row = await svc.reinstallVersion(id, versionId);
     return row.toJson();
   }
 }

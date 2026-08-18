@@ -54,6 +54,12 @@ const METRICS_BY_SCOPE: Record<AlertScope, AlertMetric[]> = {
   app: ["cpu_percent", "memory_percent", "status_down"],
   postgres: ["cpu_percent", "connections_percent", "status_down"],
   mongo: ["connections_percent", "status_down"],
+  // Mail / service / runtime health comes from HealthMonitorWorker's cached
+  // agent probes rather than a sampled percentage — "is it down" is the only
+  // metric available for these scopes today.
+  mail: ["status_down"],
+  service: ["status_down"],
+  runtime: ["status_down"],
 };
 
 type RuleForm = {
@@ -114,6 +120,8 @@ export function AlertRulesManager({
   appId,
   postgresInstanceId,
   mongoInstanceId,
+  managedServiceId,
+  applicationId,
   canWrite,
   title = "Alert rules",
   description,
@@ -122,11 +130,20 @@ export function AlertRulesManager({
   appId?: number;
   postgresInstanceId?: number;
   mongoInstanceId?: number;
+  managedServiceId?: number;
+  applicationId?: number;
   canWrite: boolean;
   title?: string;
   description?: string;
 }) {
-  const target = { scope, appId, postgresInstanceId, mongoInstanceId };
+  const target = {
+    scope,
+    appId,
+    postgresInstanceId,
+    mongoInstanceId,
+    managedServiceId,
+    applicationId,
+  };
   const rulesKey = `/notifications/rules${query(target)}`;
   const eventsKey = `/notifications/events${query({ ...target, limit: 8 })}`;
 

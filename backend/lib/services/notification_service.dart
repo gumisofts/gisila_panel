@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
 import 'package:mailer/mailer.dart';
@@ -6,10 +9,10 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
 
 /// Alerting + notification delivery: the panel-wide SMTP config, threshold
-/// [AlertRule]s (system / app / postgres / mongo scoped), the [AlertEvent]
-/// history they produce, and the per-user [Notification] inbox those events
-/// fan out to. See the comment block above these models in
-/// `schema.gisila.yaml` for the full design.
+/// [AlertRule]s (system / app / postgres / mongo / mail / service / runtime
+/// scoped), the [AlertEvent] history they produce, and the per-user
+/// [Notification] inbox those events fan out to. See the comment block above
+/// these models in `schema.gisila.yaml` for the full design.
 ///
 /// The actual logic lives in [NotificationCore], a plain class that only
 /// needs a [Database] — that's what [AlertEvaluator] (a worker, outside any
@@ -48,11 +51,15 @@ class NotificationService extends Service {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
   }) => _core.listAlertRules(
         scope: scope,
         appId: appId,
         postgresInstanceId: postgresInstanceId,
         mongoInstanceId: mongoInstanceId,
+        managedServiceId: managedServiceId,
+        applicationId: applicationId,
       );
 
   Future<AlertRule> findAlertRule(int id) => _core.findAlertRule(id);
@@ -62,6 +69,8 @@ class NotificationService extends Service {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     required String metric,
     String comparison = 'gte',
     int? thresholdPercent,
@@ -75,6 +84,8 @@ class NotificationService extends Service {
         appId: appId,
         postgresInstanceId: postgresInstanceId,
         mongoInstanceId: mongoInstanceId,
+        managedServiceId: managedServiceId,
+        applicationId: applicationId,
         metric: metric,
         comparison: comparison,
         thresholdPercent: thresholdPercent,
@@ -112,12 +123,16 @@ class NotificationService extends Service {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     int limit = 50,
   }) => _core.listEvents(
         scope: scope,
         appId: appId,
         postgresInstanceId: postgresInstanceId,
         mongoInstanceId: mongoInstanceId,
+        managedServiceId: managedServiceId,
+        applicationId: applicationId,
         limit: limit,
       );
 
@@ -231,7 +246,28 @@ class NotificationCore {
       ..text = 'This is a test email from Gisila Panel. If you can read this, '
           'outbound alert email is configured correctly.';
 
-    await send(message, server, timeout: const Duration(seconds: 20));
+    // A bad host/port/credentials/TLS mode is the whole point of this
+    // endpoint — surface it as a 422 with the real reason instead of letting
+    // it fall through to the generic "Internal server error" 500. `send()`
+    // can throw a `MailerException` (auth, protocol, "connection not secure")
+    // or a bare `SocketException`/`TimeoutException` for connect failures —
+    // neither is caught by the framework's `TypeError`/`FormatException`
+    // coercion handling, so it has to be done here.
+    try {
+      await send(message, server, timeout: const Duration(seconds: 20));
+    } on MailerException catch (e) {
+      throw HttpException(422, 'Could not send test email: ${e.message}');
+    } on SocketException catch (e) {
+      throw HttpException(
+        422,
+        'Could not reach ${cfg.smtpHost}:${server.port} — ${e.message}.',
+      );
+    } on TimeoutException {
+      throw HttpException(
+        422,
+        'Connecting to ${cfg.smtpHost}:${server.port} timed out after 20s.',
+      );
+    }
   }
 
   // ── Alert rules ──────────────────────────────────────────────────────────
@@ -241,6 +277,8 @@ class NotificationCore {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
   }) async {
     var q = Query<AlertRule>(AlertRuleTable.metadata);
     if (scope != null) q = q.where(AlertRuleTable.scope.eq(scope));
@@ -250,6 +288,12 @@ class NotificationCore {
     }
     if (mongoInstanceId != null) {
       q = q.where(AlertRuleTable.mongoInstanceId.eq(mongoInstanceId));
+    }
+    if (managedServiceId != null) {
+      q = q.where(AlertRuleTable.managedServiceId.eq(managedServiceId));
+    }
+    if (applicationId != null) {
+      q = q.where(AlertRuleTable.applicationId.eq(applicationId));
     }
     return q.orderBy(AlertRuleTable.createdAt, desc: true).all(_db.context());
   }
@@ -272,6 +316,8 @@ class NotificationCore {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     required String metric,
     String comparison = 'gte',
     int? thresholdPercent,
@@ -286,6 +332,8 @@ class NotificationCore {
       appId: appId,
       postgresInstanceId: postgresInstanceId,
       mongoInstanceId: mongoInstanceId,
+      managedServiceId: managedServiceId,
+      applicationId: applicationId,
     );
     _validateMetric(metric: metric, thresholdPercent: thresholdPercent);
 
@@ -294,6 +342,8 @@ class NotificationCore {
       'appId': appId,
       'postgresInstanceId': postgresInstanceId,
       'mongoInstanceId': mongoInstanceId,
+      'managedServiceId': managedServiceId,
+      'applicationId': applicationId,
       'metric': metric,
       'comparison': comparison,
       'thresholdPercent': thresholdPercent,
@@ -358,6 +408,8 @@ class NotificationCore {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
   }) {
     switch (scope) {
       case 'system':
@@ -373,6 +425,17 @@ class NotificationCore {
       case 'mongo':
         if (mongoInstanceId == null) {
           throw HttpException(422, 'mongoInstanceId is required for mongo-scoped rules.');
+        }
+      case 'mail':
+        // System-wide singleton, like `system` — no target to reference.
+        break;
+      case 'service':
+        if (managedServiceId == null) {
+          throw HttpException(422, 'managedServiceId is required for service-scoped rules.');
+        }
+      case 'runtime':
+        if (applicationId == null) {
+          throw HttpException(422, 'applicationId is required for runtime-scoped rules.');
         }
       default:
         throw HttpException(422, 'Unknown scope "$scope".');
@@ -461,6 +524,8 @@ class NotificationCore {
       'appId': rule.appId,
       'postgresInstanceId': rule.postgresInstanceId,
       'mongoInstanceId': rule.mongoInstanceId,
+      'managedServiceId': rule.managedServiceId,
+      'applicationId': rule.applicationId,
       'metric': rule.metric,
       'observedPercent': observedPercent,
       'thresholdPercent': rule.thresholdPercent,
@@ -582,6 +647,9 @@ class NotificationCore {
         'app' => 'App',
         'postgres' => 'Postgres instance',
         'mongo' => 'Mongo instance',
+        'mail' => 'Mail stack',
+        'service' => 'Service',
+        'runtime' => 'Runtime',
         _ => 'Resource',
       };
 
@@ -601,6 +669,8 @@ class NotificationCore {
     int? appId,
     int? postgresInstanceId,
     int? mongoInstanceId,
+    int? managedServiceId,
+    int? applicationId,
     int limit = 50,
   }) async {
     var q = Query<AlertEvent>(AlertEventTable.metadata);
@@ -611,6 +681,12 @@ class NotificationCore {
     }
     if (mongoInstanceId != null) {
       q = q.where(AlertEventTable.mongoInstanceId.eq(mongoInstanceId));
+    }
+    if (managedServiceId != null) {
+      q = q.where(AlertEventTable.managedServiceId.eq(managedServiceId));
+    }
+    if (applicationId != null) {
+      q = q.where(AlertEventTable.applicationId.eq(applicationId));
     }
     return q.orderBy(AlertEventTable.createdAt, desc: true).limit(limit).all(_db.context());
   }

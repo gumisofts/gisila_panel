@@ -165,6 +165,19 @@ class ManagedServiceService extends Service {
     await _enqueue('uninstall', id);
   }
 
+  /// Manually trigger a repair (restart → reinstall escalation). The same
+  /// action [HealthMonitorWorker] enqueues automatically when a periodic
+  /// probe finds the service unhealthy, exposed here for the panel's
+  /// superuser-only "Repair now" button.
+  Future<ManagedService> repair(int id) async {
+    final svc = await findById(id);
+    if (!(findService(svc.serviceType)?.requiresInstall ?? false)) {
+      throw HttpException(422, 'This service has nothing on the host to repair.');
+    }
+    await _enqueue('repair', id);
+    return svc;
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   void _requireConfig(ServiceDef def, Map<String, String> config) {

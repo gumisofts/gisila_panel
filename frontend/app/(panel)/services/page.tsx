@@ -34,10 +34,12 @@ import {
   Toggle,
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
+import { HealthBadge } from "@/components/health-badge";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import type {
   ConfigField,
+  HealthStatus,
   ListResponse,
   ManagedService,
   ServiceDef,
@@ -209,6 +211,15 @@ function InstalledTile({ svc, def }: { svc: ManagedService; def?: ServiceDef }) 
   const details = summaryFields(config, def);
   const category = def?.category ?? SERVICE_CATEGORY[svc.serviceType] ?? "";
 
+  // Only services with something on the host to probe (apt + systemd) get a
+  // live health check — config-only services (e.g. pgAdmin behind the panel
+  // itself) have no daemon for HealthMonitorWorker to check.
+  const { data: health } = useSWR<HealthStatus>(
+    def?.requiresInstall ? `/services/${svc.id}/health` : null,
+    fetcher,
+    { refreshInterval: 30_000 },
+  );
+
   return (
     <RouterTile as={RouterLink} href={`/services/${svc.id}`}>
       <Stack gap={4}>
@@ -220,7 +231,10 @@ function InstalledTile({ svc, def }: { svc: ManagedService; def?: ServiceDef }) 
               <p className="gisila-catalog__key">{svc.serviceType}</p>
             </div>
           </div>
-          <StatusIndicator status={svc.status} />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <HealthBadge health={health} />
+            <StatusIndicator status={svc.status} />
+          </div>
         </div>
 
         {details.length > 0 && (

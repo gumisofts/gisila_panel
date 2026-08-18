@@ -275,6 +275,35 @@ class ApplicationService extends Service {
     return findById(id);
   }
 
+  /// Re-run the install job for a version found unhealthy by
+  /// [HealthMonitorWorker] — a `runtime health` probe invokes the toolchain's
+  /// own binary rather than just checking a directory exists, so this can
+  /// catch a partial download or wrong-arch binary that `status` alone
+  /// wouldn't. Runtime versions are never auto-repaired (unlike mail/
+  /// services); this is the manual path a superuser triggers from the UI.
+  Future<ApplicationVersion> reinstallVersion(
+    int applicationId,
+    int versionId,
+  ) async {
+    await findById(applicationId); // validates existence
+    final row = await findVersion(applicationId, versionId);
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    await _patchVersion(versionId, {
+      'status': 'installing',
+      'errorMessage': null,
+      'updatedAt': now,
+    });
+    await _patch(applicationId, {'status': 'installing', 'errorMessage': null});
+    await _enqueue(
+      'install',
+      applicationId,
+      version: row.version,
+      applicationVersionId: versionId,
+    );
+    return findVersion(applicationId, versionId);
+  }
+
   /// Point new apps at an already-installed version.
   Future<ApplicationVersion> setDefaultVersion(
     int applicationId,

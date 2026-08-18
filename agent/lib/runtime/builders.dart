@@ -1861,6 +1861,44 @@ class Builders {
     return names;
   }
 
+  /// Whether an installed [key] toolchain [version] actually works — invokes
+  /// the version's own binary rather than just checking a directory exists on
+  /// disk (which is all `installedVersions()` / `runtime status` do). Used by
+  /// `gisila-agent runtime health` to flag broken installs (partial download,
+  /// wrong-arch binary, missing C extensions) that a directory listing alone
+  /// can't catch. Runtimes with no on-disk toolchain to probe report healthy.
+  static Future<bool> versionHealthy(String key, String version) async {
+    switch (key) {
+      case 'dart':
+        return _binRuns('$_dartBase/$version/dart-sdk/bin/dart', ['--version']);
+      case 'go':
+        return _binRuns('$_goBase/$version/go/bin/go', ['version']);
+      case 'bun':
+        return _binRuns('$_bunBase/$version/bun', ['--version']);
+      case 'node':
+      case 'static': // static sites with a Node build share the fnm toolchain
+        return _binRuns(
+          '$_fnmDir/node-versions/v$version/installation/bin/node',
+          ['--version'],
+        );
+      case 'python':
+      case 'celery': // Celery apps run on the same pyenv-managed interpreter
+        return _pythonExtensionsOk('/opt/pyenv/versions/$version/bin/python');
+      case 'rust':
+        try {
+          final result =
+              await Process.run('rustup', ['run', version, 'rustc', '--version']);
+          return result.exitCode == 0;
+        } catch (_) {
+          return false;
+        }
+      default:
+        // Unversioned runtimes (binary, zig, …) have nothing on disk to
+        // probe beyond what `installedVersions()` already reports.
+        return true;
+    }
+  }
+
   // ── Shared helpers ────────────────────────────────────────────────────────
 
   /// Env for builds that run as the app user via `runuser`.

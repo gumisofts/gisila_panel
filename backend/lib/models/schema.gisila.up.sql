@@ -459,6 +459,8 @@ CREATE TABLE "alert_rules" (
   "app_id" BIGINT,
   "postgres_instance_id" BIGINT,
   "mongo_instance_id" BIGINT,
+  "managed_service_id" BIGINT,
+  "application_id" BIGINT,
   "metric" VARCHAR(255) NOT NULL,
   "comparison" VARCHAR(255) DEFAULT 'gte',
   "threshold_percent" INTEGER,
@@ -480,6 +482,8 @@ CREATE TABLE "alert_events" (
   "app_id" BIGINT,
   "postgres_instance_id" BIGINT,
   "mongo_instance_id" BIGINT,
+  "managed_service_id" BIGINT,
+  "application_id" BIGINT,
   "metric" VARCHAR(255) NOT NULL,
   "observed_percent" INTEGER,
   "threshold_percent" INTEGER,
@@ -572,12 +576,16 @@ ALTER TABLE "mail_accounts" ADD CONSTRAINT "mail_accounts_mail_domain_fkey" FORE
 ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_postgres_instance_fkey" FOREIGN KEY ("postgres_instance_id") REFERENCES "postgres_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_mongo_instance_fkey" FOREIGN KEY ("mongo_instance_id") REFERENCES "mongo_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_managed_service_fkey" FOREIGN KEY ("managed_service_id") REFERENCES "managed_services" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_rules" ADD CONSTRAINT "alert_rules_created_by_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_rule_fkey" FOREIGN KEY ("rule_id") REFERENCES "alert_rules" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_postgres_instance_fkey" FOREIGN KEY ("postgres_instance_id") REFERENCES "postgres_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_mongo_instance_fkey" FOREIGN KEY ("mongo_instance_id") REFERENCES "mongo_instances" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_managed_service_fkey" FOREIGN KEY ("managed_service_id") REFERENCES "managed_services" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "alert_events" ADD CONSTRAINT "alert_events_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_event_fkey" FOREIGN KEY ("event_id") REFERENCES "alert_events" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
