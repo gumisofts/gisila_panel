@@ -171,18 +171,94 @@ body,
   max-inline-size: calc(100vw - 2rem);
 }
 
+// Collapsed shows only the header + a one-line summary — no border on the
+// header since there's no list below it to separate from.
+.gisila-bell__panel--collapsed .gisila-bell__header {
+  border-block-end: none;
+}
+
 .gisila-bell__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: spacing.$spacing-03;
   padding: spacing.$spacing-04 spacing.$spacing-04 spacing.$spacing-03;
   border-block-end: 1px solid theme.$border-subtle-01;
+}
+
+.gisila-bell__header-actions {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-02;
+  flex-shrink: 0;
 }
 
 .gisila-bell__title {
   @include type.type-style('productive-heading-01');
 
+  display: inline-flex;
+  align-items: center;
+  gap: spacing.$spacing-02;
   color: theme.$text-primary;
+}
+
+.gisila-bell__title-count {
+  @include type.type-style('label-01');
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.25rem;
+  block-size: 1.25rem;
+  padding-inline: 0.25rem;
+  border-radius: 999px;
+  background-color: theme.$layer-accent-01;
+  color: theme.$text-secondary;
+}
+
+.gisila-bell__collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: theme.$text-secondary;
+  cursor: pointer;
+
+  &:hover {
+    background-color: theme.$background-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid theme.$focus;
+    outline-offset: -2px;
+  }
+
+  svg {
+    fill: currentColor;
+  }
+}
+
+// Collapsed state's stand-in for the list + footer — a single clickable row
+// that expands the panel back out.
+.gisila-bell__summary {
+  @include type.type-style('body-compact-01');
+
+  display: block;
+  inline-size: 100%;
+  padding: spacing.$spacing-03 spacing.$spacing-04 spacing.$spacing-04;
+  border: none;
+  background: none;
+  color: theme.$text-secondary;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    color: theme.$text-primary;
+  }
 }
 
 .gisila-bell__list {
