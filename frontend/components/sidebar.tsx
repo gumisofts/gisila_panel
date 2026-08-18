@@ -15,6 +15,7 @@ import {
   Email,
   FolderOpen,
   Layers,
+  Notification,
   ObjectStorage,
   Password,
   Security,
@@ -34,6 +35,7 @@ const NAV_SECTIONS = [
     label: "Overview",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Dashboard },
+      { href: "/notifications", label: "Notifications", icon: Notification },
       { href: "/activity", label: "Activity", icon: Activity },
     ],
   },
@@ -91,7 +93,14 @@ export function PanelSideNav({
         ...NAV_SECTIONS,
         {
           label: "Administration",
-          items: [{ href: "/settings/users", label: "Users", icon: Security }],
+          items: [
+            { href: "/settings/users", label: "Users", icon: Security },
+            {
+              href: "/settings/notifications",
+              label: "Alerts & Email",
+              icon: Notification,
+            },
+          ],
         },
       ]
     : NAV_SECTIONS;

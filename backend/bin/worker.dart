@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/workers/alert_worker.dart';
 import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
+import 'package:gisila_panel/workers/host_stats_sampler.dart';
 import 'package:gisila_panel/workers/job_queue.dart';
 import 'package:gisila_panel/workers/mail_worker.dart';
 import 'package:gisila_panel/workers/metrics_worker.dart';
@@ -45,6 +47,13 @@ Future<void> main(List<String> args) async {
 
   // Self-driven scheduler that fires due database backups.
   BackupScheduler(database).start();
+
+  // Self-driven whole-host CPU/memory/disk sampler (published to Redis).
+  HostStatsSampler().start();
+
+  // Self-driven evaluator that walks enabled alert rules and fires/resolves
+  // notifications + alert emails.
+  AlertEvaluator(database).start();
 
   logger.i('gisila-worker: starting');
 

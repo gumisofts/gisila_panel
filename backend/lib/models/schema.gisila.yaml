@@ -1208,6 +1208,223 @@ MailAccount:
       type: timestamp
       is_null: true
 
+# ─────────────────────────── Notifications & alerting ────────────────────────
+#
+# Threshold-based alerting on whole-host resources, per-app quota usage, and
+# managed database health. Each AlertRule watches one `metric` on one `scope`:
+#
+#   system   — whole-host CPU/memory/disk (sampled directly by the worker, no
+#              agent involved). Notifies every superuser.
+#   app      — a single App's usage as a percentage of its *own* configured
+#              quota (memory_mb_limit / cpu_quota_percent / tasks_limit).
+#              Notifies every member of the app's team.
+#   postgres / mongo — a managed instance's host resource usage or connection
+#              pressure, plus a `status_down` metric that fires whenever the
+#              instance isn't `running`. Notifies every superuser (databases
+#              are host infrastructure, not team-owned — see DatabasesApi).
+#
+# A firing rule writes one AlertEvent, which fans out to a Notification row
+# per recipient (the in-panel inbox) and, if enabled, a single alert email via
+# the panel-wide SMTP config in SmtpConfig. `cooldown_minutes` throttles
+# repeat firings; when the metric drops back under threshold the open
+# AlertEvent is marked resolved.
+
+# Singleton row (the service layer always reads/creates id=1) holding the
+# panel-wide outbound SMTP configuration used to deliver alert emails.
+SmtpConfig:
+  columns:
+    smtp_host:
+      type: varchar
+      is_null: true
+    smtp_port:
+      type: integer
+      default: 587
+    smtp_username:
+      type: varchar
+      is_null: true
+    # Stored as-is (encrypt at the DB layer in production, like SshKey.private_key).
+    smtp_password:
+      type: varchar
+      is_null: true
+    smtp_security:
+      type: varchar
+      default: starttls        # none | starttls | ssl
+    from_email:
+      type: varchar
+      is_null: true
+    from_name:
+      type: varchar
+      default: 'Gisila Panel'
+    email_enabled:
+      type: boolean
+      default: false
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+AlertRule:
+  columns:
+    scope:
+      type: varchar            # system | app | postgres | mongo
+      is_null: false
+      is_index: true
+    app:
+      type: foreign_key
+      references: App
+      is_null: true
+      reverse_name: alert_rules
+      on_delete: cascade
+    postgres_instance:
+      type: foreign_key
+      references: PostgresInstance
+      is_null: true
+      reverse_name: alert_rules
+      on_delete: cascade
+    mongo_instance:
+      type: foreign_key
+      references: MongoInstance
+      is_null: true
+      reverse_name: alert_rules
+      on_delete: cascade
+    # cpu_percent | memory_percent | disk_percent | connections_percent | status_down
+    metric:
+      type: varchar
+      is_null: false
+    # gte fires at/above threshold_percent; lte fires at/below it.
+    comparison:
+      type: varchar
+      default: gte
+    # 0..100. Left null for the status_down metric (no threshold to configure).
+    threshold_percent:
+      type: integer
+      is_null: true
+    severity:
+      type: varchar
+      default: warning          # warning | critical
+    # Minimum time between two firings of the same rule.
+    cooldown_minutes:
+      type: integer
+      default: 15
+    enabled:
+      type: boolean
+      default: true
+    # Also send an email (subject to SmtpConfig.email_enabled).
+    # In-panel notifications are always created regardless of this flag.
+    notify_email:
+      type: boolean
+      default: true
+    last_triggered_at:
+      type: timestamp
+      is_null: true
+    created_by:
+      type: foreign_key
+      references: User
+      is_null: true
+      reverse_name: created_alert_rules
+      on_delete: set null
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
+AlertEvent:
+  columns:
+    rule:
+      type: foreign_key
+      references: AlertRule
+      is_null: false
+      reverse_name: events
+      on_delete: cascade
+    # Denormalized copies of the rule's scope/target so history and the
+    # in-app notification list never need an extra join.
+    scope:
+      type: varchar
+      is_null: false
+    app:
+      type: foreign_key
+      references: App
+      is_null: true
+      reverse_name: alert_events
+      on_delete: cascade
+    postgres_instance:
+      type: foreign_key
+      references: PostgresInstance
+      is_null: true
+      reverse_name: alert_events
+      on_delete: cascade
+    mongo_instance:
+      type: foreign_key
+      references: MongoInstance
+      is_null: true
+      reverse_name: alert_events
+      on_delete: cascade
+    metric:
+      type: varchar
+      is_null: false
+    observed_percent:
+      type: integer
+      is_null: true
+    threshold_percent:
+      type: integer
+      is_null: true
+    severity:
+      type: varchar
+      default: warning
+    message:
+      type: text
+      is_null: false
+    status:
+      type: varchar
+      default: firing            # firing | resolved
+    resolved_at:
+      type: timestamp
+      is_null: true
+    email_sent_at:
+      type: timestamp
+      is_null: true
+    email_error:
+      type: text
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+
+# Per-user fan-out of an AlertEvent — powers the notification bell + inbox.
+Notification:
+  columns:
+    user:
+      type: foreign_key
+      references: User
+      is_null: false
+      reverse_name: notifications
+      on_delete: cascade
+    event:
+      type: foreign_key
+      references: AlertEvent
+      is_null: true
+      reverse_name: notifications
+      on_delete: cascade
+    title:
+      type: varchar
+      is_null: false
+    body:
+      type: text
+      is_null: true
+    level:
+      type: varchar
+      default: warning           # info | warning | critical
+    read_at:
+      type: timestamp
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+
 AuditLog:
   columns:
     actor:

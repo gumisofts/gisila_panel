@@ -1,6 +1,6 @@
 ---
 title: "How a Deployment Works in Gisila Panel"
-description: "From clicking Deploy to a running systemd service — a step-by-step walkthrough of the Gisila Panel deployment engine."
+description: "From clicking Deploy to a running systemd service: a step-by-step walkthrough of the Gisila Panel deployment engine."
 date: 2026-06-10
 author: Gisila Team
 tags: [deployment, architecture, systemd, tutorial]
@@ -10,7 +10,7 @@ tags: [deployment, architecture, systemd, tutorial]
 
 You've created an app in Gisila Panel, wired up your git repository, and clicked **Deploy**. What happens next?
 
-This post walks through the full deployment pipeline — from the API call to a running service behind Nginx with TLS — so you know exactly what the panel is doing on your server.
+This post walks through the full deployment pipeline, from the API call to a running service behind Nginx with TLS, so you know exactly what the panel is doing on your server.
 
 ---
 
@@ -24,11 +24,11 @@ You (browser)  →  Dart API  →  Redis queue  →  gisila-worker  →  gisila-
                  Postgres                    Build logs → WebSocket → your browser
 ```
 
-- **Dart API** — receives your deploy request, records state in Postgres, enqueues a job
-- **Redis** — job queue for deployments, lifecycle actions, vhost updates, SSL issuance; pub/sub for live log streaming
-- **gisila-worker** — background process that pops jobs and orchestrates the agent
-- **gisila-agent** — privileged host-side binary (runs as root via sudo) that touches systemd, Nginx, AppArmor, and the filesystem
-- **systemd** — actually runs your app as an isolated process
+- **Dart API**: receives your deploy request, records state in Postgres, enqueues a job
+- **Redis**: job queue for deployments, lifecycle actions, vhost updates, SSL issuance; pub/sub for live log streaming
+- **gisila-worker**: background process that pops jobs and orchestrates the agent
+- **gisila-agent**: privileged host-side binary (runs as root via sudo) that touches systemd, Nginx, AppArmor, and the filesystem
+- **systemd**: actually runs your app as an isolated process
 
 The API and worker run as the unprivileged `gisila` system user. The only privileged code path is `sudo /usr/local/bin/gisila-agent …`, gated by a tightly scoped sudoers rule.
 
@@ -76,7 +76,7 @@ The worker knows:
 
 It then shells out to `gisila-agent` in sequence. Each subcommand's stdout/stderr is captured, persisted to `BuildLog` rows, and published on the Redis channel `gisila:logs:build:<deploymentId>`.
 
-Your browser's **Logs** tab is a WebSocket subscribed to that channel — you see build output in real time, line by line.
+Your browser's **Logs** tab is a WebSocket subscribed to that channel, so you see build output in real time, line by line.
 
 ---
 
@@ -89,7 +89,7 @@ gisila-agent provision \
   --env-file /srv/apps/app_abc123/shared/.env
 ```
 
-This step is **idempotent** — safe to run on every deployment.
+This step is **idempotent**: safe to run on every deployment.
 
 What it does:
 
@@ -237,9 +237,9 @@ server {
 }
 ```
 
-Your app listens on `127.0.0.1:4127` — localhost only. Nginx is the public-facing entry point.
+Your app listens on `127.0.0.1:4127` (localhost only). Nginx is the public-facing entry point.
 
-If you've configured a custom domain, a separate SSL job runs `certbot --nginx` to provision and install a Let's Encrypt certificate. Renewal is handled by certbot's standard cron — not by the panel.
+If you've configured a custom domain, a separate SSL job runs `certbot --nginx` to provision and install a Let's Encrypt certificate. Renewal is handled by certbot's standard cron, not by the panel.
 
 Then: `nginx -t && systemctl reload nginx`.
 
@@ -257,7 +257,7 @@ Which runs:
 systemctl restart gisila-app_<slug>
 ```
 
-Your app starts. systemd manages the process lifecycle — if it crashes, `Restart=on-failure` brings it back after 5 seconds.
+Your app starts. systemd manages the process lifecycle. If it crashes, `Restart=on-failure` brings it back after 5 seconds.
 
 Logs go to journald:
 
@@ -311,8 +311,8 @@ Each action goes through the same Redis queue → worker → agent pipeline.
 
 The **Metrics** tab samples CPU and RAM directly from cgroups v2:
 
-- `/sys/fs/cgroup/.../memory.current` — current memory usage
-- `/sys/fs/cgroup/.../cpu.stat` — CPU time consumed
+- `/sys/fs/cgroup/.../memory.current`: current memory usage
+- `/sys/fs/cgroup/.../cpu.stat`: CPU time consumed
 
 No Prometheus required. No sidecar containers. The panel reads kernel accounting files directly.
 
@@ -348,7 +348,7 @@ cd gisila-panel
 docker compose up
 ```
 
-Open `http://localhost:3000`, create an account, add an app, and deploy. In dev mode (`AGENT_MODE=dev`), the worker logs the commands it *would* send to `gisila-agent` without touching systemd — so you can trace the full flow safely.
+Open `http://localhost:3000`, create an account, add an app, and deploy. In dev mode (`AGENT_MODE=dev`), the worker logs the commands it *would* send to `gisila-agent` without touching systemd, so you can trace the full flow safely.
 
 For a real end-to-end test, install on an Ubuntu VPS:
 
@@ -362,11 +362,13 @@ Then deploy a simple Go or Python HTTP server and watch the logs stream in.
 
 ## Further reading
 
-- [Architecture](../docs/ARCHITECTURE.md) — full system design
-- [Deployment engine](../docs/DEPLOYMENT_ENGINE.md) — agent subcommands and runtime matrix
-- [Security model](../docs/SECURITY.md) — isolation guarantees in detail
-- [API reference](../docs/API.md) — REST endpoints for CI/CD integration
+- [Architecture](../docs/ARCHITECTURE.md): full system design
+- [Deployment engine](../docs/DEPLOYMENT_ENGINE.md): agent subcommands and runtime matrix
+- [Security model](../docs/SECURITY.md): isolation guarantees in detail
+- [API reference](../docs/API.md): REST endpoints for CI/CD integration
 
 ---
 
 **Previous:** [← Why We Skipped Docker](./02-why-we-skipped-docker.md)
+
+**Next:** [Install and Getting Started →](./04-install-and-getting-started.md)

@@ -1,6 +1,6 @@
 ---
 title: "Why We Skipped Docker for Our PaaS"
-description: "Container overhead is real. On a 1 GB VPS, native Linux processes beat Docker for density — without sacrificing isolation."
+description: "Container overhead is real. On a 1 GB VPS, native Linux processes beat Docker for density without sacrificing isolation."
 date: 2026-06-10
 author: Gisila Team
 tags: [architecture, docker, systemd, performance, self-hosting]
@@ -57,7 +57,7 @@ When Gisila Panel deploys your app, here's what happens on the host:
 4. A systemd unit file is generated with hardening directives
 5. An AppArmor profile is generated and loaded
 6. An Nginx vhost is written pointing to `127.0.0.1:<port>`
-7. `systemctl start gisila-app_xxx` — your binary runs
+7. `systemctl start gisila-app_xxx`: your binary runs
 
 There is no image pull. No layer extraction. No container start. Your compiled binary is `exec`'d directly by systemd.
 
@@ -80,7 +80,7 @@ Rollbacks swap the `current/` symlink and restart the unit. No rebuild required 
 
 This is the second most common question, and it's the right one. Containers exist partly because running arbitrary code on a shared host is dangerous. If we skip Docker, how do we keep tenants apart?
 
-We use the same kernel primitives Docker uses — just without the container wrapper.
+We use the same kernel primitives Docker uses, just without the container wrapper.
 
 ### Layer 1: Identity isolation
 
@@ -90,7 +90,7 @@ Each app gets its own Linux user:
 - No home directory
 - Cannot escalate through PAM modules that filter `uid >= 1000`
 
-App A cannot read App B's files because the filesystem permissions say so — the same guarantee Docker provides via user namespaces, but enforced by the kernel directly.
+App A cannot read App B's files because the filesystem permissions say so: the same guarantee Docker provides via user namespaces, but enforced by the kernel directly.
 
 ### Layer 2: Filesystem isolation
 
@@ -110,34 +110,34 @@ An app can only write to its own directories. Everything else on the filesystem 
 
 The `gisila-agent` generates a per-app AppArmor profile on every deployment. The profile default-denies access outside the app's work directory and common runtime support files (`/usr/lib`, `/tmp`, etc.).
 
-Profiles are loaded with `apparmor_parser -r` and enforced by the kernel — the same mechanism LXD and Docker use internally.
+Profiles are loaded with `apparmor_parser -r` and enforced by the kernel, the same mechanism LXD and Docker use internally.
 
 ### Layer 4: Kernel hardening via systemd
 
 Every unit sets:
 
-- `NoNewPrivileges=true` — no setuid escalation
-- `RestrictNamespaces=true` — no new mount/PID/network namespaces
-- `MemoryDenyWriteExecute=true` — W^X enforcement
-- `LockPersonality=true` — no personality changes
-- `RestrictRealtime=true` — no realtime scheduling abuse
-- `ProtectKernelTunables=true` — no `/proc/sys` writes
-- `PrivateDevices=true` — no direct hardware access
-- `SystemCallArchitectures=native` — 64-bit syscalls only
+- `NoNewPrivileges=true`: no setuid escalation
+- `RestrictNamespaces=true`: no new mount/PID/network namespaces
+- `MemoryDenyWriteExecute=true`: W^X enforcement
+- `LockPersonality=true`: no personality changes
+- `RestrictRealtime=true`: no realtime scheduling abuse
+- `ProtectKernelTunables=true`: no `/proc/sys` writes
+- `PrivateDevices=true`: no direct hardware access
+- `SystemCallArchitectures=native`: 64-bit syscalls only
 
 ### Layer 5: Resource limits via cgroups v2
 
-- `MemoryMax=<limit>M` — hard memory cap; OOM-kill is local to the cgroup
-- `CPUQuota=<percent>%` — CPU throttling
-- `TasksMax=<n>` — process count limit
-- `LimitNOFILE=<n>` — file descriptor limit
+- `MemoryMax=<limit>M`: hard memory cap; OOM-kill is local to the cgroup
+- `CPUQuota=<percent>%`: CPU throttling
+- `TasksMax=<n>`: process count limit
+- `LimitNOFILE=<n>`: file descriptor limit
 
 One runaway tenant cannot starve the host. OOM kills only that app's processes.
 
 ### Layer 6: Network isolation
 
 - `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`
-- Apps listen only on `127.0.0.1:<assigned-port>` — never on the public interface
+- Apps listen only on `127.0.0.1:<assigned-port>`, never on the public interface
 - Nginx is the sole public ingress; TLS termination happens at the edge
 
 ### The isolation comparison
@@ -160,14 +160,14 @@ The mechanisms are the same. The wrapper is different.
 
 We're not anti-Docker. Docker is excellent for:
 
-- **Reproducible dev environments** — "works on my machine" solved
-- **Polyglot dependency hell** — when your app needs exotic system libraries
-- **OCI image distribution** — shipping the same artifact to multiple environments
-- **Orchestration at scale** — Kubernetes, Swarm, Nomad
+- **Reproducible dev environments**: "works on my machine" solved
+- **Polyglot dependency hell**: when your app needs exotic system libraries
+- **OCI image distribution**: shipping the same artifact to multiple environments
+- **Orchestration at scale**: Kubernetes, Swarm, Nomad
 
 Optional Docker isolation is on our roadmap (v0.5) as an **alternative deployment engine** for tenants that explicitly want it. The API and agent interface stay the same; only the backend changes.
 
-But for the MVP — and for our target user — Docker is the wrong default.
+But for the MVP, and for our target user, Docker is the wrong default.
 
 Our target user has:
 
@@ -208,7 +208,7 @@ When something breaks at 2 AM, `journalctl -fu gisila-app_myapi` tells you exact
 
 Let's walk through a realistic scenario.
 
-**Setup:** Hetzner CX22 — 2 vCPU, 4 GB RAM, ~€4/month.
+**Setup:** Hetzner CX22: 2 vCPU, 4 GB RAM, ~€4/month.
 
 **Apps:** 25 small backend services (Go APIs, Rust workers, Dart web servers). Average idle RAM: 12 MB each. Average peak RAM: 80 MB each.
 
@@ -242,7 +242,7 @@ Same 25 apps. Half the idle RAM. Room to grow to 50+ before you'd need a bigger 
 
 ## Conclusion
 
-We didn't skip Docker because containers are bad. We skipped Docker because **for our use case — high-density compiled backend hosting on cheap VPSs — the container wrapper costs more than it delivers**.
+We didn't skip Docker because containers are bad. We skipped Docker because **for our use case (high-density compiled backend hosting on cheap VPSs), the container wrapper costs more than it delivers**.
 
 systemd + AppArmor + cgroups v2 gives you the same isolation guarantees with zero per-app RAM overhead. Nginx gives you the same edge routing. Let's Encrypt gives you the same TLS.
 
@@ -251,5 +251,7 @@ What you get back is density, simplicity, and a hosting bill that stays at $5/mo
 That's the bet Gisila Panel is making. So far, it's working.
 
 ---
+
+**Previous:** [← Introducing Gisila Panel](./01-introducing-gisila-panel.md)
 
 **Next:** [How a Deployment Works →](./03-how-a-deployment-works.md)

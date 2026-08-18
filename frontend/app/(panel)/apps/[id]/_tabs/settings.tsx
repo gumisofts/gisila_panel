@@ -16,10 +16,13 @@ import {
   Tile,
   TileGroup,
 } from "@carbon/react";
+import { AlertRulesManager } from "@/components/alert-rules-manager";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import type {
   App,
+  AppLimits,
   Application,
   ApplicationDef,
   ListResponse,
@@ -66,14 +69,20 @@ export function SettingsTab({
   app: App;
   onSaved: () => void;
 }) {
+  const { canForProject } = usePermissions();
+  const canManageAlerts = canForProject(app.projectId, "developer");
   const sshKeys = useSWR<{ results: SshKey[] }>("/me/security/ssh-keys", fetcher);
   const applications = useSWR<ListResponse<Application>>("/applications/", fetcher);
   const catalog = useSWR<ListResponse<ApplicationDef>>(
     "/applications/catalog",
     fetcher,
   );
+  const limits = useSWR<AppLimits>("/apps/limits", fetcher);
   const appsList = applications.data?.results;
   const catalogList = catalog.data?.results;
+  // Fall back to a single core's worth while /apps/limits hasn't loaded yet,
+  // so the field still has a sane bound rather than being unbounded.
+  const maxCpuQuotaPercent = limits.data?.maxCpuQuotaPercent ?? 100;
 
   const [form, setForm] = useState({
     name: app.name,
@@ -249,6 +258,7 @@ export function SettingsTab({
   }
 
   return (
+    <>
     <Form onSubmit={save}>
       <Stack gap={6}>
         {/* General */}
@@ -768,9 +778,14 @@ export function SettingsTab({
                 labelText="CPU quota (%)"
                 type="number"
                 min={1}
-                max={400}
+                max={maxCpuQuotaPercent}
                 value={form.cpuQuotaPercent}
                 onChange={(e) => set("cpuQuotaPercent", Number(e.target.value))}
+                helperText={
+                  limits.data
+                    ? `Up to ${maxCpuQuotaPercent}% — this host has ${limits.data.cpuCores} core${limits.data.cpuCores === 1 ? "" : "s"}.`
+                    : undefined
+                }
               />
             </div>
             <div className="gisila-app__form-field">
@@ -794,5 +809,18 @@ export function SettingsTab({
         </div>
       </Stack>
     </Form>
+
+      {/* Alert rules — outside the settings Form since it manages its own
+          submission independently via the notifications API. */}
+      <div className="gisila-app__alert-rules">
+        <AlertRulesManager
+          scope="app"
+          appId={app.id}
+          canWrite={canManageAlerts}
+          title="Alert rules"
+          description="Get notified when this app's CPU/memory usage crosses a threshold, or when it goes down."
+        />
+      </div>
+    </>
   );
 }

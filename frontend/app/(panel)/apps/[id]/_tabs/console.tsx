@@ -179,10 +179,10 @@ export function ConsoleTab({ appId }: { appId: number }) {
       </form>
 
       <p className="gisila-app__hint">
-        Runs in the app&apos;s working directory. For Python apps the virtualenv
-        is activated automatically, so <code>python</code>, <code>pip</code> and{" "}
-        <code>manage.py</code> use the app interpreter. For Dart apps the source
-        tree and SDK are on PATH, e.g.{" "}
+        Runs in the app&apos;s working directory. For Python and Celery apps the
+        virtualenv is activated automatically, so <code>python</code>,{" "}
+        <code>pip</code>, <code>celery</code> and <code>manage.py</code> use the
+        app interpreter. For Dart apps the source tree and SDK are on PATH, e.g.{" "}
         <code>dart run bin/migrate.dart up</code>.
       </p>
 

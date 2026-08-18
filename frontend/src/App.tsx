@@ -24,11 +24,13 @@ import MongoInstancePage from "../app/(panel)/databases/mongo/[id]/page";
 import StoragePage from "../app/(panel)/storage/page";
 import MailPage from "../app/(panel)/mail/page";
 import ActivityPage from "../app/(panel)/activity/page";
+import NotificationsPage from "../app/(panel)/notifications/page";
 import TeamsPage from "../app/(panel)/teams/page";
 import SettingsPage from "../app/(panel)/settings/page";
 import TokensPage from "../app/(panel)/settings/tokens/page";
 import SshKeysPage from "../app/(panel)/settings/ssh-keys/page";
 import UsersPage from "../app/(panel)/settings/users/page";
+import NotificationSettingsPage from "../app/(panel)/settings/notifications/page";
 
 function LegacyRuntimeRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -95,11 +97,13 @@ export default function App() {
             <Route path="/storage" element={<StoragePage />} />
             <Route path="/mail" element={<MailPage />} />
             <Route path="/activity" element={<ActivityPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/tokens" element={<TokensPage />} />
             <Route path="/settings/ssh-keys" element={<SshKeysPage />} />
             <Route path="/settings/users" element={<UsersPage />} />
+            <Route path="/settings/notifications" element={<NotificationSettingsPage />} />
           </Route>
         </Routes>
         <Toaster />

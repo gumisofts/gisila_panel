@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import {
   Activity,
@@ -15,6 +16,7 @@ import {
   UserFollow,
 } from "@carbon/icons-react";
 import {
+  Pagination,
   StructuredListBody,
   StructuredListCell,
   StructuredListRow,
@@ -27,13 +29,23 @@ import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { AuditLog, ListResponse } from "@/lib/types";
 
+const PAGE_SIZES = [10, 25, 50, 100];
+
 export default function ActivityPage() {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const offset = (page - 1) * pageSize;
+
   const { data, isLoading } = useSWR<ListResponse<AuditLog>>(
-    "/audit/?limit=100",
+    `/audit/?limit=${pageSize}&offset=${offset}`,
     fetcher,
-    { refreshInterval: 10000 },
+    // Auto-refresh only the first page — polling while offset > 0 would
+    // shift older entries out from under whatever the user is reading as
+    // newer activity pushes the page boundaries around.
+    { refreshInterval: page === 1 ? 10000 : 0 },
   );
   const items = data?.results ?? [];
+  const totalItems = data?.count ?? items.length;
 
   return (
     <Page>
@@ -49,13 +61,32 @@ export default function ActivityPage() {
       )}
 
       {items.length > 0 && (
-        <StructuredListWrapper aria-label="Activity log" isCondensed>
-          <StructuredListBody>
-            {items.map((entry) => (
-              <ActivityRow key={entry.id} entry={entry} />
-            ))}
-          </StructuredListBody>
-        </StructuredListWrapper>
+        <>
+          <StructuredListWrapper aria-label="Activity log" isCondensed>
+            <StructuredListBody>
+              {items.map((entry) => (
+                <ActivityRow key={entry.id} entry={entry} />
+              ))}
+            </StructuredListBody>
+          </StructuredListWrapper>
+
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            pageSizes={PAGE_SIZES}
+            totalItems={totalItems}
+            onChange={({ page: nextPage, pageSize: nextPageSize }) => {
+              // Changing page size makes the old page number meaningless —
+              // land back on page 1 instead of an arbitrary offset into it.
+              if (nextPageSize !== pageSize) {
+                setPageSize(nextPageSize);
+                setPage(1);
+              } else {
+                setPage(nextPage);
+              }
+            }}
+          />
+        </>
       )}
     </Page>
   );

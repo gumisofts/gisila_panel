@@ -9,6 +9,7 @@ import {
   OverflowMenuItem,
 } from "@carbon/react";
 import { Add, UserAvatar } from "@carbon/icons-react";
+import { NotificationBell } from "@/components/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { fetcher, setToken } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -34,6 +35,8 @@ export function PanelHeaderActions() {
       >
         <Add size={20} />
       </HeaderGlobalAction>
+
+      <NotificationBell />
 
       <ThemeToggle />
 

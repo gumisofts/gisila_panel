@@ -169,6 +169,20 @@ export interface MetricSample {
   sampledAt: string;
 }
 
+// `GET /apps/metrics-summary` — the latest fresh (<5 min old) sample per
+// running app, joined with the quota it's measured against. `cpuPercent` is
+// basis points relative to one core, same unit as `MetricSample.cpuPercent`.
+export interface AppUsage {
+  appId: ID;
+  name: string;
+  status: AppStatus;
+  cpuPercent: number;
+  memBytes: number;
+  memoryMbLimit: number;
+  cpuQuotaPercent: number;
+  sampledAt: string;
+}
+
 export interface ApiToken {
   id: ID;
   name: string;
@@ -200,6 +214,10 @@ export interface BuildLog {
 
 export interface ListResponse<T> {
   results: T[];
+  // Total matching rows, independent of how many `results` came back on this
+  // page. Only endpoints that support `limit`/`offset` (e.g. `/audit/`)
+  // populate this; unpaginated list endpoints omit it.
+  count?: number;
 }
 
 // ── Runtimes (language stacks) ────────────────────────────────────────────────
@@ -639,3 +657,125 @@ export interface AppStorageLink {
   envVars: string[];
   createdAt: string;
 }
+
+// ── Notifications & alerting ─────────────────────────────────────────────────
+//
+// Threshold-based alerting on whole-host resources, per-app quota usage, and
+// managed database health, delivered via the in-panel notification inbox and
+// (optionally) email through a panel-wide SMTP config.
+
+export type AlertScope = "system" | "app" | "postgres" | "mongo";
+
+export type AlertMetric =
+  | "cpu_percent"
+  | "memory_percent"
+  | "disk_percent"
+  | "connections_percent"
+  | "status_down";
+
+export type AlertComparison = "gte" | "lte";
+export type AlertSeverity = "warning" | "critical";
+export type AlertEventStatus = "firing" | "resolved";
+export type NotificationLevel = "info" | "warning" | "critical";
+export type SmtpSecurity = "none" | "starttls" | "ssl";
+
+export interface SmtpConfig {
+  id: ID;
+  smtpHost?: string | null;
+  smtpPort: number;
+  smtpUsername?: string | null;
+  // Never populated by the API (write-only) — an empty value on save means
+  // "leave the stored password alone".
+  smtpPassword?: string | null;
+  smtpSecurity: SmtpSecurity;
+  fromEmail?: string | null;
+  fromName: string;
+  emailEnabled: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface AlertRule {
+  id: ID;
+  scope: AlertScope;
+  appId?: ID | null;
+  postgresInstanceId?: ID | null;
+  mongoInstanceId?: ID | null;
+  metric: AlertMetric;
+  comparison: AlertComparison;
+  thresholdPercent?: number | null;
+  severity: AlertSeverity;
+  cooldownMinutes: number;
+  enabled: boolean;
+  notifyEmail: boolean;
+  lastTriggeredAt?: string | null;
+  createdById?: ID | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface AlertEvent {
+  id: ID;
+  ruleId: ID;
+  scope: AlertScope;
+  appId?: ID | null;
+  postgresInstanceId?: ID | null;
+  mongoInstanceId?: ID | null;
+  metric: AlertMetric;
+  observedPercent?: number | null;
+  thresholdPercent?: number | null;
+  severity: AlertSeverity;
+  message: string;
+  status: AlertEventStatus;
+  resolvedAt?: string | null;
+  emailSentAt?: string | null;
+  emailError?: string | null;
+  createdAt: string;
+}
+
+// Named `AppNotification` rather than `Notification` to avoid shadowing the
+// browser's global `Notification` (desktop notification) type.
+export interface AppNotification {
+  id: ID;
+  userId: ID;
+  eventId?: ID | null;
+  title: string;
+  body?: string | null;
+  level: NotificationLevel;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface HostStatsSnapshot {
+  cpuPercent?: number | null;
+  memTotalBytes: number;
+  memUsedBytes: number;
+  memPercent?: number | null;
+  diskTotalBytes: number;
+  diskUsedBytes: number;
+  diskPercent?: number | null;
+  sampledAt: string;
+}
+
+// From `GET /apps/limits` — the host's real capacity, so per-app resource
+// fields (like CPU quota) can be capped at what the host can actually give
+// rather than an arbitrary hardcoded number.
+export interface AppLimits {
+  cpuCores: number;
+  maxCpuQuotaPercent: number;
+}
+
+export const ALERT_METRIC_LABEL: Record<AlertMetric, string> = {
+  cpu_percent: "CPU usage",
+  memory_percent: "Memory usage",
+  disk_percent: "Disk usage",
+  connections_percent: "Connection usage",
+  status_down: "Is down",
+};
+
+export const ALERT_SCOPE_LABEL: Record<AlertScope, string> = {
+  system: "Server",
+  app: "App",
+  postgres: "Postgres instance",
+  mongo: "Mongo instance",
+};

@@ -56,6 +56,7 @@ import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { MetricsPanel } from "./_panels/metrics-panel";
 import { ConfigPanel } from "./_panels/config-panel";
+import { AlertsPanel } from "./_panels/alerts-panel";
 import { BackupsDialog } from "./_panels/backups-panel";
 import type {
   PostgresInstance,
@@ -687,6 +688,9 @@ export default function InstancePage() {
 
       {/* Configuration */}
       <ConfigPanel id={String(id)} running={isRunning} />
+
+      {/* Alerts */}
+      <AlertsPanel engine="postgres" instanceId={instance.id} isSuperuser={isSuperuser} />
 
       {/* Create database dialog */}
       <Modal

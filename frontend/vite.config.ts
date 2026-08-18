@@ -20,6 +20,8 @@ const API_PREFIXES = [
   "mongo",
   "storage",
   "mail",
+  "notifications",
+  "audit",
 ];
 
 export default defineConfig({

@@ -171,6 +171,24 @@ class User with Preloadable {
         childMeta: AppEventTable.metadata,
       );
 
+  static final Relation<User, AlertRule> createdAlertRules =
+      HasManyRelation<User, AlertRule>(
+        parentTable: 'users',
+        childTable: 'alert_rules',
+        name: 'createdAlertRules',
+        childForeignKey: 'created_by_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<User, Notification> notifications =
+      HasManyRelation<User, Notification>(
+        parentTable: 'users',
+        childTable: 'notifications',
+        name: 'notifications',
+        childForeignKey: 'user_id',
+        childMeta: NotificationTable.metadata,
+      );
+
   static final Relation<User, AuditLog> auditEntries =
       HasManyRelation<User, AuditLog>(
         parentTable: 'users',
@@ -203,6 +221,14 @@ class User with Preloadable {
   /// Preloaded appEvents; empty list when not preloaded.
   List<AppEvent> get appEventsList =>
       preloaded<List<AppEvent>>('appEvents') ?? const [];
+
+  /// Preloaded createdAlertRules; empty list when not preloaded.
+  List<AlertRule> get createdAlertRulesList =>
+      preloaded<List<AlertRule>>('createdAlertRules') ?? const [];
+
+  /// Preloaded notifications; empty list when not preloaded.
+  List<Notification> get notificationsList =>
+      preloaded<List<Notification>>('notifications') ?? const [];
 
   /// Preloaded auditEntries; empty list when not preloaded.
   List<AuditLog> get auditEntriesList =>
@@ -1893,6 +1919,24 @@ class App with Preloadable {
         childMeta: AppStorageLinkTable.metadata,
       );
 
+  static final Relation<App, AlertRule> alertRules =
+      HasManyRelation<App, AlertRule>(
+        parentTable: 'apps',
+        childTable: 'alert_rules',
+        name: 'alertRules',
+        childForeignKey: 'app_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<App, AlertEvent> alertEvents =
+      HasManyRelation<App, AlertEvent>(
+        parentTable: 'apps',
+        childTable: 'alert_events',
+        name: 'alertEvents',
+        childForeignKey: 'app_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
   /// Preloaded project; null when not preloaded or absent.
   Project? get projectLoaded => preloaded<Project>('project');
 
@@ -1925,6 +1969,14 @@ class App with Preloadable {
   /// Preloaded storageLinks; empty list when not preloaded.
   List<AppStorageLink> get storageLinksList =>
       preloaded<List<AppStorageLink>>('storageLinks') ?? const [];
+
+  /// Preloaded alertRules; empty list when not preloaded.
+  List<AlertRule> get alertRulesList =>
+      preloaded<List<AlertRule>>('alertRules') ?? const [];
+
+  /// Preloaded alertEvents; empty list when not preloaded.
+  List<AlertEvent> get alertEventsList =>
+      preloaded<List<AlertEvent>>('alertEvents') ?? const [];
 }
 
 class AppTable {
@@ -3418,9 +3470,35 @@ class PostgresInstance with Preloadable {
         childMeta: PostgresDatabaseTable.metadata,
       );
 
+  static final Relation<PostgresInstance, AlertRule> alertRules =
+      HasManyRelation<PostgresInstance, AlertRule>(
+        parentTable: 'postgres_instances',
+        childTable: 'alert_rules',
+        name: 'alertRules',
+        childForeignKey: 'postgres_instance_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<PostgresInstance, AlertEvent> alertEvents =
+      HasManyRelation<PostgresInstance, AlertEvent>(
+        parentTable: 'postgres_instances',
+        childTable: 'alert_events',
+        name: 'alertEvents',
+        childForeignKey: 'postgres_instance_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
   /// Preloaded databases; empty list when not preloaded.
   List<PostgresDatabase> get databasesList =>
       preloaded<List<PostgresDatabase>>('databases') ?? const [];
+
+  /// Preloaded alertRules; empty list when not preloaded.
+  List<AlertRule> get alertRulesList =>
+      preloaded<List<AlertRule>>('alertRules') ?? const [];
+
+  /// Preloaded alertEvents; empty list when not preloaded.
+  List<AlertEvent> get alertEventsList =>
+      preloaded<List<AlertEvent>>('alertEvents') ?? const [];
 }
 
 class PostgresInstanceTable {
@@ -4294,9 +4372,35 @@ class MongoInstance with Preloadable {
         childMeta: MongoDatabaseTable.metadata,
       );
 
+  static final Relation<MongoInstance, AlertRule> alertRules =
+      HasManyRelation<MongoInstance, AlertRule>(
+        parentTable: 'mongo_instances',
+        childTable: 'alert_rules',
+        name: 'alertRules',
+        childForeignKey: 'mongo_instance_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<MongoInstance, AlertEvent> alertEvents =
+      HasManyRelation<MongoInstance, AlertEvent>(
+        parentTable: 'mongo_instances',
+        childTable: 'alert_events',
+        name: 'alertEvents',
+        childForeignKey: 'mongo_instance_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
   /// Preloaded databases; empty list when not preloaded.
   List<MongoDatabase> get databasesList =>
       preloaded<List<MongoDatabase>>('databases') ?? const [];
+
+  /// Preloaded alertRules; empty list when not preloaded.
+  List<AlertRule> get alertRulesList =>
+      preloaded<List<AlertRule>>('alertRules') ?? const [];
+
+  /// Preloaded alertEvents; empty list when not preloaded.
+  List<AlertEvent> get alertEventsList =>
+      preloaded<List<AlertEvent>>('alertEvents') ?? const [];
 }
 
 class MongoInstanceTable {
@@ -5910,6 +6014,957 @@ class MailAccountTable {
 
 Query<MailAccount> mailAccounts() =>
     Query<MailAccount>(MailAccountTable.metadata);
+
+class SmtpConfig with Preloadable {
+  final int? id;
+  final String? smtpHost;
+  final int? smtpPort;
+  final String? smtpUsername;
+  final String? smtpPassword;
+  final String? smtpSecurity;
+  final String? fromEmail;
+  final String? fromName;
+  final bool? emailEnabled;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  SmtpConfig({
+    this.id,
+    this.smtpHost,
+    this.smtpPort,
+    this.smtpUsername,
+    this.smtpPassword,
+    this.smtpSecurity,
+    this.fromEmail,
+    this.fromName,
+    this.emailEnabled,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory SmtpConfig.fromRow(Map<String, dynamic> row) => SmtpConfig(
+    id: row['id'] as int?,
+    smtpHost: row['smtp_host'] as String?,
+    smtpPort: row['smtp_port'] as int?,
+    smtpUsername: row['smtp_username'] as String?,
+    smtpPassword: row['smtp_password'] as String?,
+    smtpSecurity: row['smtp_security'] as String?,
+    fromEmail: row['from_email'] as String?,
+    fromName: row['from_name'] as String?,
+    emailEnabled: row['email_enabled'] as bool?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'smtp_host': smtpHost,
+    'smtp_port': smtpPort,
+    'smtp_username': smtpUsername,
+    'smtp_password': smtpPassword,
+    'smtp_security': smtpSecurity,
+    'from_email': fromEmail,
+    'from_name': fromName,
+    'email_enabled': emailEnabled,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory SmtpConfig.fromJson(Map<String, dynamic> json) =>
+      SmtpConfig.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  SmtpConfig copyWith({
+    int? id,
+    String? smtpHost,
+    int? smtpPort,
+    String? smtpUsername,
+    String? smtpPassword,
+    String? smtpSecurity,
+    String? fromEmail,
+    String? fromName,
+    bool? emailEnabled,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => SmtpConfig(
+    id: id ?? this.id,
+    smtpHost: smtpHost ?? this.smtpHost,
+    smtpPort: smtpPort ?? this.smtpPort,
+    smtpUsername: smtpUsername ?? this.smtpUsername,
+    smtpPassword: smtpPassword ?? this.smtpPassword,
+    smtpSecurity: smtpSecurity ?? this.smtpSecurity,
+    fromEmail: fromEmail ?? this.fromEmail,
+    fromName: fromName ?? this.fromName,
+    emailEnabled: emailEnabled ?? this.emailEnabled,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+class SmtpConfigTable {
+  SmtpConfigTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'smtp_configs',
+    column: 'id',
+  );
+  static const ColumnRef<String?> smtpHost = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'smtp_host',
+  );
+  static const ColumnRef<int?> smtpPort = ColumnRef<int?>(
+    table: 'smtp_configs',
+    column: 'smtp_port',
+  );
+  static const ColumnRef<String?> smtpUsername = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'smtp_username',
+  );
+  static const ColumnRef<String?> smtpPassword = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'smtp_password',
+  );
+  static const ColumnRef<String?> smtpSecurity = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'smtp_security',
+  );
+  static const ColumnRef<String?> fromEmail = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'from_email',
+  );
+  static const ColumnRef<String?> fromName = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'from_name',
+  );
+  static const ColumnRef<bool?> emailEnabled = ColumnRef<bool?>(
+    table: 'smtp_configs',
+    column: 'email_enabled',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'smtp_configs',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'smtp_configs',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<SmtpConfig> metadata = TableMeta<SmtpConfig>(
+    tableName: 'smtp_configs',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'smtp_host',
+      'smtp_port',
+      'smtp_username',
+      'smtp_password',
+      'smtp_security',
+      'from_email',
+      'from_name',
+      'email_enabled',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: SmtpConfig.fromRow,
+  );
+}
+
+Query<SmtpConfig> smtpConfigs() => Query<SmtpConfig>(SmtpConfigTable.metadata);
+
+class AlertRule with Preloadable {
+  final int? id;
+  final String scope;
+  final int? appId;
+  final int? postgresInstanceId;
+  final int? mongoInstanceId;
+  final String metric;
+  final String? comparison;
+  final int? thresholdPercent;
+  final String? severity;
+  final int? cooldownMinutes;
+  final bool? enabled;
+  final bool? notifyEmail;
+  final DateTime? lastTriggeredAt;
+  final int? createdById;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  AlertRule({
+    this.id,
+    required this.scope,
+    this.appId,
+    this.postgresInstanceId,
+    this.mongoInstanceId,
+    required this.metric,
+    this.comparison,
+    this.thresholdPercent,
+    this.severity,
+    this.cooldownMinutes,
+    this.enabled,
+    this.notifyEmail,
+    this.lastTriggeredAt,
+    this.createdById,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory AlertRule.fromRow(Map<String, dynamic> row) => AlertRule(
+    id: row['id'] as int?,
+    scope: row['scope'] as String,
+    appId: row['app_id'] as int?,
+    postgresInstanceId: row['postgres_instance_id'] as int?,
+    mongoInstanceId: row['mongo_instance_id'] as int?,
+    metric: row['metric'] as String,
+    comparison: row['comparison'] as String?,
+    thresholdPercent: row['threshold_percent'] as int?,
+    severity: row['severity'] as String?,
+    cooldownMinutes: row['cooldown_minutes'] as int?,
+    enabled: row['enabled'] as bool?,
+    notifyEmail: row['notify_email'] as bool?,
+    lastTriggeredAt: row['last_triggered_at'] == null
+        ? null
+        : (row['last_triggered_at'] is DateTime
+              ? row['last_triggered_at'] as DateTime
+              : DateTime.parse(row['last_triggered_at'].toString())),
+    createdById: row['created_by_id'] as int?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'scope': scope,
+    'app_id': appId,
+    'postgres_instance_id': postgresInstanceId,
+    'mongo_instance_id': mongoInstanceId,
+    'metric': metric,
+    'comparison': comparison,
+    'threshold_percent': thresholdPercent,
+    'severity': severity,
+    'cooldown_minutes': cooldownMinutes,
+    'enabled': enabled,
+    'notify_email': notifyEmail,
+    'last_triggered_at': lastTriggeredAt,
+    'created_by_id': createdById,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory AlertRule.fromJson(Map<String, dynamic> json) =>
+      AlertRule.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  AlertRule copyWith({
+    int? id,
+    String? scope,
+    int? appId,
+    int? postgresInstanceId,
+    int? mongoInstanceId,
+    String? metric,
+    String? comparison,
+    int? thresholdPercent,
+    String? severity,
+    int? cooldownMinutes,
+    bool? enabled,
+    bool? notifyEmail,
+    DateTime? lastTriggeredAt,
+    int? createdById,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => AlertRule(
+    id: id ?? this.id,
+    scope: scope ?? this.scope,
+    appId: appId ?? this.appId,
+    postgresInstanceId: postgresInstanceId ?? this.postgresInstanceId,
+    mongoInstanceId: mongoInstanceId ?? this.mongoInstanceId,
+    metric: metric ?? this.metric,
+    comparison: comparison ?? this.comparison,
+    thresholdPercent: thresholdPercent ?? this.thresholdPercent,
+    severity: severity ?? this.severity,
+    cooldownMinutes: cooldownMinutes ?? this.cooldownMinutes,
+    enabled: enabled ?? this.enabled,
+    notifyEmail: notifyEmail ?? this.notifyEmail,
+    lastTriggeredAt: lastTriggeredAt ?? this.lastTriggeredAt,
+    createdById: createdById ?? this.createdById,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<AlertRule, App> app = BelongsToRelation<AlertRule, App>(
+    parentTable: 'alert_rules',
+    childTable: 'apps',
+    name: 'app',
+    parentForeignKey: 'app_id',
+    childMeta: AppTable.metadata,
+  );
+
+  static final Relation<AlertRule, PostgresInstance> postgresInstance =
+      BelongsToRelation<AlertRule, PostgresInstance>(
+        parentTable: 'alert_rules',
+        childTable: 'postgres_instances',
+        name: 'postgresInstance',
+        parentForeignKey: 'postgres_instance_id',
+        childMeta: PostgresInstanceTable.metadata,
+      );
+
+  static final Relation<AlertRule, MongoInstance> mongoInstance =
+      BelongsToRelation<AlertRule, MongoInstance>(
+        parentTable: 'alert_rules',
+        childTable: 'mongo_instances',
+        name: 'mongoInstance',
+        parentForeignKey: 'mongo_instance_id',
+        childMeta: MongoInstanceTable.metadata,
+      );
+
+  static final Relation<AlertRule, User> createdBy =
+      BelongsToRelation<AlertRule, User>(
+        parentTable: 'alert_rules',
+        childTable: 'users',
+        name: 'createdBy',
+        parentForeignKey: 'created_by_id',
+        childMeta: UserTable.metadata,
+      );
+
+  static final Relation<AlertRule, AlertEvent> events =
+      HasManyRelation<AlertRule, AlertEvent>(
+        parentTable: 'alert_rules',
+        childTable: 'alert_events',
+        name: 'events',
+        childForeignKey: 'rule_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
+  /// Preloaded app; null when not preloaded or absent.
+  App? get appLoaded => preloaded<App>('app');
+
+  /// Preloaded postgresInstance; null when not preloaded or absent.
+  PostgresInstance? get postgresInstanceLoaded =>
+      preloaded<PostgresInstance>('postgresInstance');
+
+  /// Preloaded mongoInstance; null when not preloaded or absent.
+  MongoInstance? get mongoInstanceLoaded =>
+      preloaded<MongoInstance>('mongoInstance');
+
+  /// Preloaded createdBy; null when not preloaded or absent.
+  User? get createdByLoaded => preloaded<User>('createdBy');
+
+  /// Preloaded events; empty list when not preloaded.
+  List<AlertEvent> get eventsList =>
+      preloaded<List<AlertEvent>>('events') ?? const [];
+}
+
+class AlertRuleTable {
+  AlertRuleTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'id',
+  );
+  static const ColumnRef<String> scope = ColumnRef<String>(
+    table: 'alert_rules',
+    column: 'scope',
+  );
+  static const ColumnRef<int?> appId = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'app_id',
+  );
+  static const ColumnRef<int?> postgresInstanceId = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'postgres_instance_id',
+  );
+  static const ColumnRef<int?> mongoInstanceId = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'mongo_instance_id',
+  );
+  static const ColumnRef<String> metric = ColumnRef<String>(
+    table: 'alert_rules',
+    column: 'metric',
+  );
+  static const ColumnRef<String?> comparison = ColumnRef<String?>(
+    table: 'alert_rules',
+    column: 'comparison',
+  );
+  static const ColumnRef<int?> thresholdPercent = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'threshold_percent',
+  );
+  static const ColumnRef<String?> severity = ColumnRef<String?>(
+    table: 'alert_rules',
+    column: 'severity',
+  );
+  static const ColumnRef<int?> cooldownMinutes = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'cooldown_minutes',
+  );
+  static const ColumnRef<bool?> enabled = ColumnRef<bool?>(
+    table: 'alert_rules',
+    column: 'enabled',
+  );
+  static const ColumnRef<bool?> notifyEmail = ColumnRef<bool?>(
+    table: 'alert_rules',
+    column: 'notify_email',
+  );
+  static const ColumnRef<DateTime?> lastTriggeredAt = ColumnRef<DateTime?>(
+    table: 'alert_rules',
+    column: 'last_triggered_at',
+  );
+  static const ColumnRef<int?> createdById = ColumnRef<int?>(
+    table: 'alert_rules',
+    column: 'created_by_id',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'alert_rules',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'alert_rules',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<AlertRule> metadata = TableMeta<AlertRule>(
+    tableName: 'alert_rules',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'scope',
+      'app_id',
+      'postgres_instance_id',
+      'mongo_instance_id',
+      'metric',
+      'comparison',
+      'threshold_percent',
+      'severity',
+      'cooldown_minutes',
+      'enabled',
+      'notify_email',
+      'last_triggered_at',
+      'created_by_id',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: AlertRule.fromRow,
+  );
+}
+
+Query<AlertRule> alertRules() => Query<AlertRule>(AlertRuleTable.metadata);
+
+class AlertEvent with Preloadable {
+  final int? id;
+  final int ruleId;
+  final String scope;
+  final int? appId;
+  final int? postgresInstanceId;
+  final int? mongoInstanceId;
+  final String metric;
+  final int? observedPercent;
+  final int? thresholdPercent;
+  final String? severity;
+  final String message;
+  final String? status;
+  final DateTime? resolvedAt;
+  final DateTime? emailSentAt;
+  final String? emailError;
+  final DateTime createdAt;
+
+  AlertEvent({
+    this.id,
+    required this.ruleId,
+    required this.scope,
+    this.appId,
+    this.postgresInstanceId,
+    this.mongoInstanceId,
+    required this.metric,
+    this.observedPercent,
+    this.thresholdPercent,
+    this.severity,
+    required this.message,
+    this.status,
+    this.resolvedAt,
+    this.emailSentAt,
+    this.emailError,
+    required this.createdAt,
+  });
+
+  factory AlertEvent.fromRow(Map<String, dynamic> row) => AlertEvent(
+    id: row['id'] as int?,
+    ruleId: row['rule_id'] as int,
+    scope: row['scope'] as String,
+    appId: row['app_id'] as int?,
+    postgresInstanceId: row['postgres_instance_id'] as int?,
+    mongoInstanceId: row['mongo_instance_id'] as int?,
+    metric: row['metric'] as String,
+    observedPercent: row['observed_percent'] as int?,
+    thresholdPercent: row['threshold_percent'] as int?,
+    severity: row['severity'] as String?,
+    message: row['message'] as String,
+    status: row['status'] as String?,
+    resolvedAt: row['resolved_at'] == null
+        ? null
+        : (row['resolved_at'] is DateTime
+              ? row['resolved_at'] as DateTime
+              : DateTime.parse(row['resolved_at'].toString())),
+    emailSentAt: row['email_sent_at'] == null
+        ? null
+        : (row['email_sent_at'] is DateTime
+              ? row['email_sent_at'] as DateTime
+              : DateTime.parse(row['email_sent_at'].toString())),
+    emailError: row['email_error'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'rule_id': ruleId,
+    'scope': scope,
+    'app_id': appId,
+    'postgres_instance_id': postgresInstanceId,
+    'mongo_instance_id': mongoInstanceId,
+    'metric': metric,
+    'observed_percent': observedPercent,
+    'threshold_percent': thresholdPercent,
+    'severity': severity,
+    'message': message,
+    'status': status,
+    'resolved_at': resolvedAt,
+    'email_sent_at': emailSentAt,
+    'email_error': emailError,
+    'created_at': createdAt,
+  };
+
+  factory AlertEvent.fromJson(Map<String, dynamic> json) =>
+      AlertEvent.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  AlertEvent copyWith({
+    int? id,
+    int? ruleId,
+    String? scope,
+    int? appId,
+    int? postgresInstanceId,
+    int? mongoInstanceId,
+    String? metric,
+    int? observedPercent,
+    int? thresholdPercent,
+    String? severity,
+    String? message,
+    String? status,
+    DateTime? resolvedAt,
+    DateTime? emailSentAt,
+    String? emailError,
+    DateTime? createdAt,
+  }) => AlertEvent(
+    id: id ?? this.id,
+    ruleId: ruleId ?? this.ruleId,
+    scope: scope ?? this.scope,
+    appId: appId ?? this.appId,
+    postgresInstanceId: postgresInstanceId ?? this.postgresInstanceId,
+    mongoInstanceId: mongoInstanceId ?? this.mongoInstanceId,
+    metric: metric ?? this.metric,
+    observedPercent: observedPercent ?? this.observedPercent,
+    thresholdPercent: thresholdPercent ?? this.thresholdPercent,
+    severity: severity ?? this.severity,
+    message: message ?? this.message,
+    status: status ?? this.status,
+    resolvedAt: resolvedAt ?? this.resolvedAt,
+    emailSentAt: emailSentAt ?? this.emailSentAt,
+    emailError: emailError ?? this.emailError,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<AlertEvent, AlertRule> rule =
+      BelongsToRelation<AlertEvent, AlertRule>(
+        parentTable: 'alert_events',
+        childTable: 'alert_rules',
+        name: 'rule',
+        parentForeignKey: 'rule_id',
+        childMeta: AlertRuleTable.metadata,
+      );
+
+  static final Relation<AlertEvent, App> app =
+      BelongsToRelation<AlertEvent, App>(
+        parentTable: 'alert_events',
+        childTable: 'apps',
+        name: 'app',
+        parentForeignKey: 'app_id',
+        childMeta: AppTable.metadata,
+      );
+
+  static final Relation<AlertEvent, PostgresInstance> postgresInstance =
+      BelongsToRelation<AlertEvent, PostgresInstance>(
+        parentTable: 'alert_events',
+        childTable: 'postgres_instances',
+        name: 'postgresInstance',
+        parentForeignKey: 'postgres_instance_id',
+        childMeta: PostgresInstanceTable.metadata,
+      );
+
+  static final Relation<AlertEvent, MongoInstance> mongoInstance =
+      BelongsToRelation<AlertEvent, MongoInstance>(
+        parentTable: 'alert_events',
+        childTable: 'mongo_instances',
+        name: 'mongoInstance',
+        parentForeignKey: 'mongo_instance_id',
+        childMeta: MongoInstanceTable.metadata,
+      );
+
+  static final Relation<AlertEvent, Notification> notifications =
+      HasManyRelation<AlertEvent, Notification>(
+        parentTable: 'alert_events',
+        childTable: 'notifications',
+        name: 'notifications',
+        childForeignKey: 'event_id',
+        childMeta: NotificationTable.metadata,
+      );
+
+  /// Preloaded rule; null when not preloaded or absent.
+  AlertRule? get ruleLoaded => preloaded<AlertRule>('rule');
+
+  /// Preloaded app; null when not preloaded or absent.
+  App? get appLoaded => preloaded<App>('app');
+
+  /// Preloaded postgresInstance; null when not preloaded or absent.
+  PostgresInstance? get postgresInstanceLoaded =>
+      preloaded<PostgresInstance>('postgresInstance');
+
+  /// Preloaded mongoInstance; null when not preloaded or absent.
+  MongoInstance? get mongoInstanceLoaded =>
+      preloaded<MongoInstance>('mongoInstance');
+
+  /// Preloaded notifications; empty list when not preloaded.
+  List<Notification> get notificationsList =>
+      preloaded<List<Notification>>('notifications') ?? const [];
+}
+
+class AlertEventTable {
+  AlertEventTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'id',
+  );
+  static const ColumnRef<int> ruleId = ColumnRef<int>(
+    table: 'alert_events',
+    column: 'rule_id',
+  );
+  static const ColumnRef<String> scope = ColumnRef<String>(
+    table: 'alert_events',
+    column: 'scope',
+  );
+  static const ColumnRef<int?> appId = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'app_id',
+  );
+  static const ColumnRef<int?> postgresInstanceId = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'postgres_instance_id',
+  );
+  static const ColumnRef<int?> mongoInstanceId = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'mongo_instance_id',
+  );
+  static const ColumnRef<String> metric = ColumnRef<String>(
+    table: 'alert_events',
+    column: 'metric',
+  );
+  static const ColumnRef<int?> observedPercent = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'observed_percent',
+  );
+  static const ColumnRef<int?> thresholdPercent = ColumnRef<int?>(
+    table: 'alert_events',
+    column: 'threshold_percent',
+  );
+  static const ColumnRef<String?> severity = ColumnRef<String?>(
+    table: 'alert_events',
+    column: 'severity',
+  );
+  static const ColumnRef<String> message = ColumnRef<String>(
+    table: 'alert_events',
+    column: 'message',
+  );
+  static const ColumnRef<String?> status = ColumnRef<String?>(
+    table: 'alert_events',
+    column: 'status',
+  );
+  static const ColumnRef<DateTime?> resolvedAt = ColumnRef<DateTime?>(
+    table: 'alert_events',
+    column: 'resolved_at',
+  );
+  static const ColumnRef<DateTime?> emailSentAt = ColumnRef<DateTime?>(
+    table: 'alert_events',
+    column: 'email_sent_at',
+  );
+  static const ColumnRef<String?> emailError = ColumnRef<String?>(
+    table: 'alert_events',
+    column: 'email_error',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'alert_events',
+    column: 'created_at',
+  );
+
+  static const TableMeta<AlertEvent> metadata = TableMeta<AlertEvent>(
+    tableName: 'alert_events',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'rule_id',
+      'scope',
+      'app_id',
+      'postgres_instance_id',
+      'mongo_instance_id',
+      'metric',
+      'observed_percent',
+      'threshold_percent',
+      'severity',
+      'message',
+      'status',
+      'resolved_at',
+      'email_sent_at',
+      'email_error',
+      'created_at',
+    ],
+    fromRow: AlertEvent.fromRow,
+  );
+}
+
+Query<AlertEvent> alertEvents() => Query<AlertEvent>(AlertEventTable.metadata);
+
+class Notification with Preloadable {
+  final int? id;
+  final int userId;
+  final int? eventId;
+  final String title;
+  final String? body;
+  final String? level;
+  final DateTime? readAt;
+  final DateTime createdAt;
+
+  Notification({
+    this.id,
+    required this.userId,
+    this.eventId,
+    required this.title,
+    this.body,
+    this.level,
+    this.readAt,
+    required this.createdAt,
+  });
+
+  factory Notification.fromRow(Map<String, dynamic> row) => Notification(
+    id: row['id'] as int?,
+    userId: row['user_id'] as int,
+    eventId: row['event_id'] as int?,
+    title: row['title'] as String,
+    body: row['body'] as String?,
+    level: row['level'] as String?,
+    readAt: row['read_at'] == null
+        ? null
+        : (row['read_at'] is DateTime
+              ? row['read_at'] as DateTime
+              : DateTime.parse(row['read_at'].toString())),
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'user_id': userId,
+    'event_id': eventId,
+    'title': title,
+    'body': body,
+    'level': level,
+    'read_at': readAt,
+    'created_at': createdAt,
+  };
+
+  factory Notification.fromJson(Map<String, dynamic> json) =>
+      Notification.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  Notification copyWith({
+    int? id,
+    int? userId,
+    int? eventId,
+    String? title,
+    String? body,
+    String? level,
+    DateTime? readAt,
+    DateTime? createdAt,
+  }) => Notification(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    eventId: eventId ?? this.eventId,
+    title: title ?? this.title,
+    body: body ?? this.body,
+    level: level ?? this.level,
+    readAt: readAt ?? this.readAt,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<Notification, User> user =
+      BelongsToRelation<Notification, User>(
+        parentTable: 'notifications',
+        childTable: 'users',
+        name: 'user',
+        parentForeignKey: 'user_id',
+        childMeta: UserTable.metadata,
+      );
+
+  static final Relation<Notification, AlertEvent> event =
+      BelongsToRelation<Notification, AlertEvent>(
+        parentTable: 'notifications',
+        childTable: 'alert_events',
+        name: 'event',
+        parentForeignKey: 'event_id',
+        childMeta: AlertEventTable.metadata,
+      );
+
+  /// Preloaded user; null when not preloaded or absent.
+  User? get userLoaded => preloaded<User>('user');
+
+  /// Preloaded event; null when not preloaded or absent.
+  AlertEvent? get eventLoaded => preloaded<AlertEvent>('event');
+}
+
+class NotificationTable {
+  NotificationTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'notifications',
+    column: 'id',
+  );
+  static const ColumnRef<int> userId = ColumnRef<int>(
+    table: 'notifications',
+    column: 'user_id',
+  );
+  static const ColumnRef<int?> eventId = ColumnRef<int?>(
+    table: 'notifications',
+    column: 'event_id',
+  );
+  static const ColumnRef<String> title = ColumnRef<String>(
+    table: 'notifications',
+    column: 'title',
+  );
+  static const ColumnRef<String?> body = ColumnRef<String?>(
+    table: 'notifications',
+    column: 'body',
+  );
+  static const ColumnRef<String?> level = ColumnRef<String?>(
+    table: 'notifications',
+    column: 'level',
+  );
+  static const ColumnRef<DateTime?> readAt = ColumnRef<DateTime?>(
+    table: 'notifications',
+    column: 'read_at',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'notifications',
+    column: 'created_at',
+  );
+
+  static const TableMeta<Notification> metadata = TableMeta<Notification>(
+    tableName: 'notifications',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'user_id',
+      'event_id',
+      'title',
+      'body',
+      'level',
+      'read_at',
+      'created_at',
+    ],
+    fromRow: Notification.fromRow,
+  );
+}
+
+Query<Notification> notifications() =>
+    Query<Notification>(NotificationTable.metadata);
 
 class AuditLog with Preloadable {
   final int? id;

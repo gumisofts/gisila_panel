@@ -154,6 +154,33 @@
   color: theme.$text-primary;
 }
 
+// ── Dashboard resource usage ─────────────────────────────────────────────────
+// Carbon's ProgressBar only ships an "error" status (red); the warning tier
+// below it is a plain colour swap on the same bar so a busy-but-fine host
+// doesn't look identical to an idle one, without implying an alert fired.
+
+.gisila-resource {
+  display: flex;
+  align-items: center;
+  min-block-size: 100%;
+}
+
+.gisila-resource__bar {
+  inline-size: 100%;
+}
+
+.gisila-resource__bar--warn .cds--progress-bar__bar {
+  background-color: theme.$support-warning;
+}
+
+// Per-app usage card: name/status up top, then a CPU and a memory bar
+// stacked with the same rhythm as the space between stat tiles.
+.gisila-app-usage {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-05;
+}
+
 // ── Wordmark for the auth shell ──────────────────────────────────────────────
 
 .gisila-brand {

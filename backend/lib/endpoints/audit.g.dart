@@ -43,7 +43,10 @@ extension AuditApiGisilaDoc on AuditApi {
                 final limit = coerce<int?>(
                     request.url.queryParameters['limit'], 'limit',
                     required: false);
-                final result = await this.list(audit, ctx, limit);
+                final offset = coerce<int?>(
+                    request.url.queryParameters['offset'], 'offset',
+                    required: false);
+                final result = await this.list(audit, ctx, limit, offset);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -62,6 +65,16 @@ extension AuditApiGisilaDoc on AuditApi {
             parameters: <Parameter>[
               Parameter(
                 name: 'limit',
+                location: 'query',
+                required: false,
+                description: null,
+                schema: <String, Object?>{
+                  'type': <Object?>['integer', 'null'],
+                  'format': 'int64'
+                },
+              ),
+              Parameter(
+                name: 'offset',
                 location: 'query',
                 required: false,
                 description: null,

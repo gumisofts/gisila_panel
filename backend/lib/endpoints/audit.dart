@@ -12,11 +12,17 @@ class AuditApi {
     AuditService audit,
     RequestContext ctx,
     int? limit,
+    int? offset,
   ) async {
     final user = ctx.principal!.claims['user'] as User;
-    final result = await audit.listForActor(user, limit: limit ?? 100);
+    final page = await audit.listForActor(
+      user,
+      limit: limit ?? 100,
+      offset: offset ?? 0,
+    );
     return <String, Object?>{
-      'results': result.map((a) => a.toJson()).toList(),
+      'results': page.items.map((a) => a.toJson()).toList(),
+      'count': page.count,
     };
   }
 }

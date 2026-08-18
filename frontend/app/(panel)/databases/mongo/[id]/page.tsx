@@ -55,6 +55,7 @@ import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { MongoMetricsPanel } from "./_panels/metrics-panel";
 import { ConfigPanel } from "../../[id]/_panels/config-panel";
+import { AlertsPanel } from "../../[id]/_panels/alerts-panel";
 import { BackupsDialog } from "../../[id]/_panels/backups-panel";
 import type {
   MongoInstance,
@@ -655,6 +656,9 @@ export default function MongoInstancePage() {
         apiBase="/mongo"
         note="Changing these rewrites the mongod config and restarts the server. Leave a field blank to keep the current value."
       />
+
+      {/* Alerts */}
+      <AlertsPanel engine="mongo" instanceId={instance.id} isSuperuser={isSuperuser} />
 
       {/* Create database dialog */}
       <Modal

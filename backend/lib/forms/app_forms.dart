@@ -1,4 +1,12 @@
+import 'dart:io';
+
 import 'package:gisila/gisila.dart';
+
+// systemd's CPUQuota is "percent of one core" — a value above what the host
+// actually has doesn't error, it just can never be reached, so the API caps
+// it here (not just in the frontend's `<input max>` hint) at however many
+// cores the panel process itself sees on this host.
+final int _maxCpuQuotaPercent = Platform.numberOfProcessors * 100;
 
 /// `POST /apps`
 class CreateAppForm extends Form {
@@ -26,7 +34,8 @@ class CreateAppForm extends Form {
   final healthCheckPath = StringField(name: 'healthCheckPath');
 
   final memoryMbLimit = IntField(name: 'memoryMbLimit');
-  final cpuQuotaPercent = IntField(name: 'cpuQuotaPercent');
+  final cpuQuotaPercent =
+      IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
   final tasksLimit = IntField(name: 'tasksLimit');
 
   // Python-specific fields.
@@ -125,7 +134,8 @@ class UpdateAppForm extends Form {
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');
   final memoryMbLimit = IntField(name: 'memoryMbLimit');
-  final cpuQuotaPercent = IntField(name: 'cpuQuotaPercent');
+  final cpuQuotaPercent =
+      IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
   final tasksLimit = IntField(name: 'tasksLimit');
   final pythonVersion = StringField(name: 'pythonVersion');
   final pythonMode = StringField(name: 'pythonMode');

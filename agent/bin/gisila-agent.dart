@@ -756,7 +756,11 @@ Future<void> _exec(List<String> args) async {
   if (command.isEmpty) throw ArgumentError('--command is required');
   final timeout = int.tryParse(r['timeout'] as String? ?? '300') ?? 300;
 
-  final isPython = runtime == 'python';
+  // Celery apps share the Python venv + source-tree layout (requirements.txt,
+  // manage.py, …). Without treating them as Python here, console commands like
+  // `python` / `pip` fail with "command not found" because the scrubbed app-user
+  // PATH has neither system python nor an activated .venv.
+  final isPython = runtime == 'python' || runtime == 'celery';
   // Source trees live under releases/current_build (pubspec.yaml, package.json,
   // manage.py, go.mod). `current/` only holds the compiled binary for dart/go
   // and the .venv symlink for Python — running `dart run …` / `pnpm …` there

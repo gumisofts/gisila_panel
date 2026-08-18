@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:gisila_doc/gisila_doc.dart';
+import 'package:gisila_doc/gisila_doc.dart' hide Query;
+import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/forms/app_forms.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
@@ -79,6 +81,61 @@ class AppsApi {
       deployKeyId: form.deployKeyId.value,
     );
     return app.toJson();
+  }
+
+  // Registered ahead of `/{id}` — shelf_router matches routes in
+  // registration order, and `{id}` (an `int` param) would otherwise swallow
+  // this literal segment before it ever reaches its handler.
+  @Get('/metrics-summary', summary: 'Latest CPU/memory usage per running app')
+  Future<Map<String, Object?>> metricsSummary(
+    AppsService apps,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final visible = await apps.listForUser(user);
+    final db = ctx.db<Database>().context();
+
+    final results = <Map<String, Object?>>[];
+    for (final app in visible) {
+      if (app.id == null || app.status != 'running') continue;
+      final sample = await Query<MetricSample>(MetricSampleTable.metadata)
+          .where(MetricSampleTable.appId.eq(app.id!))
+          .orderBy(MetricSampleTable.sampledAt, desc: true)
+          .first(db);
+      if (sample == null) continue;
+
+      // Stale samples (worker restarted, app just started) aren't a useful
+      // "current usage" — same 5 minute cutoff the alert evaluator uses.
+      if (DateTime.now().toUtc().difference(sample.sampledAt) >
+          const Duration(minutes: 5)) {
+        continue;
+      }
+
+      results.add(<String, Object?>{
+        'appId': app.id,
+        'name': app.name,
+        'status': app.status,
+        'cpuPercent': sample.cpuPercent,
+        'memBytes': sample.memBytes,
+        'memoryMbLimit': app.memoryMbLimit,
+        'cpuQuotaPercent': app.cpuQuotaPercent,
+        'sampledAt': sample.sampledAt.toIso8601String(),
+      });
+    }
+    return <String, Object?>{'results': results};
+  }
+
+  // Also ahead of `/{id}` for the same reason as `/metrics-summary` above.
+  @Get('/limits', summary: 'Host resource limits apps can be configured up to')
+  Future<Map<String, Object?>> limits(RequestContext ctx) async {
+    // "Percent of one core" is what cpuQuotaPercent/systemd's CPUQuota mean —
+    // above the host's actual core count the setting just can never be
+    // reached, so that's the real ceiling worth showing/enforcing.
+    final cores = Platform.numberOfProcessors;
+    return <String, Object?>{
+      'cpuCores': cores,
+      'maxCpuQuotaPercent': cores * 100,
+    };
   }
 
   @Get('/{id}', summary: 'Get an app')
@@ -236,7 +293,7 @@ class AppsApi {
   // ── Command execution ────────────────────────────────────────────────
 
   /// Queue a one-off command to run inside the app's environment (as the app's
-  /// Linux user, with the Python virtualenv activated for python apps).
+  /// Linux user, with the Python virtualenv activated for python/celery apps).
   ///
   /// Returns an `execId`; the caller then opens the WebSocket
   /// `/ws/apps/{id}/exec/{execId}` to stream stdout/stderr live.

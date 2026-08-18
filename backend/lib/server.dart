@@ -22,6 +22,7 @@ import 'package:gisila_panel/endpoints/security.dart';
 import 'package:gisila_panel/endpoints/databases.dart';
 import 'package:gisila_panel/endpoints/db_engines.dart';
 import 'package:gisila_panel/endpoints/mongo.dart';
+import 'package:gisila_panel/endpoints/notifications.dart';
 import 'package:gisila_panel/endpoints/services.dart';
 import 'package:gisila_panel/endpoints/storage.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
@@ -41,6 +42,7 @@ import 'package:gisila_panel/services/projects_service.dart';
 import 'package:gisila_panel/services/mail_service.dart';
 import 'package:gisila_panel/services/managed_service_service.dart';
 import 'package:gisila_panel/services/mongo_service.dart';
+import 'package:gisila_panel/services/notification_service.dart';
 import 'package:gisila_panel/services/postgres_service.dart';
 import 'package:gisila_panel/services/security_service.dart';
 import 'package:gisila_panel/services/storage_service.dart';
@@ -107,6 +109,7 @@ Future<Handler> application() async {
   app.registerService<StorageService>(StorageService.new);
   app.registerService<MailService>(MailService.new);
   app.registerService<AuditService>(AuditService.new);
+  app.registerService<NotificationService>(NotificationService.new);
 
   // Record every successful state-changing request to the AuditLog so the
   // Activity view reflects exactly what each user did.
@@ -131,6 +134,7 @@ Future<Handler> application() async {
       MongoApi().attachToApp(app, router, spec, prefix: prefix);
       StorageApi().attachToApp(app, router, spec, prefix: prefix);
       MailApi().attachToApp(app, router, spec, prefix: prefix);
+      NotificationsApi().attachToApp(app, router, spec, prefix: prefix);
 
       router.mount('/admin', adminHandler());
       router.mount('/docs', docsHandler(spec));

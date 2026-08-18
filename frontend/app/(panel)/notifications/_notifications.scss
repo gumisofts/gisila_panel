@@ -1,0 +1,99 @@
+// Full-page notification inbox. The bell dropdown (components/notification-
+// bell.tsx) shares the same visual language but its own smaller ruleset.
+
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+
+.gisila-inbox__filter {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: spacing.$spacing-05;
+}
+
+.gisila-inbox__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  color: theme.$text-secondary;
+
+  svg {
+    fill: theme.$text-placeholder;
+  }
+}
+
+.gisila-inbox__list {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-02;
+}
+
+.gisila-inbox__item {
+  display: flex;
+  align-items: flex-start;
+  gap: spacing.$spacing-04;
+  inline-size: 100%;
+  padding: spacing.$spacing-05;
+  border: 1px solid theme.$border-subtle-01;
+  border-radius: 4px;
+  background: theme.$layer-01;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    background-color: theme.$background-hover;
+  }
+}
+
+.gisila-inbox__item--unread {
+  background-color: theme.$layer-accent-01;
+  border-color: theme.$border-strong-01;
+}
+
+.gisila-inbox__icon {
+  flex-shrink: 0;
+  margin-block-start: 0.1rem;
+
+  &--critical {
+    fill: theme.$support-error;
+  }
+
+  &--warning {
+    fill: theme.$support-warning;
+  }
+
+  &--info {
+    fill: theme.$support-info;
+  }
+}
+
+.gisila-inbox__item-body {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-02;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.gisila-inbox__item-title {
+  @include type.type-style('body-compact-01');
+
+  color: theme.$text-primary;
+  font-weight: 600;
+}
+
+.gisila-inbox__item-text {
+  @include type.type-style('body-01');
+
+  color: theme.$text-secondary;
+  overflow-wrap: anywhere;
+}
+
+.gisila-inbox__item-time {
+  @include type.type-style('label-01');
+
+  flex-shrink: 0;
+  color: theme.$text-placeholder;
+  white-space: nowrap;
+}

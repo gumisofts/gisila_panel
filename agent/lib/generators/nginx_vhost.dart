@@ -217,8 +217,10 @@ class StaticNginxVhost {
 
   String _serverFor(String hostname, String fallback) {
     final locations = _locations(fallback);
-    if (!letsEncryptReady(hostname)) {
-      return '''
+    // Serve the same content on :80 and :443 (no HTTP→HTTPS redirect).
+    // Cloudflare Flexible / "HTTPS only" edge modes talk to origin over HTTP;
+    // a 301 to https:// loops or breaks routing when origin also forces TLS.
+    final http = '''
 server {
     listen 80;
     listen [::]:80;
@@ -229,22 +231,9 @@ server {
     }
 $locations}
 ''';
-    }
+    if (!letsEncryptReady(hostname)) return http;
     return '''
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $hostname;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
-
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-
+$http
 server {
 ${_sslListenPreamble(hostname)}    server_name $hostname;
 $locations}
@@ -362,8 +351,9 @@ $staticBlock$mediaBlock$protectedBlock
 
   String _serverFor(String hostname) {
     final locations = _appLocations;
-    if (!letsEncryptReady(hostname)) {
-      return '''
+    // Dual-serve HTTP + HTTPS (no redirect). Same rationale as StaticNginxVhost:
+    // origin must answer on :80 for Cloudflare Flexible / mixed edge SSL modes.
+    final http = '''
 server {
     listen 80;
     listen [::]:80;
@@ -374,22 +364,9 @@ server {
     }
 $locations}
 ''';
-    }
+    if (!letsEncryptReady(hostname)) return http;
     return '''
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $hostname;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/letsencrypt;
-    }
-
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-
+$http
 server {
 ${_sslListenPreamble(hostname)}    server_name $hostname;
 $locations}
