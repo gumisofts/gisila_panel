@@ -195,6 +195,26 @@ class AppsApi {
       if (form.goVersion.value != null) 'goVersion': form.goVersion.value,
       if (form.rustVersion.value != null) 'rustVersion': form.rustVersion.value,
       if (form.bunVersion.value != null) 'bunVersion': form.bunVersion.value,
+      // The panel sends the whole Celery card together for a celery app, so
+      // gate the free-text fields on celeryBeatEnabled — the one key always
+      // present — and let an emptied field bind to null so clearing a queue
+      // list or an extra argument persists. Same reasoning as staticRoot below.
+      if (form.celeryBeatEnabled.value != null) ...{
+        'celeryBeatEnabled': form.celeryBeatEnabled.value,
+        'celeryApp': form.celeryApp.value,
+        'celeryQueues': form.celeryQueues.value,
+        'celeryExtraArgs': form.celeryExtraArgs.value,
+      } else ...{
+        if (form.celeryApp.value != null) 'celeryApp': form.celeryApp.value,
+        if (form.celeryQueues.value != null)
+          'celeryQueues': form.celeryQueues.value,
+        if (form.celeryExtraArgs.value != null)
+          'celeryExtraArgs': form.celeryExtraArgs.value,
+      },
+      if (form.celeryWorkerCount.value != null)
+        'celeryWorkerCount': form.celeryWorkerCount.value,
+      if (form.celeryConcurrency.value != null)
+        'celeryConcurrency': form.celeryConcurrency.value,
       if (form.deployKeyId.value != null) 'deployKeyId': form.deployKeyId.value,
       if (form.internalPort.value != null) 'internalPort': form.internalPort.value,
       // Static settings are always sent together from the panel. Empty
