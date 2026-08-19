@@ -20,19 +20,53 @@ class DeploymentWorker {
   // ── Queue handlers ─────────────────────────────────────────────────
 
   Future<void> onDeployment(Map<String, Object?> payload) async {
-    final deploymentId = payload['deploymentId'] as int?;
-    final appId = payload['appId'] as int?;
-    if (deploymentId == null || appId == null) return;
+    final deploymentId = _asInt(payload['deploymentId']);
+    final appId = _asInt(payload['appId']);
+    if (deploymentId == null || appId == null) {
+      logger.w(
+        'worker: deployment job missing ids '
+        '(deploymentId=${payload['deploymentId']} appId=${payload['appId']})',
+      );
+      return;
+    }
+
+    final existing = await Query<Deployment>(DeploymentTable.metadata)
+        .where(DeploymentTable.id.eq(deploymentId))
+        .first(database.context());
+    if (existing == null) {
+      logger.w('worker: deployment #$deploymentId not found — skipping');
+      return;
+    }
+    // BLPOP is at-most-once: a crash, a silent return, or a lost Redis
+    // message leaves the row in `queued` while the list is empty. Recovery
+    // re-enqueues it, so the same id can show up twice. A finished or
+    // already-running row must not start a second build.
+    final status = existing.status ?? '';
+    if (status == 'succeeded' ||
+        status == 'failed' ||
+        status == 'rolled_back') {
+      logger.i('worker: deployment #$deploymentId is $status — skipping');
+      return;
+    }
 
     final app = await _findApp(appId);
-    if (app == null) return;
+    if (app == null) {
+      await _markStatus(
+        deploymentId,
+        'failed',
+        reason: 'App #$appId not found.',
+      );
+      return;
+    }
 
+    await _markStatus(deploymentId, 'building');
     await _publishBuildLog(
       deploymentId,
       stream: 'system',
-      line: 'Deployment #$deploymentId started for app ${app.name}.',
+      line: payload['requeued'] == true
+          ? 'Deployment #$deploymentId re-queued and started for app ${app.name}.'
+          : 'Deployment #$deploymentId started for app ${app.name}.',
     );
-    await _markStatus(deploymentId, 'building');
 
     // Resolve the deploy key private key (if any) to a temp file.
     File? keyFile;
@@ -399,7 +433,7 @@ class DeploymentWorker {
   }
 
   Future<void> onLifecycle(Map<String, Object?> payload) async {
-    final appId = payload['appId'] as int?;
+    final appId = _asInt(payload['appId']);
     final action = payload['action'] as String?;
     if (appId == null || action == null) return;
 
@@ -474,7 +508,7 @@ class DeploymentWorker {
   /// which also deletes the app row), then delete the project/team row.
   Future<void> onTeardown(Map<String, Object?> payload) async {
     final scope = payload['scope'] as String?;
-    final id = payload['id'] as int?;
+    final id = _asInt(payload['id']);
     if (scope == null || id == null) return;
 
     switch (scope) {
@@ -513,7 +547,7 @@ class DeploymentWorker {
   /// enqueued by `AppsService.setNetworkExposure` whenever the
   /// `publiclyReachable` toggle changes.
   Future<void> onNetworkExposure(Map<String, Object?> payload) async {
-    final appId = payload['appId'] as int?;
+    final appId = _asInt(payload['appId']);
     if (appId == null) return;
     final app = await _findApp(appId);
     if (app == null || app.exposeMode != 'tcp' || app.internalPort == null) {
@@ -526,7 +560,7 @@ class DeploymentWorker {
   }
 
   Future<void> onVhost(Map<String, Object?> payload) async {
-    final appId = payload['appId'] as int?;
+    final appId = _asInt(payload['appId']);
     if (appId == null) return;
     final app = await _findApp(appId);
     if (app == null) return;
@@ -573,9 +607,9 @@ class DeploymentWorker {
   }
 
   Future<void> onSsl(Map<String, Object?> payload) async {
-    final domainId = payload['domainId'] as int?;
+    final domainId = _asInt(payload['domainId']);
     final hostname = payload['hostname'] as String?;
-    final appId = payload['appId'] as int?;
+    final appId = _asInt(payload['appId']);
     if (domainId == null || hostname == null) return;
 
     try {
@@ -608,7 +642,96 @@ class DeploymentWorker {
     }
   }
 
+  // ── Stuck-queue recovery ───────────────────────────────────────────
+
+  /// Re-enqueue DB rows that never left `queued` (or died mid-build).
+  ///
+  /// `BLPOP` deletes the Redis message before the handler runs. A worker
+  /// restart, a dead BLPOP socket, or a silent return leaves the row sitting
+  /// in `queued` with an empty list — the panel shows queued until the
+  /// operator clicks Deploy again (which is why a second deployment appears
+  /// to "unstick" the first). Sweep on boot and periodically so the original
+  /// row starts on its own.
+  void startStuckSweep({
+    Duration interval = const Duration(seconds: 20),
+  }) {
+    unawaited(recoverStuck(startup: true));
+    Timer.periodic(interval, (_) => unawaited(recoverStuck()));
+  }
+
+  final Map<int, DateTime> _lastRequeue = {};
+
+  Future<void> recoverStuck({bool startup = false}) async {
+    try {
+      final now = DateTime.now().toUtc();
+      final queued = await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.status.eq('queued'))
+          .all(database.context());
+      final inFlight = startup
+          ? await Query<Deployment>(DeploymentTable.metadata)
+              .where(DeploymentTable.status.inList(['building', 'deploying']))
+              .all(database.context())
+          : <Deployment>[];
+
+      if (startup) {
+        for (final d in inFlight) {
+          if (d.id == null) continue;
+          await Query<Deployment>(DeploymentTable.metadata)
+              .where(DeploymentTable.id.eq(d.id!))
+              .update(<String, Object?>{'status': 'queued'}).run(
+                  database.context());
+        }
+      }
+
+      var n = 0;
+      for (final d in [...queued, ...inFlight]) {
+        final id = d.id;
+        if (id == null) continue;
+        if (!startup) {
+          final age = now.difference(d.createdAt.toUtc());
+          if (age < const Duration(seconds: 20)) continue;
+          final last = _lastRequeue[id];
+          if (last != null &&
+              now.difference(last) < const Duration(minutes: 2)) {
+            continue;
+          }
+        }
+        _lastRequeue[id] = now;
+        await RedisClient.instance.rpush(
+          'gisila:queue:deployments',
+          jsonEncode(<String, Object?>{
+            'deploymentId': id,
+            'appId': d.appId,
+            'sourceType': d.sourceType,
+            'gitCommitSha': d.gitCommitSha,
+            'artifactPath': d.artifactPath,
+            'queuedAt': d.createdAt.toUtc().toIso8601String(),
+            'requeued': true,
+          }),
+        );
+        n++;
+      }
+      if (n > 0) {
+        logger.i(
+          'worker: re-queued $n stuck deployment${n == 1 ? '' : 's'}'
+          '${startup ? ' (startup)' : ''}',
+        );
+      }
+      _lastRequeue.removeWhere((id, _) =>
+          queued.every((d) => d.id != id) &&
+          inFlight.every((d) => d.id != id));
+    } catch (e, st) {
+      logger.w('worker: stuck-deployment sweep failed', error: e, stackTrace: st);
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────
+
+  int? _asInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
 
   Future<App?> _findApp(int appId) => Query<App>(AppTable.metadata)
       .where(AppTable.id.eq(appId))

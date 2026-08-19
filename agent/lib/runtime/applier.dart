@@ -392,24 +392,17 @@ class Applier {
     if (effectiveStatic != null) await _grantNginxAccess(effectiveStatic);
     if (effectiveMedia != null) await _grantNginxAccess(effectiveMedia);
 
+    final hosts = uniqueHostnames(hostnames);
     final vhost = NginxVhost(
       appId: appId,
       port: port,
-      hostnames: hostnames,
+      hostnames: hosts,
       staticRoot: effectiveStatic,
       mediaRoot: effectiveMedia,
       protectedMedia: effectiveMedia != null && protectedMedia,
       maxUploadMb: maxUploadMb,
     ).render();
-    Directory(nginxDir).createSync(recursive: true);
-    File('$nginxDir/gisila-app-$appId.conf').writeAsStringSync(vhost);
-    await ShellExec.run('nginx', ['-t'], requireSuccess: false);
-    if (isDocker) {
-      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
-    } else {
-      await ShellExec.run('systemctl', ['reload', 'nginx'],
-          requireSuccess: false);
-    }
+    await _installAppVhost(appId, vhost, hosts);
   }
 
   /// How many published static releases to retain under `releases/web/` (the
@@ -459,21 +452,14 @@ class Applier {
     // `current/` so it can resolve the symlink even on a no-publish re-render.
     await _grantTraverse('$workDir/current');
 
+    final hosts = uniqueHostnames(hostnames);
     final vhost = StaticNginxVhost(
       appId: appId,
       staticDir: served,
-      hostnames: hostnames,
+      hostnames: hosts,
       isSpa: isSpa,
     ).render();
-    Directory(nginxDir).createSync(recursive: true);
-    File('$nginxDir/gisila-app-$appId.conf').writeAsStringSync(vhost);
-    await ShellExec.run('nginx', ['-t'], requireSuccess: false);
-    if (isDocker) {
-      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
-    } else {
-      await ShellExec.run('systemctl', ['reload', 'nginx'],
-          requireSuccess: false);
-    }
+    await _installAppVhost(appId, vhost, hosts);
   }
 
   /// Copy [sourceDir] into a fresh `releases/web/<id>` directory, atomically
@@ -699,6 +685,189 @@ class Applier {
       // Best-effort — caller falls back when setfacl is still missing.
     }
     return (await Process.run('sh', ['-c', 'command -v setfacl'])).exitCode == 0;
+  }
+
+  /// Directories nginx actually includes (`conf.d/*.conf` and
+  /// `sites-enabled/*`). `sites-available` is scanned too so a leftover copy
+  /// that is still symlinked into `sites-enabled` can be rewritten in place.
+  List<String> get _nginxConfigDirs {
+    return <String>{
+      nginxDir,
+      '/etc/nginx/sites-enabled',
+      '/etc/nginx/sites-available',
+      '/etc/nginx/conf.d',
+    }.toList();
+  }
+
+  String _appVhostPath(int appId) => '$nginxDir/gisila-app-$appId.conf';
+
+  /// Write [contents] as this app's only vhost, evict [hostnames] from every
+  /// other included file, then test + reload nginx.
+  ///
+  /// Nginx keeps the first `server_name` it sees and logs
+  /// `conflicting server name "…" ignored` for the rest. That is why attaching
+  /// a second domain can succeed in the panel while the new block never
+  /// serves: a certbot `-le-ssl.conf`, a `.bak` that `sites-enabled/*` still
+  /// includes, or another app's leftover vhost already claimed the name.
+  Future<void> _installAppVhost(
+    int appId,
+    String contents,
+    List<String> hostnames,
+  ) async {
+    final hosts = uniqueHostnames(hostnames);
+    _claimAppHostnames(appId, hosts);
+    Directory(nginxDir).createSync(recursive: true);
+    File(_appVhostPath(appId)).writeAsStringSync(contents);
+    await _testAndReloadNginx(claimedHostnames: hosts.toSet());
+  }
+
+  /// Remove every leftover file for [appId] (`-le-ssl`, `.bak`, copies in
+  /// the other nginx include dir) and strip [hostnames] out of every other
+  /// vhost nginx would load.
+  void _claimAppHostnames(int appId, List<String> hostnames) {
+    final wanted = uniqueHostnames(hostnames).toSet();
+    final keepPath = File(_appVhostPath(appId)).absolute.path;
+    final keepReal = _realPath(_appVhostPath(appId));
+    final prefix = 'gisila-app-$appId';
+
+    for (final dirPath in _nginxConfigDirs) {
+      final dir = Directory(dirPath);
+      if (!dir.existsSync()) continue;
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is! File && entity is! Link) continue;
+        final name = entity.uri.pathSegments.last;
+        if (name.isEmpty) continue;
+        final real = _realPath(entity.path);
+        final isKeep = File(entity.path).absolute.path == keepPath ||
+            (keepReal != null && real != null && real == keepReal);
+
+        // Drop certbot / editor leftovers for THIS app. Ubuntu's
+        // `include sites-enabled/*` loads `.bak` and `-le-ssl.conf` too.
+        if (!isKeep && _isStaleAppVhostName(name, prefix)) {
+          stdout.writeln('[agent] apply-vhost: removing leftover $entity');
+          _deletePath(entity.path);
+          continue;
+        }
+        if (isKeep) continue;
+        if (wanted.isEmpty) continue;
+        if (_isProtectedNginxName(name)) continue;
+
+        final text = _readTextFile(entity.path);
+        if (text == null || !_mentionsAnyHostname(text, wanted)) continue;
+        final updated = stripHostnamesFromNginxConfig(text, wanted);
+        if (updated == null) {
+          stdout.writeln(
+              '[agent] apply-vhost: deleting $entity (no server_name left)');
+          _deletePath(entity.path);
+        } else if (updated != text) {
+          stdout.writeln(
+              '[agent] apply-vhost: stripped ${wanted.join(', ')} from $entity');
+          File(entity.path).writeAsStringSync(updated);
+        }
+      }
+    }
+  }
+
+  /// Delete this app's vhost plus certbot/backup copies in every include dir.
+  void _removeAppVhostFiles(int appId) {
+    final prefix = 'gisila-app-$appId';
+    for (final dirPath in _nginxConfigDirs) {
+      final dir = Directory(dirPath);
+      if (!dir.existsSync()) continue;
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is! File && entity is! Link) continue;
+        final name = entity.uri.pathSegments.last;
+        if (_isStaleAppVhostName(name, prefix) || name == '$prefix.conf') {
+          _deletePath(entity.path);
+        }
+      }
+    }
+  }
+
+  bool _isStaleAppVhostName(String name, String prefix) {
+    if (name == '$prefix.conf') {
+      // A copy in another directory (or a second include of the same name).
+      return true;
+    }
+    return name == prefix ||
+        name == '$prefix.bak' ||
+        name == '$prefix.conf.bak' ||
+        name == '$prefix.conf~' ||
+        name == '$prefix-le-ssl.conf' ||
+        name.startsWith('$prefix-le-ssl.');
+  }
+
+  /// Never rewrite the panel's own vhost when claiming an app hostname.
+  bool _isProtectedNginxName(String name) {
+    return name == 'gisila-panel' ||
+        name == 'gisila-panel.conf' ||
+        name.startsWith('gisila-panel.');
+  }
+
+  bool _mentionsAnyHostname(String text, Set<String> hostnames) {
+    final lower = text.toLowerCase();
+    return hostnames.any((h) => lower.contains(h));
+  }
+
+  String? _realPath(String path) {
+    final type = FileSystemEntity.typeSync(path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return null;
+    try {
+      return File(path).resolveSymbolicLinksSync();
+    } catch (_) {
+      return File(path).absolute.path;
+    }
+  }
+
+  String? _readTextFile(String path) {
+    try {
+      return File(path).readAsStringSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _deletePath(String path) {
+    try {
+      final type = FileSystemEntity.typeSync(path, followLinks: false);
+      if (type == FileSystemEntityType.notFound) return;
+      if (type == FileSystemEntityType.link) {
+        Link(path).deleteSync();
+      } else {
+        File(path).deleteSync();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _testAndReloadNginx({Set<String> claimedHostnames = const {}}) async {
+    final test = await Process.run('nginx', ['-t']);
+    final combined = '${test.stdout}\n${test.stderr}';
+    for (final line in combined.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) stderr.writeln(trimmed);
+    }
+    if (test.exitCode != 0) {
+      throw ProcessException('nginx', ['-t'], combined.trim(), test.exitCode);
+    }
+    for (final host in claimedHostnames) {
+      if (combined.contains('conflicting server name "$host"')) {
+        throw StateError(
+          'nginx still has a conflicting server_name "$host" on this host. '
+          'Another vhost (not managed by this app) is claiming it; remove '
+          'that server_name and re-attach the domain.',
+        );
+      }
+    }
+    await _reloadNginx();
+  }
+
+  Future<void> _reloadNginx() async {
+    if (isDocker) {
+      await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
+    } else {
+      await ShellExec.run('systemctl', ['reload', 'nginx'],
+          requireSuccess: false);
+    }
   }
 
   /// Write (or rewrite) the nginx vhost that reverse-proxies [hostname] to the
@@ -957,14 +1126,8 @@ class Applier {
 
     // ── 3. nginx vhost ────────────────────────────────────────────────────
     if (appId != null) {
-      final vhost = '$nginxDir/gisila-app-$appId.conf';
-      if (File(vhost).existsSync()) File(vhost).deleteSync();
-      if (isDocker) {
-        await ShellExec.run('nginx', ['-s', 'reload'], requireSuccess: false);
-      } else {
-        await ShellExec.run('systemctl', ['reload', 'nginx'],
-            requireSuccess: false);
-      }
+      _removeAppVhostFiles(appId);
+      await _reloadNginx();
     }
 
     // ── 4. TLS certificates ───────────────────────────────────────────────

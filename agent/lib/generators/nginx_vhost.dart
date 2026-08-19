@@ -132,6 +132,107 @@ bool letsEncryptReady(String hostname) {
       File('$live/privkey.pem').existsSync();
 }
 
+/// Lower-case, trim, and drop duplicate hostnames (nginx treats names as
+/// case-insensitive, so `Foo.com` + `foo.com` would otherwise emit two
+/// `server` blocks and log `conflicting server name … ignored`).
+List<String> uniqueHostnames(Iterable<String> hostnames) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in hostnames) {
+    final host = raw.trim().toLowerCase();
+    if (host.isEmpty || !seen.add(host)) continue;
+    out.add(host);
+  }
+  return out;
+}
+
+/// Drop [hostnames] from every `server_name` in an nginx snippet.
+///
+/// A `server` block left with no names is removed. Returns `null` when the
+/// file would be empty (only comments / whitespace) so the caller can delete
+/// the leftover instead of leaving a blank include behind.
+///
+/// Used by [Applier] to claim a hostname exclusively: the first matching
+/// `server` block wins, which is why a stale file (certbot `-le-ssl`, a
+/// `.bak` that `sites-enabled/*` still includes, another app's vhost) makes
+/// the newly attached domain look "successful" in the panel while nginx
+/// ignores the real proxy block.
+String? stripHostnamesFromNginxConfig(
+  String source,
+  Iterable<String> hostnames,
+) {
+  final wanted = uniqueHostnames(hostnames).toSet();
+  if (wanted.isEmpty) return source;
+
+  final out = StringBuffer();
+  var i = 0;
+  final serverRe = RegExp(r'\bserver\s*\{');
+  while (i < source.length) {
+    final match = serverRe.firstMatch(source.substring(i));
+    if (match == null) {
+      out.write(source.substring(i));
+      break;
+    }
+    final start = i + match.start;
+    out.write(source.substring(i, start));
+    final brace = start + match.group(0)!.lastIndexOf('{');
+    final end = _matchingBrace(source, brace);
+    if (end == -1) {
+      out.write(source.substring(start));
+      break;
+    }
+    final block = source.substring(start, end + 1);
+    final stripped = _stripHostnamesFromServerBlock(block, wanted);
+    if (stripped != null) out.write(stripped);
+    i = end + 1;
+  }
+
+  final result = out.toString();
+  return _nginxConfigIsBlank(result) ? null : result;
+}
+
+String? _stripHostnamesFromServerBlock(String block, Set<String> wanted) {
+  final nameRe = RegExp(r'(server_name\s+)([^;]+)(;)', caseSensitive: false);
+  final match = nameRe.firstMatch(block);
+  if (match == null) return block;
+  final names = match
+      .group(2)!
+      .split(RegExp(r'\s+'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
+  final kept =
+      names.where((n) => !wanted.contains(n.toLowerCase())).toList();
+  if (kept.isEmpty) return null;
+  if (kept.length == names.length) return block;
+  return block.replaceFirst(
+    nameRe,
+    '${match.group(1)}${kept.join(' ')}${match.group(3)}',
+  );
+}
+
+int _matchingBrace(String source, int openIndex) {
+  var depth = 0;
+  for (var i = openIndex; i < source.length; i++) {
+    final c = source[i];
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+bool _nginxConfigIsBlank(String text) {
+  for (final line in text.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+    return false;
+  }
+  return true;
+}
+
 String _sslListenPreamble(String hostname) {
   final live = '/etc/letsencrypt/live/$hostname';
   final options = File('/etc/letsencrypt/options-ssl-nginx.conf');
@@ -180,7 +281,8 @@ class StaticNginxVhost {
   final bool isSpa;
 
   String render() {
-    if (hostnames.isEmpty) {
+    final hosts = uniqueHostnames(hostnames);
+    if (hosts.isEmpty) {
       return '# app=$appId has no hostnames yet — static vhost intentionally empty.\n';
     }
     final fallback = isSpa
@@ -188,7 +290,7 @@ class StaticNginxVhost {
         : 'try_files \$uri \$uri/ =404;';
     final body = StringBuffer()
       ..writeln('# Managed by gisila-agent (static) — do not edit by hand.');
-    for (final host in hostnames) {
+    for (final host in hosts) {
       body.write(_serverFor(host, fallback));
     }
     return body.toString();
@@ -338,12 +440,13 @@ $staticBlock$mediaBlock$protectedBlock
   }
 
   String render() {
-    if (hostnames.isEmpty) {
+    final hosts = uniqueHostnames(hostnames);
+    if (hosts.isEmpty) {
       return '# app=$appId has no hostnames yet — vhost intentionally empty.\n';
     }
     final body = StringBuffer()
       ..writeln('# Managed by gisila-agent — do not edit by hand.');
-    for (final host in hostnames) {
+    for (final host in hosts) {
       body.write(_serverFor(host));
     }
     return body.toString();

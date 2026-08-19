@@ -59,18 +59,32 @@ class DeploymentsService extends Service {
       'createdAt': now.toIso8601String(),
     }).run(_db.context());
 
-    await RedisClient.instance.rpush(
-      'gisila:queue:deployments',
-      jsonEncode(<String, Object?>{
-        'deploymentId': deployment.id,
-        'appId': app.id,
-        'sourceType': sourceType,
-        'gitCommitSha': gitCommitSha,
-        'artifactPath': artifactPath,
-        'forceRebuild': forceRebuild,
-        'queuedAt': now.toIso8601String(),
-      }),
-    );
+    try {
+      await RedisClient.instance.rpush(
+        'gisila:queue:deployments',
+        jsonEncode(<String, Object?>{
+          'deploymentId': deployment.id,
+          'appId': app.id,
+          'sourceType': sourceType,
+          'gitCommitSha': gitCommitSha,
+          'artifactPath': artifactPath,
+          'forceRebuild': forceRebuild,
+          'queuedAt': now.toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      // The row is already `queued`. If Redis never got the message the
+      // worker will never see it — mark failed so the UI doesn't sit on
+      // queued forever (the stuck-deployment sweeper is the other half).
+      await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.id.eq(deployment.id!))
+          .update(<String, Object?>{
+        'status': 'failed',
+        'failureReason': 'Failed to enqueue deployment: $e',
+        'finishedAt': DateTime.now().toUtc().toIso8601String(),
+      }).run(_db.context());
+      rethrow;
+    }
 
     return deployment;
   }

@@ -32,12 +32,22 @@ class JobQueue {
     while (true) {
       try {
         final args = <Object>['BLPOP', ..._handlers.keys, 5];
-        final result = await _cmd.send_object(args);
+        // Redis times the BLPOP out in 5s. If the TCP socket is already dead
+        // (idle drop during a long handler, Redis restart), send_object hangs
+        // forever and every later deploy sits in `queued` until something
+        // else happens to reconnect us. Fail the wait slightly after Redis
+        // would have replied, then open a new connection.
+        final result = await _cmd
+            .send_object(args)
+            .timeout(const Duration(seconds: 8));
         if (result is List && result.length == 2) {
           final queue = result[0].toString();
           final raw = result[1].toString();
           await _dispatch(queue, raw);
         }
+      } on TimeoutException {
+        logger.w('worker: BLPOP hung — reconnecting');
+        await _reconnect();
       } catch (e, st) {
         // The socket underlying `_cmd` may have died (Redis restarted, network
         // blip, …). Reconnect before retrying — otherwise every future BLPOP
@@ -45,13 +55,17 @@ class JobQueue {
         // job again without a full process restart.
         logger.e('worker: redis error — reconnecting', error: e, stackTrace: st);
         await Future<void>.delayed(const Duration(seconds: 2));
-        try {
-          _cmd = await connectRedis();
-          logger.i('worker: reconnected to redis $redisHost:$redisPort');
-        } catch (reconnectErr) {
-          logger.e('worker: redis reconnect failed', error: reconnectErr);
-        }
+        await _reconnect();
       }
+    }
+  }
+
+  Future<void> _reconnect() async {
+    try {
+      _cmd = await connectRedis();
+      logger.i('worker: reconnected to redis $redisHost:$redisPort');
+    } catch (reconnectErr) {
+      logger.e('worker: redis reconnect failed', error: reconnectErr);
     }
   }
 
@@ -63,7 +77,12 @@ class JobQueue {
     }
     final stopwatch = Stopwatch()..start();
     try {
-      final payload = jsonDecode(raw) as Map<String, Object?>;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        logger.w('worker: $queue skipped (payload is not a JSON object)');
+        return;
+      }
+      final payload = Map<String, Object?>.from(decoded);
       logger.i('worker: ${queue.padRight(28)} ← ${_summarise(payload)}');
       await handler(payload);
       logger.i(

@@ -63,6 +63,7 @@ Future<void> main(List<String> args) async {
   HealthMonitorWorker(database).start();
 
   logger.i('gisila-worker: starting');
+  deploymentWorker.startStuckSweep();
 
   // Re-apply the mail config on boot ONLY when the tooling is already installed
   // (e.g. after a reboot). Installation is optional and operator-initiated from
