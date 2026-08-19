@@ -526,8 +526,20 @@ Future<void> _applyUnit(List<String> args) async {
       timeout,
       '--access-logfile',
       '$logs/access.log',
+      // Gunicorn's *error* log is where startup failures live: a bad import, a
+      // missing setting or any exception during app load surfaces as "Worker
+      // failed to boot" plus the traceback, after which the master exits 3
+      // (WORKER_BOOT_ERROR). Pointed at a file, none of that reaches journald,
+      // so the operator sees only systemd's "status=3/NOTIMPLEMENTED" restart
+      // loop and the panel's Logs tab — which tails the journal — stays empty.
+      // Send it to stderr instead, which systemd captures.
+      //
+      // The access log stays on a file on purpose. It is one line per request
+      // and journald rate-limits (RateLimitBurst), so routing it here would let
+      // ordinary traffic suppress the very error lines this exists to surface.
+      // Nginx already records per-app access logs anyway.
       '--error-logfile',
-      '$logs/error.log',
+      '-',
       if (extraArgs != null && extraArgs.trim().isNotEmpty) extraArgs.trim(),
       wsgiApp,
     ];

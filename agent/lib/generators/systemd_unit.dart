@@ -494,6 +494,16 @@ Description=Gisila app $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-apps.target
 
+# Give up instead of restarting forever. A process that dies on startup — a bad
+# import, a missing env var, a port already taken — fails identically on every
+# attempt, and an unbounded Restart=always turns that into a permanent 5-second
+# fork loop that fills the journal and burns CPU while the app is down either
+# way. After this many failures inside the interval systemd parks the unit in
+# `failed`, where the panel can report it. The window is rolling, so a healthy
+# app that crashes once in a while still restarts indefinitely.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=$linuxUser
@@ -502,6 +512,22 @@ WorkingDirectory=$workingDir
 ExecStart=$execStart
 Restart=always
 RestartSec=5
+
+# Signal only the main process on stop, not the whole cgroup.
+#
+# Prefork servers (gunicorn, celery, php-fpm, cluster-mode node) manage their
+# own children and expect to drain them themselves. Under systemd's default
+# KillMode=control-group the workers get SIGTERM at the same instant as the
+# master, so they exit while the master is still walking its worker table — and
+# gunicorn's arbiter only tolerates ESRCH from os.kill(), so a pid that has
+# already been reaped raises PermissionError, kills the master mid-shutdown and
+# leaves every single stop recorded as `Failed with result 'exit-code'`.
+# `mixed` sends SIGTERM to the master alone and SIGKILL to whatever is still in
+# the cgroup once TimeoutStopSec expires, so graceful shutdown works and a hung
+# worker still cannot wedge the unit.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId

@@ -1022,6 +1022,13 @@ class Applier {
           requireSuccess: false);
     } else {
       final unit = 'gisila-$linuxUser.service';
+      // Clear a tripped start-rate limit first. The unit carries
+      // StartLimitBurst, so an app that was crash-looping before this deploy
+      // sits in `failed` with its limit exhausted, and systemd refuses the
+      // restart outright ("start request repeated too quickly") — the deploy
+      // that carries the fix would be the one deploy that cannot apply it.
+      await ShellExec.run('systemctl', ['reset-failed', unit],
+          requireSuccess: false);
       final result = await Process.run('systemctl', ['restart', unit]);
       if (result.exitCode != 0) {
         final detail = '${result.stderr}\n${result.stdout}'.trim();
