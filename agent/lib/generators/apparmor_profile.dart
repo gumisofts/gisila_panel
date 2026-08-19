@@ -30,6 +30,15 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     $workDir/current/** mrix,
     $workDir/releases/** rmix,
 
+    # The Python virtualenv, which lives outside releases/ at a path that never
+    # changes (see Builders.venvDir). AppArmor matches the path the kernel
+    # resolves, so reaching it through the current/.venv symlink is mediated
+    # here and not by the current/ rule above — without this the interpreter
+    # cannot be exec'd and native extensions cannot be mmap'd. The write is for
+    # __pycache__ and .dist-info stamps.
+    $workDir/venv/** rmix,
+    owner $workDir/venv/** rwk,
+
     # Writable scratch
     owner $workDir/shared/** rwk,
     owner $workDir/tmp/** rwk,
@@ -37,8 +46,9 @@ profile $profileName flags=(attach_disconnected,mediate_deleted) {
     owner /tmp/** rwk,
 ${writableSource ? '''
     # Server frameworks (Next/Nuxt/SvelteKit/…) write runtime caches into their
-    # own build tree. Grant the source tree write so e.g. .next/cache works.
-    owner $workDir/releases/current_build/** rwk,
+    # own build tree. Grant the release write so e.g. .next/cache works. Every
+    # release is a separate directory under releases/, so this cannot name one.
+    owner $workDir/releases/** rwk,
 ''' : ''}
 
     # corepack cache (COREPACK_HOME=$workDir/.corepack). corepack downloads the

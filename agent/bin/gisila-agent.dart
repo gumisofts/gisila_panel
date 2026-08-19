@@ -188,6 +188,10 @@ Future<void> _build(List<String> args) async {
     // Force a clean rebuild: bypass the dependency/build cache, wipe preserved
     // artifacts, and reinstall everything from scratch.
     p.addFlag('no-cache', defaultsTo: false);
+    // Names the directory this build is published to (`releases/<id>`). The
+    // panel passes the deployment id; falls back to a timestamp when absent so
+    // a hand-run agent still produces a valid release.
+    p.addOption('release-id');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -276,6 +280,23 @@ Future<void> _build(List<String> args) async {
     sourceSubdir: sourceSubdir,
     deployMode: DeployMode.tryParse(r['deploy-mode'] as String?),
   ));
+
+  // Only now that the build has fully succeeded does the new code become the
+  // code the app runs. Until this line the live service is still reading the
+  // previous release, untouched — which is the whole point: a build that fails
+  // (or is still halfway through installing dependencies) can no longer take a
+  // running app down with it.
+  //
+  // Static sites are excluded because they already have this: their published
+  // output goes to `releases/web/<id>` behind the `current/web` symlink, and
+  // nginx serves that rather than a source tree.
+  if (runtime != 'static') {
+    await Builders.publishRelease(
+      workDir: workDir,
+      user: user,
+      releaseId: r['release-id'] as String?,
+    );
+  }
 }
 
 /// `gisila-agent runtime install|remove|status --key <k> [--version <v>]`
@@ -456,7 +477,10 @@ Future<void> _applyUnit(List<String> args) async {
   // subdirectory of the cloned repo rather than its root.
   final sourceSubdir =
       AgentValidators.optionalSourceSubdir(r['source-subdir'] as String?);
-  final src = Builders.resolveSrc(workDir, sourceSubdir);
+  // The *published* release, not the staging tree the next build will rewrite.
+  // Everything below bakes this path into a systemd unit that has to stay valid
+  // long after this deploy, so it must be the stable `current/src` symlink.
+  final src = Builders.resolveRunSrc(workDir, sourceSubdir);
 
   // Node/Bun apps run from the build source tree (where package.json /
   // node_modules live). [unitWorkingDir] overrides that when a framework ships a
@@ -865,21 +889,25 @@ Future<void> _exec(List<String> args) async {
   // `python` / `pip` fail with "command not found" because the scrubbed app-user
   // PATH has neither system python nor an activated .venv.
   final isPython = runtime == 'python' || runtime == 'celery';
-  // Source trees live under releases/current_build (pubspec.yaml, package.json,
-  // manage.py, go.mod). `current/` only holds the compiled binary for dart/go
-  // and the .venv symlink for Python — running `dart run …` / `pnpm …` there
-  // fails with missing manifests.
+  // Source trees live under the published release reached via `current/src`
+  // (pubspec.yaml, package.json, manage.py, go.mod). `current/` itself only
+  // holds the compiled binary for dart/go and the .venv symlink for Python —
+  // running `dart run …` / `pnpm …` there fails with missing manifests. Using
+  // the release rather than the staging tree also means a console session opened
+  // during a deploy sees the code that is actually serving traffic.
   final isSourceTree = isPython ||
       runtime == 'node' ||
       runtime == 'bun' ||
       runtime == 'dart' ||
       runtime == 'go';
   final runDir = isSourceTree
-      ? Builders.resolveSrc(workDir, sourceSubdir)
+      ? Builders.resolveRunSrc(workDir, sourceSubdir)
       : '$workDir/current';
-  final activate = isPython
-      ? '[ -f .venv/bin/activate ] && source .venv/bin/activate; '
-      : '';
+  // The venv no longer lives in the source tree, so activate it by its stable
+  // path instead of a `.venv` relative to the working directory.
+  final venvActivate = '${Builders.venvDir(workDir)}/bin/activate';
+  final activate =
+      isPython ? '[ -f $venvActivate ] && source $venvActivate; ' : '';
 
   // Load the app's configured env vars (DATABASE_URL, …) so a console command
   // like `pnpm db:migrate` or `dart run bin/migrate.dart up` hits the real

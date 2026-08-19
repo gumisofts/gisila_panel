@@ -195,6 +195,10 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
+        // Names the directory this build publishes to (releases/<id>), which
+        // current/src is then repointed at. Using the deployment id keeps the
+        // releases on disk traceable back to a row in the deployments table.
+        '--release-id', '$deploymentId',
         if (forceRebuild) '--no-cache',
         // Which of the Application's supported deploy_modes this app uses —
         // lets a plugin branch between compiling and a dependency-only

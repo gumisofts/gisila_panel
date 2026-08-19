@@ -57,7 +57,7 @@ class CeleryWorkerUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/releases/current_build';
+    final src = '$workDir/current/src';
     final queuesArg =
         (queues != null && queues!.isNotEmpty) ? ' -Q $queues' : '';
     final extraArgsStr =
@@ -103,7 +103,7 @@ LockPersonality=true
 SystemCallArchitectures=native
 
 # Filesystem
-ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
 PrivateMounts=true
 
@@ -143,11 +143,11 @@ class CeleryBeatUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/releases/current_build';
+    final src = '$workDir/current/src';
     final tmp = '$workDir/tmp';
-    // Persist the schedule under shared/ — current_build is replaced on every
-    // deploy, and a truncated celerybeat-schedule shelve raises EOFError on
-    // the next beat start.
+    // Persist the schedule under shared/ — the release the app runs from is
+    // replaced on every deploy, and a truncated celerybeat-schedule shelve
+    // raises EOFError on the next beat start.
     final schedule = '$workDir/shared/celerybeat-schedule';
 
     return '''
@@ -183,7 +183,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
 
-ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
 
 MemoryMax=${memoryMb}M
@@ -227,7 +227,7 @@ class CeleryFlowerUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/releases/current_build';
+    final src = '$workDir/current/src';
 
     // Flower has no auth of its own and is reverse-proxied at the app's domain,
     // so it must run with HTTP basic-auth. The credentials live in the app's
@@ -274,7 +274,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
 
-ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/releases/current_build $workDir/current/.venv
+ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
 
 MemoryMax=${memoryMb}M
@@ -374,21 +374,28 @@ class SystemdUnit {
   /// standalone) set this to the subdirectory holding their server.
   final String? workingDirectory;
 
-  /// Grant the build source tree (`releases/current_build`) read-write access so
-  /// server frameworks can write their runtime caches (e.g. Next's `.next/cache`,
-  /// Nuxt/Nitro temp). Set for Node/Bun server apps.
+  /// Grant the published release read-write access so server frameworks can
+  /// write their runtime caches (e.g. Next's `.next/cache`, Nuxt/Nitro temp).
+  /// Set for Node/Bun server apps.
   final bool writableSource;
 
   String render() {
-    final src = '$workDir/releases/current_build';
+    // The stable symlink to the published release, never the staging tree a
+    // build rewrites. systemd resolves it when it sets up the unit's mount
+    // namespace, so each start picks up whatever release is live at that
+    // moment — and a deploy in progress cannot move the ground under a process
+    // that is already running.
+    final src = '$workDir/current/src';
 
-    // Grant the source tree read-write when the runtime executes from it:
-    //  - Python: venv (.dist-info stamps, script wrappers) + source (__pycache__).
-    //  - Node/Bun servers: the build tree, so Next/Nuxt/etc. can write their
+    // Grant read-write when the runtime executes from it:
+    //  - Python: the venv (.dist-info stamps, script wrappers) + the release
+    //    tree (__pycache__). The venv sits outside releases/ at its own stable
+    //    path, so name it directly rather than through the current/.venv link.
+    //  - Node/Bun servers: the release tree, so Next/Nuxt/etc. can write their
     //    runtime caches (.next/cache, .output, etc.). ReadWritePaths wins over
     //    the broader ReadOnlyPaths=$workDir/releases below (most-specific path).
     final rwPaths = <String>[
-      if (isPython) '$workDir/current/.venv',
+      if (isPython) '$workDir/venv',
       if (isPython || writableSource) src,
     ];
     final extraRW = rwPaths.map((p) => ' $p').join();
@@ -398,10 +405,10 @@ class SystemdUnit {
 
     // Working directory:
     //  - Explicit override (e.g. Next standalone's .next/standalone) wins.
-    //  - Python (gunicorn/uvicorn) and Node/Bun run from the build source tree
-    //    so package.json / node_modules / project packages resolve relative to
-    //    cwd. The source is always at releases/current_build after a successful
-    //    build; $workDir/current only holds the .venv symlink, the pinned
+    //  - Python (gunicorn/uvicorn) and Node/Bun run from the source tree so
+    //    package.json / node_modules / project packages resolve relative to
+    //    cwd. That is the published release, reached through $workDir/current/src;
+    //    $workDir/current otherwise holds only the .venv symlink, the pinned
     //    runtime symlink, and compiled binaries for non-JIT runtimes.
     final workingDir = workingDirectory ??
         ((isPython || isJit) ? src : '$workDir/current');

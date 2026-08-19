@@ -4,9 +4,15 @@ import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 import 'package:gisila_agent/runtime/priv.dart';
 
-/// Per-runtime build / fetch routines. Each helper leaves the latest source
-/// in `<workDir>/releases/current_build/` and (for compiled runtimes) the
-/// final executable under `<workDir>/current/app`.
+/// Per-runtime build / fetch routines.
+///
+/// Every build happens in the one reusable staging tree
+/// `<workDir>/releases/current_build/` so git can update incrementally and
+/// `node_modules` survives between deploys. Nothing runs from there: on success
+/// [Builders.publishRelease] hardlinks the result into `<workDir>/releases/<id>`
+/// and repoints the `<workDir>/current/src` symlink at it, which is the path
+/// the systemd unit and the console actually use. Compiled runtimes also get
+/// their executable installed at `<workDir>/current/app`.
 class Builders {
   /// Gitignored dependency/build artifacts that are worth preserving across a
   /// source refresh so the cache layer can reuse them. The git fetch path keeps
@@ -22,6 +28,126 @@ class Builders {
     final base = '$workDir/releases/current_build';
     if (sourceSubdir == null || sourceSubdir.isEmpty) return base;
     return '$base/$sourceSubdir';
+  }
+
+  /// The app's virtualenv, deliberately OUTSIDE `releases/`.
+  ///
+  /// It used to live at `<src>/.venv`, inside the tree every build rewrites —
+  /// which meant the running service's interpreter and site-packages were the
+  /// files a deploy was busy replacing. A restart landing in that window
+  /// re-exec'd a half-installed `bin/gunicorn` and the unit crash-looped.
+  ///
+  /// It cannot simply be copied into each release either: a virtualenv records
+  /// its own absolute path in `pyvenv.cfg` and in the shebang of every console
+  /// script, so a venv that is moved or copied to a new path is broken. Giving
+  /// it one permanent path solves both problems — the deploy never touches it,
+  /// and the paths baked inside it stay true forever.
+  static String venvDir(String workDir) => '$workDir/venv';
+
+  /// The stable path the *running* service reads its code from.
+  ///
+  /// A symlink to the release published by the last successful build, repointed
+  /// atomically by [publishRelease]. Everything that outlives a single build —
+  /// the systemd unit's `WorkingDirectory`, the resolved `ExecStart`, the
+  /// console's working directory — must use this rather than [resolveSrc], so
+  /// that a build rewriting the staging tree cannot disturb a live process.
+  static String resolveRunSrc(String workDir, [String? sourceSubdir]) {
+    final base = '$workDir/current/src';
+    if (sourceSubdir == null || sourceSubdir.isEmpty) return base;
+    return '$base/$sourceSubdir';
+  }
+
+  /// How many published releases to keep under `releases/` (the live one always
+  /// counts toward this budget and is never pruned).
+  static const _keepReleases = 5;
+
+  /// Publish the staging tree as an immutable release and point `current/src`
+  /// at it.
+  ///
+  /// This is what stops a deploy from destroying the app it is replacing.
+  /// Builds still happen in the one reusable `releases/current_build` tree, so
+  /// git can fetch incrementally and `node_modules` survives — but nothing ever
+  /// *runs* from there. Only when the build has fully succeeded is the result
+  /// hardlinked into `releases/<id>` and `current/src` repointed with a single
+  /// `ln -sfn`, which is a `rename(2)` and therefore atomic: a process starting
+  /// at any instant sees either the whole old release or the whole new one.
+  ///
+  /// The copy is `cp -al` (hardlinks, not bytes), so publishing a 500 MB
+  /// `node_modules` costs directory entries rather than disk. It is safe
+  /// against the next build because git, pip and the package managers all
+  /// replace files by rename or unlink-and-create, which breaks the link and
+  /// leaves the published release untouched.
+  static Future<String> publishRelease({
+    required String workDir,
+    required String user,
+    String? releaseId,
+  }) async {
+    final staging = '$workDir/releases/current_build';
+    if (!Directory(staging).existsSync()) {
+      throw StateError(
+        'Nothing to publish: $staging does not exist. The build step must '
+        'populate the staging tree before a release can be published.',
+      );
+    }
+
+    final id = (releaseId != null && releaseId.trim().isNotEmpty)
+        ? releaseId.trim()
+        : DateTime.now().toUtc().millisecondsSinceEpoch.toString();
+    final releasesRoot = '$workDir/releases';
+    final releaseDir = '$releasesRoot/$id';
+    final link = '$workDir/current/src';
+
+    // A retried deployment reuses its id, so start from a clean directory.
+    await ShellExec.run('rm', ['-rf', releaseDir]);
+    await ShellExec.run('mkdir', ['-p', releaseDir]);
+    await ShellExec.run('cp', ['-al', '$staging/.', releaseDir]);
+    // The release is what the app runs from; it has no use for VCS metadata,
+    // which also carries the remote URL the deploy key authenticated against.
+    await ShellExec.run('rm', ['-rf', '$releaseDir/.git'],
+        requireSuccess: false);
+    await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
+        requireSuccess: false);
+
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
+    await ShellExec.run('chown', ['-h', '$user:$user', link],
+        requireSuccess: false);
+    stdout.writeln('[agent] published release $id → current/src');
+
+    await _pruneReleases(releasesRoot, liveTarget: releaseDir);
+    return releaseDir;
+  }
+
+  /// Delete all but the newest [_keepReleases] published releases.
+  ///
+  /// Never touches [liveTarget], the `current_build` staging tree, or the
+  /// `web/` subtree (static sites publish their own releases in there). Keeping
+  /// several is what makes a rollback a symlink flip instead of a rebuild.
+  /// Best-effort: a failed prune must never fail an otherwise good deploy.
+  static Future<void> _pruneReleases(String releasesRoot,
+      {required String liveTarget}) async {
+    final dir = Directory(releasesRoot);
+    if (!dir.existsSync()) return;
+    const reserved = {'current_build', 'web'};
+    final dirs = dir
+        .listSync()
+        .whereType<Directory>()
+        .where((d) => !reserved.contains(d.path.split('/').last))
+        .toList()
+      // Release ids are deployment numbers or ms timestamps, neither of which
+      // sorts lexically; order by mtime so "newest" means newest.
+      ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+
+    final keep = <String>{liveTarget};
+    for (final d in dirs) {
+      if (keep.length >= _keepReleases) break;
+      keep.add(d.path);
+    }
+    for (final d in dirs) {
+      if (!keep.contains(d.path)) {
+        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+      }
+    }
   }
 
   static Future<void> fromGit({
@@ -219,11 +345,26 @@ class Builders {
       buildCommand: buildCommand,
       defaultRelative: 'build/app',
     );
-    await ShellExec.run('install', [
-      '-m', '0755', '-o', user, '-g', user,
-      artifact,
-      '$workDir/current/app',
-    ]);
+    await _installExecutable(artifact, workDir, user);
+  }
+
+  /// Put a freshly compiled executable at `<workDir>/current/app` without
+  /// disturbing the copy that is currently running.
+  ///
+  /// `install` writes straight into the destination, which the kernel refuses
+  /// for a running executable (ETXTBSY) and which would otherwise mean a live
+  /// process reading a half-written binary. Writing a sibling and renaming over
+  /// it is atomic: `rename(2)` swaps the directory entry while the old inode
+  /// stays alive and mapped for as long as the running process needs it.
+  static Future<void> _installExecutable(
+      String artifact, String workDir, String user) async {
+    final dest = '$workDir/current/app';
+    final staged = '$workDir/current/.app.incoming';
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('rm', ['-f', staged], requireSuccess: false);
+    await ShellExec.run(
+        'install', ['-m', '0755', '-o', user, '-g', user, artifact, staged]);
+    await ShellExec.run('mv', ['-f', staged, dest]);
   }
 
   /// Locate the binary produced by a compile step.
@@ -280,11 +421,7 @@ class Builders {
       'GOMODCACHE': '$workDir/.cache/go-mod',
     });
     await _runAsUserWithEnv(user, src, cmd, env);
-    await ShellExec.run('install', [
-      '-m', '0755', '-o', user, '-g', user,
-      '$src/build/app',
-      '$workDir/current/app',
-    ]);
+    await _installExecutable('$src/build/app', workDir, user);
   }
 
   static Future<void> buildRust({
@@ -811,10 +948,10 @@ class Builders {
   ///   1. Ensure Python C-extension build dependencies are installed.
   ///   2. Ensure pyenv is installed at [pyenvRoot] (default /opt/pyenv).
   ///   3. Install the requested [pythonVersion] if not present.
-  ///   4. Create a virtualenv at `<src>/.venv` using that Python.
+  ///   4. Create a virtualenv at `<workDir>/venv` using that Python.
   ///   5. `pip install` deps from requirements.txt (if present).
   ///   6. Install gunicorn + uvicorn[standard] for serving.
-  ///   7. Symlink `.venv` → `<workDir>/current/.venv` so the systemd unit
+  ///   7. Symlink the venv → `<workDir>/current/.venv` so the systemd unit
   ///      can always reference `<workDir>/current/.venv/bin/gunicorn`.
   static Future<void> buildPython({
     required String workDir,
@@ -827,7 +964,7 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    final venv = '$src/.venv';
+    final venv = venvDir(workDir);
     final currentVenv = '$workDir/current/.venv';
 
     final version = pythonVersion?.trim();
@@ -846,12 +983,11 @@ class Builders {
         : 'python3'; // fallback to system python3
 
     // 3. Create (or reuse) the virtualenv. Reused as-is when the pinned Python
-    //    version is unchanged and .venv survived the source refresh; rebuilt
-    //    from scratch on a version change or force-rebuild. See _ensureVenv for
-    //    why --copies is required.
+    //    version is unchanged; rebuilt from scratch on a version change or
+    //    force-rebuild. See _ensureVenv for why --copies is required.
     final venvRebuilt = await _ensureVenv(
       user: user,
-      src: src,
+      venv: venv,
       workDir: workDir,
       pythonBin: pythonBin,
       version: version,
@@ -867,7 +1003,7 @@ class Builders {
       //     Arbitrary commands can't be fingerprinted, so this always runs, but
       //     it still benefits from the warm pip cache and reused venv.
       await _runAsUserWithEnv(
-          user, src, 'source .venv/bin/activate && $buildCommand', pipEnv);
+          user, src, 'source $venv/bin/activate && $buildCommand', pipEnv);
     } else {
       // 4b. Install app dependencies — skipped when requirements.txt and the
       //     Python version are unchanged and the venv was reused.
@@ -885,7 +1021,7 @@ class Builders {
         } else {
           BuildCache.invalidate(workDir, depsKey);
           await _runAsUserWithEnv(user, src,
-              '.venv/bin/pip install -q -r requirements.txt', pipEnv);
+              '$venv/bin/pip install -q -r requirements.txt', pipEnv);
           await BuildCache.store(workDir, user, depsKey, depsFp);
         }
       }
@@ -897,6 +1033,7 @@ class Builders {
     await _ensurePipServerDeps(
       user: user,
       src: src,
+      venv: venv,
       workDir: workDir,
       env: pipEnv,
       key: 'py-server',
@@ -917,7 +1054,7 @@ class Builders {
     //     interpreter. They are best-effort: collectstatic is skipped silently
     //     when STATIC_ROOT is not configured, and migrate failures are surfaced
     //     in the build log without aborting the whole deployment.
-    await _runDjangoManagementCommands(user, src, workDir, appEnv);
+    await _runDjangoManagementCommands(user, src, venv, workDir, appEnv);
 
     // 6. Symlink the venv into <workDir>/current so the systemd ExecStart
     //    path is stable across deployments.
@@ -947,10 +1084,10 @@ class Builders {
         },
       );
 
-  /// Create the project virtualenv at `<src>/.venv`, reusing an existing one
-  /// when the pinned Python [version] is unchanged and the venv survived the
-  /// source refresh. Returns true when a fresh venv was built (so the caller can
-  /// force its dependent installs to re-run). [noCache] forces a rebuild.
+  /// Create the project virtualenv at [venv] (see [venvDir]), reusing an
+  /// existing one when the pinned Python [version] is unchanged. Returns true
+  /// when a fresh venv was built (so the caller can force its dependent
+  /// installs to re-run). [noCache] forces a rebuild.
   ///
   /// --copies is required: without it the venv's bin/python is a symlink to the
   /// pyenv binary. On Linux, Python uses /proc/self/exe to find its real path,
@@ -960,14 +1097,13 @@ class Builders {
   /// off sys.path entirely, making app dependencies missing at runtime.
   static Future<bool> _ensureVenv({
     required String user,
-    required String src,
+    required String venv,
     required String workDir,
     required String pythonBin,
     required String? version,
     required bool noCache,
   }) async {
     const venvKey = 'py-venv';
-    final venv = '$src/.venv';
     final venvFp =
         BuildCache.fingerprint(const <String>[], ['py:${version ?? 'system'}']);
     final reusable = !noCache &&
@@ -975,16 +1111,20 @@ class Builders {
         BuildCache.isFresh(workDir, venvKey, venvFp,
             artifact: '$venv/bin/python');
     if (reusable) {
-      stdout.writeln('[agent] reusing cached virtualenv (.venv)');
+      stdout.writeln('[agent] reusing cached virtualenv ($venv)');
       return false;
     }
     // Rebuild from scratch: the venv is tied to a specific interpreter, so a
     // version change (or force-rebuild) must not reuse the old one.
+    //
+    // Recreating it in place is the one moment the running service's
+    // interpreter is genuinely absent, so it only happens on a Python version
+    // change or an explicit force-rebuild — never on an ordinary deploy.
     await ShellExec.run('rm', ['-rf', venv], requireSuccess: false);
     await _runAsUser(
       user,
-      src,
-      '$pythonBin -m venv --copies .venv',
+      workDir,
+      '$pythonBin -m venv --copies $venv',
       workDir: workDir,
     );
     await BuildCache.store(workDir, user, venvKey, venvFp);
@@ -1001,6 +1141,7 @@ class Builders {
   static Future<void> _ensurePipServerDeps({
     required String user,
     required String src,
+    required String venv,
     required String workDir,
     required Map<String, String> env,
     required String key,
@@ -1014,7 +1155,7 @@ class Builders {
     }
     BuildCache.invalidate(workDir, key);
     await _runAsUserWithEnv(
-        user, src, '.venv/bin/pip install -q $packages', env);
+        user, src, '$venv/bin/pip install -q $packages', env);
     await BuildCache.store(workDir, user, key, key);
   }
 
@@ -1029,7 +1170,7 @@ class Builders {
   /// Detect a Django project and run its standard deploy-time management
   /// commands. No-op for non-Django Python apps.
   static Future<void> _runDjangoManagementCommands(
-      String user, String src, String workDir,
+      String user, String src, String venv, String workDir,
       [Map<String, String>? appEnv]) async {
     if (!File('$src/manage.py').existsSync()) return;
 
@@ -1040,7 +1181,7 @@ class Builders {
     final hasDjango = await _runAsUserStatus(
       user,
       src,
-      '.venv/bin/python -c "import django"',
+      '$venv/bin/python -c "import django"',
       workDir: workDir,
       env: env,
     );
@@ -1052,12 +1193,12 @@ class Builders {
     await _runAsUserWithEnv(
       user,
       src,
-      'source .venv/bin/activate && python manage.py migrate --noinput',
+      'source $venv/bin/activate && python manage.py migrate --noinput',
       env,
       requireSuccess: false,
     );
 
-    await _runDjangoCollectStatic(user, src, workDir, appEnv);
+    await _runDjangoCollectStatic(user, src, venv, workDir, appEnv);
   }
 
   /// Collect Django static files into a writable, per-app directory that nginx
@@ -1076,7 +1217,7 @@ class Builders {
   /// `collectstatic --settings=<shim>` then writes into the app-owned directory.
   /// The matching nginx `location /static/` is added by the vhost step.
   static Future<void> _runDjangoCollectStatic(
-      String user, String src, String workDir,
+      String user, String src, String venv, String workDir,
       [Map<String, String>? appEnv]) async {
     final staticRoot = djangoStaticRoot(workDir);
     final mediaRoot = djangoMediaRoot(workDir);
@@ -1116,7 +1257,7 @@ class Builders {
     await _runAsUserWithEnv(
       user,
       src,
-      'source .venv/bin/activate && '
+      'source $venv/bin/activate && '
           'python manage.py collectstatic --noinput$settingsArg',
       _pythonBuildEnv(workDir, appEnv),
       requireSuccess: false,
@@ -1283,7 +1424,7 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    final venv = '$src/.venv';
+    final venv = venvDir(workDir);
     final currentVenv = '$workDir/current/.venv';
 
     final version = pythonVersion?.trim();
@@ -1296,7 +1437,7 @@ class Builders {
 
     final venvRebuilt = await _ensureVenv(
       user: user,
-      src: src,
+      venv: venv,
       workDir: workDir,
       pythonBin: pythonBin,
       version: version,
@@ -1307,7 +1448,7 @@ class Builders {
 
     if (buildCommand != null) {
       await _runAsUserWithEnv(
-          user, src, 'source .venv/bin/activate && $buildCommand', pipEnv);
+          user, src, 'source $venv/bin/activate && $buildCommand', pipEnv);
     } else {
       final hasDeps = File('$src/requirements.txt').existsSync();
       if (hasDeps) {
@@ -1323,7 +1464,7 @@ class Builders {
         } else {
           BuildCache.invalidate(workDir, depsKey);
           await _runAsUserWithEnv(user, src,
-              '.venv/bin/pip install -q -r requirements.txt', pipEnv);
+              '$venv/bin/pip install -q -r requirements.txt', pipEnv);
           await BuildCache.store(workDir, user, depsKey, depsFp);
         }
       }
@@ -1334,6 +1475,7 @@ class Builders {
     await _ensurePipServerDeps(
       user: user,
       src: src,
+      venv: venv,
       workDir: workDir,
       env: pipEnv,
       key: 'py-celery',
@@ -1343,7 +1485,7 @@ class Builders {
     );
 
     // Run Django management commands if applicable.
-    await _runDjangoManagementCommands(user, src, workDir, appEnv);
+    await _runDjangoManagementCommands(user, src, venv, workDir, appEnv);
 
     // Symlink venv for stable path in systemd units.
     await ShellExec.run('mkdir', ['-p', '$workDir/current']);
@@ -1391,16 +1533,7 @@ class Builders {
     required String user,
     required String artifactPath,
   }) async {
-    await ShellExec.run('install', [
-      '-m',
-      '0755',
-      '-o',
-      user,
-      '-g',
-      user,
-      artifactPath,
-      '$workDir/current/app',
-    ]);
+    await _installExecutable(artifactPath, workDir, user);
   }
 
   /// Install the system libraries that CPython needs to compile its C extension

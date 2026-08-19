@@ -45,7 +45,7 @@ class CeleryWorkerSupervisorConf {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/releases/current_build';
+    final src = '$workDir/current/src';
     final logs = '$workDir/logs';
     final tmp = '$workDir/tmp';
     final queuesArg =
@@ -173,7 +173,7 @@ class SupervisorConf {
   final int port;
 
   /// Explicit working directory. When null, defaults to `<workDir>/current`.
-  /// Node/Bun apps run from the build source tree (`releases/current_build`).
+  /// Node/Bun apps run from the published release (`<workDir>/current/src`).
   final String? workingDir;
 
   /// When set, prepended to PATH inside the supervisord process so `node` /

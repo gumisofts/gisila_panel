@@ -59,7 +59,11 @@ class NodeStartPlan {
 /// Detection runs *after* the build, so it can trust on-disk output (e.g.
 /// `.next/standalone`, `.output/server`) rather than guessing from config alone.
 ///
-/// [src] is the build source root (`<workDir>/releases/current_build`).
+/// [src] is the published release, reached through `<workDir>/current/src`.
+/// Detection reads it, and the start commands below bake it in verbatim, so it
+/// has to be the stable symlink rather than the staging tree the next build
+/// rewrites — otherwise every generated ExecStart would point at a directory
+/// whose contents change underneath the running service.
 /// [port] is the concrete listen port (substituted into start commands because
 /// systemd only expands `$PORT` as a whole token).
 /// [runtime] is the app runtime — `node` or `bun`; Bun apps start via `bun`.

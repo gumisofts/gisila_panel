@@ -4,6 +4,7 @@ import 'package:gisila_agent/generators/apparmor_profile.dart';
 import 'package:gisila_agent/generators/nginx_vhost.dart';
 import 'package:gisila_agent/generators/supervisor_conf.dart';
 import 'package:gisila_agent/generators/systemd_unit.dart';
+import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 import 'package:gisila_agent/runtime/exec_resolver.dart';
 import 'package:gisila_agent/runtime/priv.dart';
@@ -181,7 +182,7 @@ class Applier {
 
     final unitWorkingDir = workingDir ??
         ((isPython || isJit)
-            ? '$workDir/releases/current_build'
+            ? Builders.resolveRunSrc(workDir)
             : '$workDir/current');
     var resolvedStart = execResolver.resolve(
       startCommand,
