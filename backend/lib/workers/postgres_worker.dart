@@ -7,6 +7,10 @@ import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart'
     show generatePassword, instanceHost, isLocalInstance, pgBackupDir;
 
+/// Actions that work against a cluster on another host, and so are exempt from
+/// the locality guard in [PostgresWorker.onPostgresJob].
+const _remoteCapableActions = {'backup_database'};
+
 /// Handles async PostgreSQL jobs from the [gisila:queue:postgres] queue.
 ///
 /// Actions: install_instance | uninstall_instance | start_instance |
@@ -20,14 +24,17 @@ class PostgresWorker {
     final action = payload['action'] as String?;
     if (action == null) return;
 
-    // Every action below drives the cluster through systemd, its data
-    // directory, or a local psql/pg_dump — none of which exist here for a
-    // system database on another host. The API refuses those requests up
-    // front; this catches anything already sitting in the queue from before
-    // that check, or from a config change that moved the panel's own database
-    // to another machine.
+    // Most actions below drive the cluster through systemd, its data directory,
+    // or a local psql/pg_dump — none of which exist here for a system database
+    // on another host. The API refuses those requests up front; this catches
+    // anything already sitting in the queue from before that check, or from a
+    // config change that moved the panel's own database to another machine.
+    //
+    // Backups are the exception: pg_dump can read a cluster over TCP, so an
+    // off-host system database can still be exported. Restores stay excluded —
+    // writing into a cluster the panel does not own is not ours to do.
     final instanceId = payload['instanceId'];
-    if (instanceId is int) {
+    if (instanceId is int && !_remoteCapableActions.contains(action)) {
       final instance = await _findInstance(instanceId);
       if (instance != null && !isLocalInstance(instance)) {
         logger.w('postgres_worker: skipping $action for instance $instanceId — '
@@ -475,6 +482,11 @@ class PostgresWorker {
           '-$scope.sql.gz';
       final path = '${pgBackupDir()}/$instanceId/${db.dbName}/$fileName';
 
+      // An off-host cluster has no local socket and no `postgres` peer identity
+      // here, so the dump has to go over TCP. The panel's own database.yaml
+      // credentials are the only ones known to work against it — the agent
+      // cannot reach that host to provision anything of its own.
+      final remote = !isLocalInstance(instance);
       await _runAgent([
         'postgres',
         'backup',
@@ -488,6 +500,16 @@ class PostgresWorker {
         path,
         '--scope',
         scope,
+        if (remote) ...[
+          '--host',
+          instanceHost(instance),
+          '--pguser',
+          systemPgUser,
+          '--password',
+          systemPgPassword,
+          '--sslmode',
+          systemPgUseSsl ? 'require' : 'prefer',
+        ],
       ]);
 
       int? size;

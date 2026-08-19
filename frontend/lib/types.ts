@@ -407,10 +407,13 @@ export interface PostgresInstance {
    *  database that database.yaml points at another machine. */
   host?: string;
   /** Whether the instance runs on the panel's host and can therefore be
-   *  operated from here — databases, roles, settings, backups, exposure. False
-   *  only for a remote system database, which the panel can read but not
-   *  manage. */
+   *  operated from here — databases, roles, settings, exposure. False only for
+   *  a remote system database, which the panel can read but not manage. */
   isManaged?: boolean;
+  /** Whether a dump can be loaded back into this instance. False for a remote
+   *  system database, whose backups are export-only: pg_dump reads it over TCP,
+   *  but the panel will not write into a cluster it does not manage. */
+  canRestore?: boolean;
   dataDirectory?: string | null;
   errorMessage?: string | null;
   installedAt?: string | null;
@@ -423,8 +426,12 @@ export interface PgConnectionInfo {
   port: number;
   database: string;
   username: string;
-  password: string;
-  url: string;
+  /** Absent for an external database: the panel never held its credentials, so
+   *  there is no password to reveal and no ready-made URL to copy. */
+  password?: string;
+  url?: string;
+  /** True when this describes a database created outside the panel. */
+  external?: boolean;
   /** Present when the instance is publicly exposed over TLS. */
   publicHost?: string | null;
   publicUrl?: string | null;
@@ -439,6 +446,13 @@ export interface PostgresDatabase {
   roleAttributes: string[]; // granted Postgres role attributes (CREATEDB, …)
   status: PgDatabaseStatus;
   errorMessage?: string | null;
+  /** Created outside the panel and discovered on the cluster. The panel holds no
+   *  credentials for it, so it can be backed up but not restored into, dropped
+   *  or re-permissioned from here. */
+  isExternal?: boolean;
+  /** Whether a dump can be loaded back into this database. False for external
+   *  databases and for any database on a cluster the panel only reads. */
+  canRestore?: boolean;
   createdAt: string;
   updatedAt?: string | null;
   connection?: PgConnectionInfo; // present on create + retrieve

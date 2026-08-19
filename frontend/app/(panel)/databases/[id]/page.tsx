@@ -461,7 +461,7 @@ export default function InstancePage() {
               <span className="gisila-db__subnote">
                 {isManaged
                   ? "This is the database the panel runs on. Its port and version are fixed and it cannot be stopped or removed."
-                  : `This is the database the panel runs on, and it lives on ${instance.host}. The panel can read its metrics and settings but cannot manage it from here — do that where the cluster runs.`}
+                  : `This is the database the panel runs on, and it lives on ${instance.host}. The panel can read its metrics and settings and take export-only backups of it, but cannot otherwise manage it from here — do that where the cluster runs.`}
               </span>
             )}
           </>
@@ -620,6 +620,11 @@ export default function InstancePage() {
                     <TableRow key={db.id}>
                       <TableCell>
                         <span className="gisila-db__mono">{db.dbName}</span>
+                        {db.isExternal && (
+                          <span className="gisila-db__subnote">
+                            Created outside the panel — backup only
+                          </span>
+                        )}
                         {db.errorMessage && (
                           <span className="gisila-db__suberror">
                             {db.errorMessage}
@@ -648,14 +653,19 @@ export default function InstancePage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Tag type={dbSc.type} size="sm">{dbSc.label}</Tag>
+                        <div className="gisila-db__tags">
+                          <Tag type={dbSc.type} size="sm">{dbSc.label}</Tag>
+                          {db.isExternal && (
+                            <Tag type="cool-gray" size="sm">external</Tag>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="gisila-db__row-actions">
                           <Button kind="ghost" size="sm" onClick={() => showConnection(db)}>
                             Connection info
                           </Button>
-                          {db.status === "active" && isSuperuser && (
+                          {db.status === "active" && isSuperuser && !db.isExternal && (
                             <Button
                               kind="ghost"
                               size="sm"
@@ -675,7 +685,7 @@ export default function InstancePage() {
                               Backups
                             </Button>
                           )}
-                          {isSuperuser && (
+                          {isSuperuser && !db.isExternal && (
                             <Button
                               kind="danger--ghost"
                               size="sm"
@@ -822,29 +832,39 @@ export default function InstancePage() {
       >
         {justCreated?.connection ? (
           <Stack gap={5}>
+            {/* An external database was never provisioned here, so the panel has
+                no password for its owner and cannot build a usable URL. */}
             <InlineNotification
-              kind="warning"
+              kind={justCreated.connection.password ? "warning" : "info"}
               lowContrast
               hideCloseButton
-              title="Save this password now — it will not be shown again in plain text."
+              title={
+                justCreated.connection.password
+                  ? "Save this password now — it will not be shown again in plain text."
+                  : "This database was created outside the panel, so its password is not stored here. Connect with the credentials you already use for it."
+              }
             />
             <StructuredListWrapper aria-label="Connection details" isCondensed>
               <StructuredListBody>
                 <ConnRow label="Host"     value={justCreated.connection.host} />
                 <ConnRow label="Port"     value={String(justCreated.connection.port)} />
                 <ConnRow label="Database" value={justCreated.connection.database} />
-                <ConnRow label="Username" value={justCreated.connection.username} />
-                <ConnRow label="Password" value={justCreated.connection.password} secret />
+                <ConnRow label="Owner"    value={justCreated.connection.username} />
+                {justCreated.connection.password && (
+                  <ConnRow label="Password" value={justCreated.connection.password} secret />
+                )}
               </StructuredListBody>
             </StructuredListWrapper>
-            <div>
-              <p className="gisila-db__hint">
-                Connection URL{justCreated.connection.publicUrl ? " (local)" : ""}
-              </p>
-              <CodeSnippet type="single" feedbackTimeout={1500}>
-                {justCreated.connection.url}
-              </CodeSnippet>
-            </div>
+            {justCreated.connection.url && (
+              <div>
+                <p className="gisila-db__hint">
+                  Connection URL{justCreated.connection.publicUrl ? " (local)" : ""}
+                </p>
+                <CodeSnippet type="single" feedbackTimeout={1500}>
+                  {justCreated.connection.url}
+                </CodeSnippet>
+              </div>
+            )}
             {justCreated.connection.publicUrl && (
               <div>
                 <p className="gisila-db__hint">Public URL (TLS)</p>
@@ -867,6 +887,14 @@ export default function InstancePage() {
         instanceId={String(id)}
         db={backupsDb}
         onClose={() => setBackupsDb(null)}
+        canRestore={
+          backupsDb?.canRestore !== false && instance.canRestore !== false
+        }
+        exportOnlyNote={
+          backupsDb?.isExternal
+            ? `"${backupsDb.dbName}" was created outside the panel, so the panel backs it up but will not overwrite it. Download a dump and load it with psql.`
+            : `This cluster runs on ${instance.host ?? "another host"}, so the panel can dump it but will not write back into it. Download a backup and restore it where the cluster lives.`
+        }
       />
     </Page>
   );

@@ -7,6 +7,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart'
     show
         env,
+        logger,
         systemPgDatabase,
         systemPgHost,
         systemPgPassword,
@@ -40,6 +41,11 @@ const kTunableSettings = <String>[
 
 // Postgres major versions available from the pgdg repository.
 const kSupportedVersions = [14, 15, 16, 17, 18];
+
+/// Databases that ship with every cluster and are never worth tracking as
+/// user data. `postgres` is a maintenance database that is conventionally empty;
+/// the templates cannot be dumped meaningfully.
+const _pgBuiltinDatabases = {'postgres', 'template0', 'template1'};
 
 // Valid backup scopes (maps to pg_dump --schema-only / --data-only).
 const kBackupScopes = {'full', 'schema', 'data'};
@@ -134,6 +140,25 @@ String instanceHost(PostgresInstance instance) =>
 /// some local systemd unit and data directory belong to it.
 bool isLocalInstance(PostgresInstance instance) =>
     isLoopbackHost(instanceHost(instance));
+
+/// Whether a dump of [instance] can be loaded back into it.
+///
+/// False for a cluster on another host, which the panel can only read. Such a
+/// cluster pre-dates the panel and is somebody else's to operate: `pg_dump` over
+/// TCP is a safe, read-only export, but `psql` replaying that dump would write
+/// into a database the panel has no mandate over — and for the system cluster,
+/// into the panel's own storage while it is running. Export is offered, restore
+/// is not, rather than offering neither.
+bool canRestoreInto(PostgresInstance instance) => isLocalInstance(instance);
+
+/// Whether a dump can be loaded back into [db] specifically.
+///
+/// Narrower than [canRestoreInto]: a database the panel merely discovered is
+/// export-only even on a cluster the agent fully manages. Being able to reach a
+/// database is not the same as being entitled to overwrite it, and the panel
+/// neither created this one nor knows what else depends on it.
+bool canRestoreIntoDatabase(PostgresInstance instance, PostgresDatabase db) =>
+    canRestoreInto(instance) && db.isExternal != true;
 
 /// Whether [host] names this machine as far as the panel is concerned.
 bool isLoopbackHost(String host) {
@@ -395,13 +420,163 @@ class PostgresService extends Service {
     );
   }
 
+  /// Reject a restore into something the panel may read but not overwrite.
+  ///
+  /// Separate from [_requireLocal] because backups in both cases *are*
+  /// supported — only the write-back is refused, so the message has to say that
+  /// rather than implying backups are unavailable.
+  void _requireRestorable(PostgresInstance instance, PostgresDatabase db) {
+    if (canRestoreIntoDatabase(instance, db)) return;
+    if (db.isExternal == true) {
+      throw HttpException(
+        422,
+        '"${db.dbName}" was created outside the panel, so its backups are '
+        'export-only. Download the dump and load it with psql — the panel will '
+        'not overwrite a database it did not create.',
+      );
+    }
+    throw HttpException(
+      422,
+      'This database runs on ${instanceHost(instance)}, not on this host, so '
+      'the panel offers export-only backups for it. Download the dump and '
+      'restore it where the cluster lives — replaying it from here would write '
+      'into a cluster the panel does not manage.',
+    );
+  }
+
+  /// Reject a write the panel has no standing to make against a database it only
+  /// discovered. It holds no credentials for the owning role, and dropping or
+  /// re-permissioning something it did not create is not its call.
+  void _requireNotExternal(PostgresDatabase db, String action) {
+    if (db.isExternal != true) return;
+    throw HttpException(
+      422,
+      'Cannot $action: "${db.dbName}" was created outside the panel. The panel '
+      'tracks it so it can be backed up, but does not manage it — do this with '
+      'psql instead.',
+    );
+  }
+
   // ── Database CRUD ───────────────────────────────────────────────────────────
 
-  Future<List<PostgresDatabase>> listDatabases(int instanceId) =>
-      Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
+  Future<List<PostgresDatabase>> listDatabases(int instanceId) async {
+    // Pick up anything created outside the panel before listing, so a database
+    // made with psql shows up on its own and can be given a backup schedule.
+    await _syncExternalDatabases(instanceId);
+    return Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
+        .where(PostgresDatabaseTable.instanceId.eq(instanceId))
+        .orderBy(PostgresDatabaseTable.createdAt, desc: true)
+        .all(_db.context());
+  }
+
+  /// Reconcile the panel's database rows with what is actually on the cluster.
+  ///
+  /// Databases the panel did not create — made with psql, by another tool, or by
+  /// an older panel — get a row flagged `isExternal` so that backups, which key
+  /// off that row, become possible at all. Nothing else about them is assumed:
+  /// no password is stored and no write is ever offered.
+  ///
+  /// Rows for databases that have since disappeared are marked `dropped` rather
+  /// than deleted, which keeps their existing dumps downloadable and stops the
+  /// scheduler dumping a name that is no longer there. A database that comes
+  /// back flips to `active` again.
+  ///
+  /// Entirely best-effort: this runs on a page load, so an unreachable or
+  /// still-initialising cluster must fail quietly and leave the tracked rows
+  /// alone rather than block the list.
+  Future<void> _syncExternalDatabases(int instanceId) async {
+    try {
+      final inst = await findInstance(instanceId);
+      if (inst.status != 'running') return;
+      // Locally the read goes through `gisila_monitor`; if the agent has not
+      // provisioned it yet there is nothing to connect with. The metrics
+      // endpoint kicks that off, so just wait for a later call.
+      if (isLocalInstance(inst) &&
+          (inst.monitorPassword == null || inst.monitorPassword!.isEmpty)) {
+        return;
+      }
+      // Throttle: the databases list is re-fetched on every visit, and this
+      // opens a real connection. One reconcile per instance per interval is
+      // plenty for picking up a hand-made database.
+      final marker = 'gisila:pgdbsync:$instanceId';
+      if (await RedisClient.instance.get(marker) != null) return;
+      await RedisClient.instance.setEx(marker, 30, '1');
+
+      final live = await _liveDatabaseNames(inst);
+      if (live == null) return; // could not read the cluster
+
+      final tracked = await Query<PostgresDatabase>(
+        PostgresDatabaseTable.metadata,
+      )
           .where(PostgresDatabaseTable.instanceId.eq(instanceId))
-          .orderBy(PostgresDatabaseTable.createdAt, desc: true)
           .all(_db.context());
+      final byName = {for (final d in tracked) d.dbName: d};
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      for (final entry in live.entries) {
+        final existing = byName[entry.key];
+        if (existing == null) {
+          await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
+              .insert(<String, Object?>{
+            'instanceId': instanceId,
+            'dbName': entry.key,
+            // The observed owner, recorded for display only. The panel has no
+            // credentials for it, hence the empty password.
+            'roleName': entry.value,
+            'password': '',
+            'extensions': '[]',
+            'roleAttributes': '[]',
+            'isExternal': true,
+            'status': 'active',
+            'createdAt': now,
+          }).run(_db.context());
+        } else if (existing.isExternal == true && existing.status == 'dropped') {
+          await _patchDatabase(existing.id!, {
+            'status': 'active',
+            'roleName': entry.value,
+            'updatedAt': now,
+          });
+        }
+      }
+
+      // Externally-created rows whose database is gone from the cluster.
+      for (final d in tracked) {
+        if (d.isExternal != true || d.id == null) continue;
+        if (d.status == 'dropped') continue;
+        if (live.containsKey(d.dbName)) continue;
+        await _patchDatabase(d.id!, {'status': 'dropped', 'updatedAt': now});
+      }
+    } catch (e) {
+      logger.w('postgres: external database sync for #$instanceId failed: $e');
+    }
+  }
+
+  /// Database names on [inst] mapped to their owning role, excluding templates
+  /// and the built-in `postgres` maintenance database. Null when unreadable.
+  Future<Map<String, String>?> _liveDatabaseNames(PostgresInstance inst) async {
+    final target = statsTarget(inst, connectTimeout: const Duration(seconds: 3));
+    pg.Connection? conn;
+    try {
+      conn = await pg.Connection.open(target.endpoint, settings: target.settings);
+      final rows = await conn.execute(
+        'SELECT d.datname, pg_get_userbyid(d.datdba) AS owner FROM pg_database d '
+        'WHERE NOT d.datistemplate AND d.datallowconn',
+      );
+      final out = <String, String>{};
+      for (final r in rows) {
+        final m = r.toColumnMap();
+        final name = m['datname']?.toString();
+        if (name == null || name.isEmpty) continue;
+        if (_pgBuiltinDatabases.contains(name)) continue;
+        out[name] = m['owner']?.toString() ?? '';
+      }
+      return out;
+    } catch (_) {
+      return null;
+    } finally {
+      await conn?.close();
+    }
+  }
 
   Future<PostgresDatabase> findDatabase(int id) async {
     final row = await Query<PostgresDatabase>(PostgresDatabaseTable.metadata)
@@ -467,6 +642,7 @@ class PostgresService extends Service {
           422, 'Instance must be running to change role permissions.');
     }
     _requireLocal(instance, 'change role permissions');
+    _requireNotExternal(db, 'change role permissions');
     final attrs = _normalizeRoleAttributes(roleAttributes);
     await _patchDatabase(id, {
       'roleAttributes': jsonEncode(attrs),
@@ -500,6 +676,7 @@ class PostgresService extends Service {
 
   Future<void> dropDatabase(int id) async {
     final db = await findDatabase(id);
+    _requireNotExternal(db, 'drop this database');
 
     // If the database was never successfully created, remove the record directly
     // without involving the agent — there is nothing to drop on the server.
@@ -534,6 +711,19 @@ class PostgresService extends Service {
     // regardless of resolver order.
     final host = instanceHost(instance);
     final port = instance.port;
+    // A discovered database has no panel-held credentials, so there is no
+    // password or ready-made URL to show — only where it lives and who owns it.
+    // Emitting the empty string would render a connection string that silently
+    // fails to authenticate.
+    if (db.isExternal == true) {
+      return <String, Object?>{
+        'host': host,
+        'port': port,
+        'database': db.dbName,
+        'username': db.roleName,
+        'external': true,
+      };
+    }
     final url =
         'postgresql://${db.roleName}:${db.password}@$host:$port/${db.dbName}';
     final info = <String, Object?>{
@@ -854,7 +1044,9 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to back up a database.');
     }
-    _requireLocal(instance, 'back up this database');
+    // Deliberately no locality check: a dump is a read, and the agent can take
+    // one over TCP from a cluster on another host. See [canRestoreInto] for why
+    // the reverse direction stays blocked.
     final row = await Query<PostgresBackup>(PostgresBackupTable.metadata)
         .insert(<String, Object?>{
       'databaseId': databaseId,
@@ -901,7 +1093,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to restore.');
     }
-    _requireLocal(instance, 'restore into this database');
+    _requireRestorable(instance, db);
     await _enqueue('restore_database', {
       'instanceId': db.instanceId,
       'databaseId': db.id,
@@ -920,7 +1112,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to restore.');
     }
-    _requireLocal(instance, 'restore into this database');
+    _requireRestorable(instance, db);
     if (bytes.isEmpty) throw HttpException(422, 'Uploaded file is empty.');
 
     final lower = filename.toLowerCase();

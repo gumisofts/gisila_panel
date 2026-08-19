@@ -109,6 +109,8 @@ export function BackupsDialog({
   scopes = ["full", "schema", "data"],
   uploadAccept = ".sql,.gz,.sql.gz",
   uploadNote = "Upload a .sql or .sql.gz dump to restore into this database. Restoring may overwrite existing data.",
+  canRestore = true,
+  exportOnlyNote = "The panel can dump this database but will not write back into it. Download a backup and load it with psql instead.",
 }: {
   instanceId: string;
   db: BackupDb | null;
@@ -117,6 +119,11 @@ export function BackupsDialog({
   scopes?: PgBackupScope[];
   uploadAccept?: string;
   uploadNote?: string;
+  /** When false the database is export-only: backups can be taken, downloaded
+   *  and deleted, but not replayed into the cluster. */
+  canRestore?: boolean;
+  /** Shown in place of the restore controls when [canRestore] is false. */
+  exportOnlyNote?: string;
 }) {
   const open = !!db;
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -219,6 +226,8 @@ export function BackupsDialog({
             uploadAccept={uploadAccept}
             uploadNote={uploadNote}
             uploading={uploading}
+            canRestore={canRestore}
+            exportOnlyNote={exportOnlyNote}
             onRequest={setPending}
           />
         )}
@@ -248,6 +257,8 @@ function BackupsBody({
   uploadAccept,
   uploadNote,
   uploading,
+  canRestore,
+  exportOnlyNote,
   onRequest,
 }: {
   instanceId: string;
@@ -257,6 +268,8 @@ function BackupsBody({
   uploadAccept: string;
   uploadNote: string;
   uploading: boolean;
+  canRestore: boolean;
+  exportOnlyNote: string;
   onRequest: (action: PendingAction) => void;
 }) {
   const listKey = `${apiBase}/${instanceId}/dbs/${db.id}/backups`;
@@ -337,19 +350,29 @@ function BackupsBody({
       <ScheduleEditor schedKey={schedKey} schedule={schedule} scopes={scopes} />
 
       {/* Restore from file */}
-      <FormGroup legendText="Restore from a file">
-        <Stack gap={3}>
-          <FileUploaderButton
-            accept={uploadAccept.split(",")}
-            buttonKind="tertiary"
-            labelText="Choose a dump file"
-            disabled={uploading}
-            onChange={handleUpload}
-          />
-          {uploading && <InlineLoading description="Uploading…" />}
-          <p className="gisila-db__hint">{uploadNote}</p>
-        </Stack>
-      </FormGroup>
+      {canRestore ? (
+        <FormGroup legendText="Restore from a file">
+          <Stack gap={3}>
+            <FileUploaderButton
+              accept={uploadAccept.split(",")}
+              buttonKind="tertiary"
+              labelText="Choose a dump file"
+              disabled={uploading}
+              onChange={handleUpload}
+            />
+            {uploading && <InlineLoading description="Uploading…" />}
+            <p className="gisila-db__hint">{uploadNote}</p>
+          </Stack>
+        </FormGroup>
+      ) : (
+        <InlineNotification
+          kind="info"
+          lowContrast
+          hideCloseButton
+          title="Export only"
+          subtitle={exportOnlyNote}
+        />
+      )}
 
       {/* Backups list */}
       {backups.length === 0 ? (
@@ -402,14 +425,16 @@ function BackupsBody({
                             iconDescription="Download"
                             onClick={() => handleDownload(b)}
                           />
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            hasIconOnly
-                            renderIcon={Reset}
-                            iconDescription="Restore from this backup"
-                            onClick={() => onRequest({ kind: "restore", backup: b })}
-                          />
+                          {canRestore && (
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              hasIconOnly
+                              renderIcon={Reset}
+                              iconDescription="Restore from this backup"
+                              onClick={() => onRequest({ kind: "restore", backup: b })}
+                            />
+                          )}
                         </>
                       )}
                       <Button

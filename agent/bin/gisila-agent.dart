@@ -1032,11 +1032,21 @@ String? _dartSdkBinDir(String? preferred) {
 // ── Resource sampling ────────────────────────────────────────────────────────
 
 /// Sample a running unit's resource usage and print a single JSON line:
-///   {"ok":true,"memBytes":N,"rssBytes":N,"cpuUsageNsec":N,"tasks":N,"active":S}
+///   {"ok":true,"memBytes":N,"rssBytes":N,"memChargeBytes":N,
+///    "cpuUsageNsec":N,"tasks":N,"active":S}
 ///
 /// On a systemd host this reads `systemctl show` (cgroup accounting — covers the
 /// whole process tree, e.g. gunicorn masters + workers). In Docker (supervisord)
 /// it falls back to reading `/proc/<pid>` for the program's main process.
+///
+/// `memBytes` is the *working set*: the cgroup's memory charge minus cold
+/// reclaimable page cache. Reporting raw `MemoryCurrent` instead makes any
+/// file-heavy service (Postgres especially) appear to consume tens of GB,
+/// because the kernel charges the page cache of every file it reads to whichever
+/// cgroup first faulted the page in and never uncharges until reclaim. That
+/// cache is simultaneously counted as free by `MemAvailable`, so the raw number
+/// contradicts the host memory figure and is useless as a quota denominator.
+/// `memChargeBytes` preserves the unreduced total for callers that want it.
 ///
 /// `cpuUsageNsec` is cumulative CPU time since the unit started; the caller
 /// computes a percentage from the delta between two samples.
@@ -1052,6 +1062,8 @@ Future<void> _stat(List<String> args) async {
   final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
 
   var memBytes = 0;
+  var memChargeBytes = 0;
+  var anonBytes = 0;
   var cpuNsec = 0;
   var tasks = 0;
   var active = 'unknown';
@@ -1060,6 +1072,8 @@ Future<void> _stat(List<String> args) async {
     if (program == null) throw ArgumentError('--user or --program required');
     final stat = await _statFromProc(program);
     memBytes = stat.$1;
+    memChargeBytes = stat.$1;
+    anonBytes = stat.$1;
     cpuNsec = stat.$2;
     active = stat.$3;
   } else {
@@ -1069,6 +1083,7 @@ Future<void> _stat(List<String> args) async {
       'show',
       unit,
       '--property=MemoryCurrent',
+      '--property=ControlGroup',
       '--property=CPUUsageNSec',
       '--property=TasksCurrent',
       '--property=ActiveState',
@@ -1078,20 +1093,76 @@ Future<void> _stat(List<String> args) async {
       final i = line.indexOf('=');
       if (i > 0) map[line.substring(0, i)] = line.substring(i + 1).trim();
     }
-    memBytes = _statInt(map['MemoryCurrent']);
+    memChargeBytes = _statInt(map['MemoryCurrent']);
     cpuNsec = _statInt(map['CPUUsageNSec']);
     tasks = _statInt(map['TasksCurrent']);
     active = map['ActiveState'] ?? 'unknown';
+
+    final breakdown = await _cgroupMemory(map['ControlGroup'] ?? '');
+    if (breakdown != null) {
+      // Working set, as cAdvisor/Kubernetes define it. `inactive_file` is the
+      // cache the kernel would evict first under pressure, so excluding it
+      // leaves what the service would actually have to keep resident.
+      memBytes = (memChargeBytes - breakdown.inactiveFile).clamp(0, memChargeBytes);
+      anonBytes = breakdown.anon;
+    } else {
+      // cgroup v1, or memory.stat unreadable. Better to over-report than to
+      // silently report zero for a running unit.
+      memBytes = memChargeBytes;
+      anonBytes = memChargeBytes;
+    }
   }
 
   stdout.writeln(jsonEncode({
     'ok': true,
     'memBytes': memBytes,
-    'rssBytes': memBytes,
+    'rssBytes': anonBytes,
+    'memChargeBytes': memChargeBytes,
     'cpuUsageNsec': cpuNsec,
     'tasks': tasks,
     'active': active,
   }));
+}
+
+/// The subset of cgroup v2 `memory.stat` fields needed to reduce a raw memory
+/// charge to a working set.
+class _CgroupMemory {
+  const _CgroupMemory({required this.anon, required this.inactiveFile});
+
+  /// Anonymous memory — shared_buffers, heaps, stacks. Closest analogue to RSS
+  /// across a whole process tree, and counted once even when many processes
+  /// share it.
+  final int anon;
+
+  /// Reclaimable page cache not recently touched.
+  final int inactiveFile;
+}
+
+/// Read `anon` and `inactive_file` from a unit's cgroup v2 `memory.stat`.
+/// Returns null when the control group is unknown or the file is unavailable
+/// (notably on cgroup v1 hosts, which have no unified `memory.stat` here).
+Future<_CgroupMemory?> _cgroupMemory(String controlGroup) async {
+  if (controlGroup.isEmpty || !controlGroup.startsWith('/')) return null;
+  try {
+    final file = File('/sys/fs/cgroup$controlGroup/memory.stat');
+    if (!await file.exists()) return null;
+    int? anon;
+    int? inactiveFile;
+    for (final line in await file.readAsLines()) {
+      final i = line.indexOf(' ');
+      if (i <= 0) continue;
+      switch (line.substring(0, i)) {
+        case 'anon':
+          anon = int.tryParse(line.substring(i + 1).trim());
+        case 'inactive_file':
+          inactiveFile = int.tryParse(line.substring(i + 1).trim());
+      }
+    }
+    if (anon == null || inactiveFile == null) return null;
+    return _CgroupMemory(anon: anon, inactiveFile: inactiveFile);
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Parse a systemd numeric property value, treating "[not set]" / non-numeric
@@ -3606,7 +3677,12 @@ Future<void> _postgres(List<String> args) async {
     ..addOption('output', help: 'Backup destination path (.sql.gz)')
     ..addOption('input', help: 'Backup source path to restore (.sql or .sql.gz)')
     ..addOption('scope', help: 'Backup scope: full | schema | data')
-    ..addOption('domain', help: 'Public domain for TLS exposure');
+    ..addOption('domain', help: 'Public domain for TLS exposure')
+    ..addOption('host',
+        help: 'Export over TCP from a cluster on another host instead of the '
+            'local socket. Requires --pguser and --password.')
+    ..addOption('pguser', help: 'Login role to connect as when --host is set')
+    ..addOption('sslmode', help: 'libpq sslmode for --host (default: prefer)');
 
   final opts = parser.parse(args.sublist(1));
   final version = int.tryParse(opts['version'] as String? ?? '');
@@ -3706,7 +3782,16 @@ Future<void> _postgres(List<String> args) async {
       }
       final port = int.tryParse(opts['port'] as String? ?? '') ?? (5400 + version);
       await _pgBackup(
-          version, port, db, output, opts['scope'] as String? ?? 'full');
+        version,
+        port,
+        db,
+        output,
+        opts['scope'] as String? ?? 'full',
+        host: opts['host'] as String?,
+        pgUser: opts['pguser'] as String?,
+        password: opts['password'] as String?,
+        sslMode: opts['sslmode'] as String?,
+      );
 
     case 'restore':
       if (version == null) throw ArgumentError('--version required');
@@ -4116,17 +4201,27 @@ String _shq(String s) => "'${s.replaceAll("'", r"'\''")}'";
 
 /// Run [db]'s `pg_dump` (scoped by [scope]) through gzip into [output].
 ///
-/// The redirect runs in the root shell (so it can write into the gisila-owned
-/// backups tree) while only `pg_dump` drops to the `postgres` user for peer
-/// auth on the local socket. `set -o pipefail` ensures a pg_dump failure isn't
-/// masked by gzip's success. Prints `{"sizeBytes": N}` on success.
+/// Two connection modes. Without [host] the dump goes over this host's local
+/// socket: the redirect runs in the root shell (so it can write into the
+/// gisila-owned backups tree) while only `pg_dump` drops to the `postgres` user
+/// for peer auth. With [host] it connects over TCP as [pgUser] instead, which is
+/// the only way to export a cluster that lives on another machine — there is no
+/// socket and no local `postgres` role to be here. TCP mode needs no privilege
+/// drop, since authentication is by password rather than by uid.
+///
+/// `set -o pipefail` ensures a pg_dump failure isn't masked by gzip's success.
+/// Prints `{"sizeBytes": N}` on success.
 Future<void> _pgBackup(
   int version,
   int port,
   String dbName,
   String output,
-  String scope,
-) async {
+  String scope, {
+  String? host,
+  String? pgUser,
+  String? password,
+  String? sslMode,
+}) async {
   final dir = File(output).parent.path;
   await _sudo('mkdir', ['-p', dir]);
 
@@ -4135,16 +4230,52 @@ Future<void> _pgBackup(
     'data' => '--data-only ',
     _ => '',
   };
-  final pgDump = '/usr/lib/postgresql/$version/bin/pg_dump';
-  final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
+  final remote = (host ?? '').trim();
 
-  final inner = 'set -o pipefail; '
-      '$dropTo$pgDump -p $port ${scopeFlag}-d ${_shq(dbName)} '
-      '| gzip -c > ${_shq(output)}';
-  final cmd = _priv('bash', ['-c', inner]);
-  final res = await Process.run(cmd.first, cmd.skip(1).toList());
-  if (res.exitCode != 0) {
-    throw Exception('pg_dump failed (${res.exitCode}): ${res.stderr}'.trim());
+  String inner;
+  Directory? passDir;
+  if (remote.isEmpty) {
+    final pgDump = '/usr/lib/postgresql/$version/bin/pg_dump';
+    final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
+    inner = 'set -o pipefail; '
+        '$dropTo$pgDump -p $port ${scopeFlag}-d ${_shq(dbName)} '
+        '| gzip -c > ${_shq(output)}';
+  } else {
+    final user = (pgUser ?? '').trim();
+    if (user.isEmpty) {
+      throw ArgumentError('--pguser is required with --host');
+    }
+    final pgDump = await _pgDumpBinary(version);
+    // Authenticate through a 0600 password file rather than PGPASSWORD: the
+    // env of a sudo'd child is not preserved, and anything on the command line
+    // is world-readable in `ps` for the life of the dump.
+    passDir = await Directory.systemTemp.createTemp('gisila-pgpass-');
+    final passFile = File('${passDir.path}/pgpass');
+    await passFile.writeAsString(
+      '${_pgPassEscape(remote)}:$port:*:${_pgPassEscape(user)}:'
+      '${_pgPassEscape(password ?? '')}\n',
+    );
+    await _run('chmod', ['600', passFile.path], failOk: true);
+    inner = 'set -o pipefail; '
+        'PGPASSFILE=${_shq(passFile.path)} '
+        'PGSSLMODE=${_shq((sslMode ?? '').trim().isEmpty ? 'prefer' : sslMode!.trim())} '
+        '$pgDump -h ${_shq(remote)} -p $port -U ${_shq(user)} '
+        '--no-password ${scopeFlag}-d ${_shq(dbName)} '
+        '| gzip -c > ${_shq(output)}';
+  }
+
+  try {
+    final cmd = _priv('bash', ['-c', inner]);
+    final res = await Process.run(cmd.first, cmd.skip(1).toList());
+    if (res.exitCode != 0) {
+      throw Exception('pg_dump failed (${res.exitCode}): ${res.stderr}'.trim());
+    }
+  } finally {
+    if (passDir != null) {
+      try {
+        await passDir.delete(recursive: true);
+      } catch (_) {}
+    }
   }
 
   // Hand the whole tree to gisila so the API can read it for downloads.
@@ -4154,6 +4285,38 @@ Future<void> _pgBackup(
 
   final size = await File(output).length();
   stdout.writeln(jsonEncode({'sizeBytes': size}));
+}
+
+/// Escape a field for a libpq password file, where `:` and `\` are special.
+String _pgPassEscape(String s) =>
+    s.replaceAll(r'\', r'\\').replaceAll(':', r'\:');
+
+/// Pick a `pg_dump` able to dump a server of major [version].
+///
+/// pg_dump refuses to read a server newer than itself, so an exact match is
+/// preferred and the newest installed build is the fallback — never an older
+/// one just because its version number matches something. A cluster on another
+/// host can be any version, including one with no local package at all, in
+/// which case we defer to whatever `pg_dump` is on PATH and let its own error
+/// explain the mismatch.
+Future<String> _pgDumpBinary(int version) async {
+  final exact = '/usr/lib/postgresql/$version/bin/pg_dump';
+  if (await File(exact).exists()) return exact;
+
+  final root = Directory('/usr/lib/postgresql');
+  final installed = <int>[];
+  if (await root.exists()) {
+    await for (final entry in root.list(followLinks: false)) {
+      final major = int.tryParse(entry.path.split('/').last);
+      if (major == null) continue;
+      if (await File('/usr/lib/postgresql/$major/bin/pg_dump').exists()) {
+        installed.add(major);
+      }
+    }
+  }
+  if (installed.isEmpty) return 'pg_dump';
+  installed.sort();
+  return '/usr/lib/postgresql/${installed.last}/bin/pg_dump';
 }
 
 /// Restore [db] from a plain-SQL dump at [input] (`.sql` or `.sql.gz`).

@@ -763,6 +763,16 @@ PostgresDatabase:
       type: text
       default: '[]'             # JSON array of granted role attributes
                                 # (CREATEDB, CREATEROLE, REPLICATION, …)
+    # True for a database that already existed on the cluster — created with
+    # psql, by another tool, or by an older panel — and was discovered rather
+    # than provisioned here. The panel holds no credentials for its owning role,
+    # so `password` is empty and `role_name` is only the observed owner. These
+    # can be backed up (pg_dump is a read) but never restored into, dropped or
+    # have their role altered: none of that is the panel's to do to a database
+    # it did not create.
+    is_external:
+      type: boolean
+      default: false
     status:
       type: varchar
       default: pending           # pending | active | failed | dropped

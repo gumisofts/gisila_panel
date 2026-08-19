@@ -379,10 +379,14 @@ Map<String, Object?> _serializeInstance(PostgresInstance i) => {
       'isSystem': isSystemInstance(i),
       'host': instanceHost(i),
       // False only for a system database on another machine. The panel can
-      // read such a cluster but not operate it — no databases, roles, settings,
-      // backups or exposure — so the UI hides those controls rather than
-      // offering buttons that can only return an error.
+      // read such a cluster but not operate it — no databases, roles, settings
+      // or exposure — so the UI hides those controls rather than offering
+      // buttons that can only return an error.
       'isManaged': isLocalInstance(i),
+      // Backups are the one exception to `isManaged`: an off-host cluster can
+      // still be exported over TCP, it just cannot be restored into. The UI
+      // uses this to keep the backup controls while hiding the restore ones.
+      'canRestore': canRestoreInto(i),
       'dataDirectory': i.dataDirectory,
       'errorMessage': i.errorMessage,
       'installedAt': i.installedAt?.toIso8601String(),
@@ -404,6 +408,10 @@ Map<String, Object?> _serializeDatabase(
     'roleAttributes': jsonDecode(d.roleAttributes ?? '[]'),
     'status': d.status,
     'errorMessage': d.errorMessage,
+    // Discovered on the cluster rather than provisioned here. Can be backed up,
+    // but not restored into, dropped or re-permissioned from the panel.
+    'isExternal': d.isExternal ?? false,
+    'canRestore': canRestoreIntoDatabase(instance, d),
     'createdAt': d.createdAt.toIso8601String(),
     'updatedAt': d.updatedAt?.toIso8601String(),
   };

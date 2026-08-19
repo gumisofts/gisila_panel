@@ -268,6 +268,7 @@ CREATE TABLE "postgres_databases" (
   "password" VARCHAR(255) NOT NULL,
   "extensions" TEXT DEFAULT '[]',
   "role_attributes" TEXT DEFAULT '[]',
+  "is_external" BOOLEAN DEFAULT FALSE,
   "status" VARCHAR(255) DEFAULT 'pending',
   "error_message" TEXT,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,

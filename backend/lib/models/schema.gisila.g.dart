@@ -3669,6 +3669,7 @@ class PostgresDatabase with Preloadable {
   final String password;
   final String? extensions;
   final String? roleAttributes;
+  final bool? isExternal;
   final String? status;
   final String? errorMessage;
   final DateTime createdAt;
@@ -3682,6 +3683,7 @@ class PostgresDatabase with Preloadable {
     required this.password,
     this.extensions,
     this.roleAttributes,
+    this.isExternal,
     this.status,
     this.errorMessage,
     required this.createdAt,
@@ -3697,6 +3699,7 @@ class PostgresDatabase with Preloadable {
         password: row['password'] as String,
         extensions: row['extensions'] as String?,
         roleAttributes: row['role_attributes'] as String?,
+        isExternal: row['is_external'] as bool?,
         status: row['status'] as String?,
         errorMessage: row['error_message'] as String?,
         createdAt: row['created_at'] is DateTime
@@ -3717,6 +3720,7 @@ class PostgresDatabase with Preloadable {
     'password': password,
     'extensions': extensions,
     'role_attributes': roleAttributes,
+    'is_external': isExternal,
     'status': status,
     'error_message': errorMessage,
     'created_at': createdAt,
@@ -3744,6 +3748,7 @@ class PostgresDatabase with Preloadable {
     String? password,
     String? extensions,
     String? roleAttributes,
+    bool? isExternal,
     String? status,
     String? errorMessage,
     DateTime? createdAt,
@@ -3756,6 +3761,7 @@ class PostgresDatabase with Preloadable {
     password: password ?? this.password,
     extensions: extensions ?? this.extensions,
     roleAttributes: roleAttributes ?? this.roleAttributes,
+    isExternal: isExternal ?? this.isExternal,
     status: status ?? this.status,
     errorMessage: errorMessage ?? this.errorMessage,
     createdAt: createdAt ?? this.createdAt,
@@ -3841,6 +3847,10 @@ class PostgresDatabaseTable {
     table: 'postgres_databases',
     column: 'role_attributes',
   );
+  static const ColumnRef<bool?> isExternal = ColumnRef<bool?>(
+    table: 'postgres_databases',
+    column: 'is_external',
+  );
   static const ColumnRef<String?> status = ColumnRef<String?>(
     table: 'postgres_databases',
     column: 'status',
@@ -3870,6 +3880,7 @@ class PostgresDatabaseTable {
           'password',
           'extensions',
           'role_attributes',
+          'is_external',
           'status',
           'error_message',
           'created_at',

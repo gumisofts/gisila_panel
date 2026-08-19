@@ -144,6 +144,8 @@ class MetricsCollector {
     if (stat == null) return;
 
     final memBytes = (stat['memBytes'] as num?)?.toInt() ?? 0;
+    // Older agents predate the working-set split and only send `memBytes`.
+    final rssBytes = (stat['rssBytes'] as num?)?.toInt() ?? memBytes;
     final cpuNsec = (stat['cpuUsageNsec'] as num?)?.toInt() ?? 0;
     final now = DateTime.now().toUtc();
 
@@ -164,7 +166,7 @@ class MetricsCollector {
       'appId': appId,
       'cpuPercent': cpuBasisPoints,
       'memBytes': memBytes,
-      'rssBytes': memBytes,
+      'rssBytes': rssBytes,
       'sampledAt': now.toIso8601String(),
     }).run(database.context());
   }
