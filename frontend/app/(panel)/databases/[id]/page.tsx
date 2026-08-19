@@ -414,6 +414,11 @@ export default function InstancePage() {
   const sc = INST_STATUS[instance.status] ?? INST_STATUS.stopped;
   const databases = dbsData?.results ?? [];
   const isRunning = instance.status === "running";
+  // A system database on another machine: the panel is only its client, so
+  // everything that needs the agent (databases, roles, settings, backups,
+  // lifecycle) is impossible here and stays hidden. Older API responses omit
+  // the flag, in which case the instance is local as it always was.
+  const isManaged = instance.isManaged !== false;
 
   return (
     <Page>
@@ -450,11 +455,13 @@ export default function InstancePage() {
         }
         description={
           <>
-            PostgreSQL {instance.version} · port {instance.port}
+            PostgreSQL {instance.version} ·{" "}
+            {isManaged ? `port ${instance.port}` : `${instance.host}:${instance.port}`}
             {instance.isSystem && (
               <span className="gisila-db__subnote">
-                This is the database the panel runs on. Its port and version are
-                fixed and it cannot be stopped or removed.
+                {isManaged
+                  ? "This is the database the panel runs on. Its port and version are fixed and it cannot be stopped or removed."
+                  : `This is the database the panel runs on, and it lives on ${instance.host}. The panel can read its metrics and settings but cannot manage it from here — do that where the cluster runs.`}
               </span>
             )}
           </>
@@ -472,7 +479,7 @@ export default function InstancePage() {
                 Set default
               </Button>
             )}
-            {isSuperuser && instance.status === "stopped" && (
+            {isSuperuser && instance.status === "stopped" && isManaged && (
               <Button
                 kind="tertiary"
                 size="sm"
@@ -560,7 +567,7 @@ export default function InstancePage() {
           </span>
         }
         actions={
-          isRunning && isSuperuser && (
+          isRunning && isSuperuser && isManaged && (
             <Button
               size="sm"
               kind="tertiary"
@@ -577,14 +584,18 @@ export default function InstancePage() {
             <div className="gisila-db__empty">
               <TableIcon size={32} className="gisila-db__empty-icon" />
               <div>
-                <p className="gisila-db__empty-title">No databases yet</p>
+                <p className="gisila-db__empty-title">
+                  {isManaged ? "No databases yet" : "Managed elsewhere"}
+                </p>
                 <p className="gisila-db__note">
-                  {isRunning
-                    ? "Create a database and role to get started."
-                    : "Start the instance first to create databases."}
+                  {!isManaged
+                    ? `Creating databases and roles runs psql on the cluster's own host, so it has to be done on ${instance.host}.`
+                    : isRunning
+                      ? "Create a database and role to get started."
+                      : "Start the instance first to create databases."}
                 </p>
               </div>
-              {isRunning && (
+              {isRunning && isManaged && (
                 <Button size="sm" renderIcon={Add} onClick={() => setShowCreate(true)}>
                   Create database
                 </Button>
@@ -687,7 +698,7 @@ export default function InstancePage() {
       </PageSection>
 
       {/* Configuration */}
-      <ConfigPanel id={String(id)} running={isRunning} />
+      <ConfigPanel id={String(id)} running={isRunning} editable={isManaged} />
 
       {/* Alerts */}
       <AlertsPanel engine="postgres" instanceId={instance.id} isSuperuser={isSuperuser} />

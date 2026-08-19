@@ -1090,7 +1090,7 @@ class Builders {
     }
 
     // Resolve the project's settings module so the shim can re-export it.
-    final settingsModule = _djangoSettingsModule(src);
+    final settingsModule = djangoSettingsModule(src);
     String settingsArg = '';
     if (settingsModule != null) {
       const shimModule = '_gisila_static_settings';
@@ -1127,14 +1127,17 @@ class Builders {
   ///
   /// Reads the `os.environ.setdefault('DJANGO_SETTINGS_MODULE', '<module>')`
   /// line that Django's `manage.py` (and `wsgi.py` / `asgi.py`) ship with.
-  /// Returns null when no such pin can be found, in which case the caller falls
-  /// back to the project's own settings.
-  static String? _djangoSettingsModule(String src) {
+  /// Returns null when no such pin can be found — the project isn't Django, or
+  /// it sets the module some other way — in which case the caller falls back to
+  /// the project's own settings.
+  static String? djangoSettingsModule(String src) {
     final pattern = RegExp(
         r'''DJANGO_SETTINGS_MODULE['"]\s*,\s*['"]([\w.]+)['"]''');
+    final dir = Directory(src);
+    if (!dir.existsSync()) return null;
     for (final candidate in [
       '$src/manage.py',
-      ...Directory(src)
+      ...dir
           .listSync()
           .whereType<Directory>()
           .expand((d) => ['${d.path}/wsgi.py', '${d.path}/asgi.py']),

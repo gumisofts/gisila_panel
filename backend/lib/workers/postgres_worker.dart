@@ -5,7 +5,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart'
-    show generatePassword, pgBackupDir;
+    show generatePassword, instanceHost, isLocalInstance, pgBackupDir;
 
 /// Handles async PostgreSQL jobs from the [gisila:queue:postgres] queue.
 ///
@@ -19,6 +19,22 @@ class PostgresWorker {
   Future<void> onPostgresJob(Map<String, Object?> payload) async {
     final action = payload['action'] as String?;
     if (action == null) return;
+
+    // Every action below drives the cluster through systemd, its data
+    // directory, or a local psql/pg_dump — none of which exist here for a
+    // system database on another host. The API refuses those requests up
+    // front; this catches anything already sitting in the queue from before
+    // that check, or from a config change that moved the panel's own database
+    // to another machine.
+    final instanceId = payload['instanceId'];
+    if (instanceId is int) {
+      final instance = await _findInstance(instanceId);
+      if (instance != null && !isLocalInstance(instance)) {
+        logger.w('postgres_worker: skipping $action for instance $instanceId — '
+            'it runs on ${instanceHost(instance)}, not on this host');
+        return;
+      }
+    }
 
     switch (action) {
       case 'install_instance':

@@ -15,6 +15,25 @@ import 'package:gisila_panel/utils/slugs.dart';
 /// `expose_mode` column doc in `schema.gisila.yaml` for the full rationale.
 const kExposeModes = <String>{'web', 'tcp', 'internal'};
 
+/// Runtimes where a `tcp` app must supply its own start command.
+///
+/// With no start command the agent derives one, but for these runtimes every
+/// available derivation assumes HTTP — gunicorn for python, the detected web
+/// framework (Next/Nuxt/`npm start`/…) for node and bun — or doesn't exist at
+/// all: a rust build leaves its binary at a crate-specific
+/// `target/release/<name>` path rather than the conventional
+/// `<workDir>/current/app`. A tcp app speaks its own protocol, so silently
+/// starting an HTTP server for it would be wrong; ask up front instead of
+/// failing at deploy time. Compiled runtimes (go, dart, zig, binary uploads)
+/// are absent on purpose: their default is the built artifact at
+/// `<workDir>/current/app`, which is protocol-agnostic and correct here.
+const kTcpRuntimesNeedingStartCommand = <String>{
+  'python',
+  'node',
+  'bun',
+  'rust',
+};
+
 /// CRUD + lifecycle helpers for [App] records.
 ///
 /// This service only manipulates the database. The actual host-side
@@ -192,6 +211,16 @@ class AppsService extends Service {
     if (isStatic && exposeMode != null && exposeMode != 'web') {
       throw BadRequest('Static sites only support exposeMode "web".');
     }
+    if (resolvedExposeMode == 'tcp' &&
+        kTcpRuntimesNeedingStartCommand.contains(runtime) &&
+        (startCommand == null || startCommand.trim().isEmpty)) {
+      throw BadRequest(
+        'A start command is required for a "tcp" app on runtime "$runtime". '
+        'Without one the deploy would fall back to starting an HTTP server '
+        '(gunicorn / the detected web framework), which is not what a raw TCP '
+        'service runs.',
+      );
+    }
 
     final slug = Slug.make(name);
     final shortId = _randomId(6);
@@ -278,6 +307,18 @@ class AppsService extends Service {
     }
     if (patch.containsKey('internalPort') && patch['internalPort'] != null) {
       await _validatePort(patch['internalPort'] as int, excludeAppId: app.id);
+    }
+    // Same reasoning as at creation: clearing the start command of a tcp app
+    // on one of these runtimes would silently hand the next deploy back to an
+    // HTTP default that doesn't fit it.
+    if (patch.containsKey('startCommand') &&
+        app.exposeMode == 'tcp' &&
+        kTcpRuntimesNeedingStartCommand.contains(app.runtime) &&
+        (patch['startCommand'] as String? ?? '').trim().isEmpty) {
+      throw BadRequest(
+        'A start command is required for a "tcp" app on runtime '
+        '"${app.runtime}" — it has no HTTP-free default to fall back to.',
+      );
     }
     patch['updatedAt'] = DateTime.now().toUtc().toIso8601String();
     final rows = await Query<App>(AppTable.metadata)

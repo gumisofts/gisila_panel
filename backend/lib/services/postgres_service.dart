@@ -4,7 +4,15 @@ import 'dart:math';
 
 import 'package:gisila/gisila.dart' hide Query;
 import 'package:gisila_orm/gisila.dart';
-import 'package:gisila_panel/config.dart' show env, systemPgPort;
+import 'package:gisila_panel/config.dart'
+    show
+        env,
+        systemPgDatabase,
+        systemPgHost,
+        systemPgPassword,
+        systemPgPort,
+        systemPgUseSsl,
+        systemPgUser;
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:postgres/postgres.dart' as pg;
@@ -96,6 +104,91 @@ const _defaultPorts = {
   17: 5417,
   18: 5418,
 };
+
+// ── Where an instance lives ───────────────────────────────────────────────────
+//
+// Every cluster the panel installs is created by the agent on this host, so it
+// always sits on loopback and always has a systemd unit, a data directory and a
+// local socket the agent can drive. The system instance — the cluster behind
+// database.yaml — is the exception: it can be a machine on the LAN or a managed
+// provider that this host knows nothing about beyond how to connect to it.
+// Anything that opens a connection to an instance, or hands work to the agent
+// for one, has to know which of the two it is dealing with.
+
+/// Whether [instance] is the always-available cluster that backs the panel
+/// itself. Identified by its port, which is fixed in database.yaml. Its port is
+/// never editable and it can be neither stopped nor uninstalled.
+bool isSystemInstance(PostgresInstance instance) =>
+    instance.port == systemPgPort;
+
+/// Host [instance] is reachable at from the panel.
+String instanceHost(PostgresInstance instance) =>
+    isSystemInstance(instance) ? systemPgHost : '127.0.0.1';
+
+/// Whether [instance] runs on this host, and can therefore be managed by the
+/// agent — started, stopped, reconfigured, backed up, exposed.
+///
+/// Only ever false for a system database that database.yaml points at another
+/// machine. An address that happens to route back to this host still counts as
+/// remote: the panel can read from it either way, and it should not guess that
+/// some local systemd unit and data directory belong to it.
+bool isLocalInstance(PostgresInstance instance) =>
+    isLoopbackHost(instanceHost(instance));
+
+/// Whether [host] names this machine as far as the panel is concerned.
+bool isLoopbackHost(String host) {
+  final h = host.trim().toLowerCase();
+  return h.isEmpty ||
+      h == 'localhost' ||
+      h == '::1' ||
+      h == '[::1]' ||
+      h.startsWith('127.') ||
+      h.startsWith('/'); // a Unix socket directory, i.e. this host
+}
+
+/// How to reach [inst] to read statistics from it.
+///
+/// Local clusters are read through the read-only `gisila_monitor` role the
+/// agent provisions on them. A remote system database cannot have that role —
+/// the agent has no way to reach the host and create it — so the panel reuses
+/// its own database.yaml credentials, which are by definition already working
+/// against that cluster.
+({pg.Endpoint endpoint, pg.ConnectionSettings settings}) statsTarget(
+  PostgresInstance inst, {
+  Duration connectTimeout = const Duration(seconds: 5),
+  Duration queryTimeout = const Duration(seconds: 10),
+}) {
+  if (isLocalInstance(inst)) {
+    return (
+      endpoint: pg.Endpoint(
+        host: '127.0.0.1',
+        port: inst.port,
+        database: 'postgres',
+        username: 'gisila_monitor',
+        password: inst.monitorPassword,
+      ),
+      settings: pg.ConnectionSettings(
+        sslMode: pg.SslMode.disable,
+        connectTimeout: connectTimeout,
+        queryTimeout: queryTimeout,
+      ),
+    );
+  }
+  return (
+    endpoint: pg.Endpoint(
+      host: systemPgHost,
+      port: systemPgPort,
+      database: systemPgDatabase,
+      username: systemPgUser,
+      password: systemPgPassword,
+    ),
+    settings: pg.ConnectionSettings(
+      sslMode: systemPgUseSsl ? pg.SslMode.require : pg.SslMode.disable,
+      connectTimeout: connectTimeout,
+      queryTimeout: queryTimeout,
+    ),
+  );
+}
 
 class PostgresService extends Service {
   Database get _db => db<Database>();
@@ -246,6 +339,7 @@ class PostgresService extends Service {
   Future<PostgresInstance> startInstance(int id) async {
     final instance = await findInstance(id);
     if (instance.status == 'running') return instance;
+    _requireLocal(instance, 'start this instance');
     await _patchInstance(id, {'status': 'pending'});
     await _enqueue('start_instance', {'instanceId': id});
     return findInstance(id);
@@ -282,11 +376,24 @@ class PostgresService extends Service {
     await _enqueue('uninstall_instance', {'instanceId': id});
   }
 
-  /// Whether [instance] is the always-available cluster that backs the panel
-  /// itself. Identified by its port, which is fixed in database.yaml. Its port
-  /// is never editable and it can be neither stopped nor uninstalled.
-  bool isSystemInstance(PostgresInstance instance) =>
-      instance.port == systemPgPort;
+  /// Reject an operation that only the agent can carry out when [instance]
+  /// lives on another host.
+  ///
+  /// Everything in the Postgres lifecycle — creating databases and roles,
+  /// applying settings, dumping and restoring — runs as `psql`/`pg_dump` on the
+  /// cluster's own machine over a local socket. For a remote system database
+  /// there is nothing there to talk to, and without this guard the job would be
+  /// queued, fail somewhere inside the agent, and leave the row stuck in
+  /// `pending` with no explanation.
+  void _requireLocal(PostgresInstance instance, String action) {
+    if (isLocalInstance(instance)) return;
+    throw HttpException(
+      422,
+      'Cannot $action: the system database runs on ${instanceHost(instance)}, '
+      'not on this host. The panel is only a client of that cluster — manage '
+      'it where it lives, or on its provider.',
+    );
+  }
 
   // ── Database CRUD ───────────────────────────────────────────────────────────
 
@@ -317,6 +424,7 @@ class PostgresService extends Service {
       throw HttpException(
           422, 'Instance must be running to create a database.');
     }
+    _requireLocal(instance, 'create a database here');
 
     _validateIdentifier('database name', dbName);
     _validateIdentifier('role name', roleName);
@@ -358,6 +466,7 @@ class PostgresService extends Service {
       throw HttpException(
           422, 'Instance must be running to change role permissions.');
     }
+    _requireLocal(instance, 'change role permissions');
     final attrs = _normalizeRoleAttributes(roleAttributes);
     await _patchDatabase(id, {
       'roleAttributes': jsonEncode(attrs),
@@ -406,6 +515,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to drop a database.');
     }
+    _requireLocal(instance, 'drop this database');
     await _patchDatabase(id, {'status': 'dropped'});
     await _enqueue('drop_database', {
       'instanceId': db.instanceId,
@@ -417,11 +527,12 @@ class PostgresService extends Service {
 
   Map<String, Object?> connectionInfo(
       PostgresInstance instance, PostgresDatabase db) {
-    // Use 127.0.0.1, not 'localhost': PgBouncer binds IPv4 only, but 'localhost'
-    // resolves to ::1 (IPv6) first on dual-stack hosts, so a libpq client gets
-    // ECONNREFUSED on 6432 before it ever tries 127.0.0.1. Pinning IPv4 here
-    // keeps connection strings working regardless of resolver order.
-    final host = '127.0.0.1';
+    // For a local cluster, use 127.0.0.1 rather than 'localhost': PgBouncer
+    // binds IPv4 only, but 'localhost' resolves to ::1 (IPv6) first on
+    // dual-stack hosts, so a libpq client gets ECONNREFUSED on 6432 before it
+    // ever tries 127.0.0.1. Pinning IPv4 keeps connection strings working
+    // regardless of resolver order.
+    final host = instanceHost(instance);
     final port = instance.port;
     final url =
         'postgresql://${db.roleName}:${db.password}@$host:$port/${db.dbName}';
@@ -450,16 +561,19 @@ class PostgresService extends Service {
   /// Live metrics for an instance: connection counts, throughput, cache hit
   /// ratio, per-database sizes, plus host CPU/RAM sampled by the worker.
   ///
-  /// Connection/DB stats are read directly over a localhost connection using
-  /// the read-only `gisila_monitor` role. If that role is not provisioned yet,
-  /// returns `{status: 'initializing'}` and triggers provisioning in the
-  /// background; the UI polls until it flips to `ok`.
+  /// Connection/DB stats are read over a direct connection using the read-only
+  /// `gisila_monitor` role. If that role is not provisioned yet, returns
+  /// `{status: 'initializing'}` and triggers provisioning in the background;
+  /// the UI polls until it flips to `ok`.
   Future<Map<String, Object?>> metrics(int id) async {
     final inst = await findInstance(id);
     if (inst.status != 'running') {
       return {'status': 'not_running'};
     }
-    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
+    // A remote system database has no monitor role and never will — the agent
+    // can't reach that host to create one — so there is nothing to wait for.
+    if (isLocalInstance(inst) &&
+        (inst.monitorPassword == null || inst.monitorPassword!.isEmpty)) {
       await _ensureMonitor(inst);
       return {'status': 'initializing'};
     }
@@ -468,27 +582,38 @@ class PostgresService extends Service {
       final host = await _hostStats(id);
       return {'status': 'ok', 'host': host, ...sql};
     } catch (e) {
-      // Most likely the monitor role isn't created yet (auth failure) — kick off
-      // provisioning and ask the client to retry.
-      await _ensureMonitor(inst);
-      return {'status': 'initializing', 'detail': e.toString()};
+      return await _statsFailure(inst, e);
     }
   }
 
+  /// Turn a failed stats connection into a status the UI can act on.
+  ///
+  /// Locally, the usual cause is that the monitor role isn't created yet (an
+  /// auth failure on a cluster the agent has only just installed), so this
+  /// kicks off provisioning and asks the client to poll. Remotely there is no
+  /// provisioning step that could help, and reporting `initializing` would
+  /// leave the panel spinning forever on a connection that is never coming
+  /// up — so say plainly that the cluster could not be read.
+  Future<Map<String, Object?>> _statsFailure(
+    PostgresInstance inst,
+    Object error,
+  ) async {
+    if (isLocalInstance(inst)) {
+      await _ensureMonitor(inst);
+      return {'status': 'initializing', 'detail': error.toString()};
+    }
+    return {
+      'status': 'unreachable',
+      'detail': 'Could not read stats from the system database at '
+          '${instanceHost(inst)}:${inst.port} — $error',
+    };
+  }
+
   Future<Map<String, Object?>> _queryStats(PostgresInstance inst) async {
+    final target = statsTarget(inst);
     final conn = await pg.Connection.open(
-      pg.Endpoint(
-        host: '127.0.0.1',
-        port: inst.port,
-        database: 'postgres',
-        username: 'gisila_monitor',
-        password: inst.monitorPassword,
-      ),
-      settings: pg.ConnectionSettings(
-        sslMode: pg.SslMode.disable,
-        connectTimeout: const Duration(seconds: 5),
-        queryTimeout: const Duration(seconds: 10),
-      ),
+      target.endpoint,
+      settings: target.settings,
     );
     try {
       final activity = (await conn.execute(
@@ -522,10 +647,16 @@ class PostgresService extends Service {
           .first
           .toColumnMap();
 
+      // pg_database_size() raises for a database the role cannot connect to,
+      // which would sink the whole metrics call. `gisila_monitor` holds
+      // pg_monitor and never hits that, but the panel's own role — used for a
+      // remote system cluster — is an ordinary user, so skip what it can't
+      // read instead of failing.
       final sizes = (await conn.execute(
-        "SELECT datname, pg_database_size(datname)::bigint AS size "
+        "SELECT datname, CASE WHEN has_database_privilege(datname, 'CONNECT') "
+        "THEN pg_database_size(datname)::bigint END AS size "
         "FROM pg_database WHERE datname NOT IN ('template0','template1') "
-        "ORDER BY size DESC",
+        "ORDER BY size DESC NULLS LAST",
       ))
           .map((r) {
         final m = r.toColumnMap();
@@ -589,23 +720,16 @@ class PostgresService extends Service {
     if (inst.status != 'running') {
       return {'status': 'not_running', 'settings': []};
     }
-    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
+    if (isLocalInstance(inst) &&
+        (inst.monitorPassword == null || inst.monitorPassword!.isEmpty)) {
       await _ensureMonitor(inst);
       return {'status': 'initializing', 'settings': []};
     }
     try {
+      final target = statsTarget(inst);
       final conn = await pg.Connection.open(
-        pg.Endpoint(
-          host: '127.0.0.1',
-          port: inst.port,
-          database: 'postgres',
-          username: 'gisila_monitor',
-          password: inst.monitorPassword,
-        ),
-        settings: pg.ConnectionSettings(
-          sslMode: pg.SslMode.disable,
-          connectTimeout: const Duration(seconds: 5),
-        ),
+        target.endpoint,
+        settings: target.settings,
       );
       try {
         final names = kTunableSettings.map((s) => "'$s'").join(',');
@@ -639,8 +763,7 @@ class PostgresService extends Service {
         await conn.close();
       }
     } catch (e) {
-      await _ensureMonitor(inst);
-      return {'status': 'initializing', 'settings': [], 'detail': e.toString()};
+      return {...await _statsFailure(inst, e), 'settings': <Object?>[]};
     }
   }
 
@@ -653,6 +776,7 @@ class PostgresService extends Service {
     if (inst.status != 'running') {
       throw HttpException(422, 'Instance must be running to change settings.');
     }
+    _requireLocal(inst, 'change settings');
     final clean = <String, String>{};
     settings.forEach((key, value) {
       if (!kTunableSettings.contains(key)) return;
@@ -676,7 +800,12 @@ class PostgresService extends Service {
 
   /// Generate + persist a monitor password (if missing) and enqueue creation of
   /// the `gisila_monitor` role on the instance.
+  ///
+  /// No-op for a remote system database: the agent provisions that role with a
+  /// local `psql`, so queueing the job would only produce a failing job on a
+  /// loop for every metrics poll.
   Future<void> _ensureMonitor(PostgresInstance inst) async {
+    if (!isLocalInstance(inst)) return;
     if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
       await _patchInstance(inst.id!, {'monitorPassword': generatePassword()});
     }
@@ -725,6 +854,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to back up a database.');
     }
+    _requireLocal(instance, 'back up this database');
     final row = await Query<PostgresBackup>(PostgresBackupTable.metadata)
         .insert(<String, Object?>{
       'databaseId': databaseId,
@@ -771,6 +901,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to restore.');
     }
+    _requireLocal(instance, 'restore into this database');
     await _enqueue('restore_database', {
       'instanceId': db.instanceId,
       'databaseId': db.id,
@@ -789,6 +920,7 @@ class PostgresService extends Service {
     if (instance.status != 'running') {
       throw HttpException(422, 'Instance must be running to restore.');
     }
+    _requireLocal(instance, 'restore into this database');
     if (bytes.isEmpty) throw HttpException(422, 'Uploaded file is empty.');
 
     final lower = filename.toLowerCase();

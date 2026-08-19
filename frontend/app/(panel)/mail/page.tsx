@@ -61,6 +61,10 @@ import type {
 } from "@/lib/types";
 import "../_storage-mail.scss";
 
+// How long to watch for a queued repair to report back, and how often.
+const REPAIR_WAIT_MS = 90_000;
+const REPAIR_POLL_MS = 2_000;
+
 export default function MailPage() {
   // Gate the whole mail UI behind the tooling install check. While the tooling
   // is absent we poll so the page flips to the normal UI as soon as the
@@ -83,14 +87,47 @@ export default function MailPage() {
   );
   const [repairing, setRepairing] = useState(false);
 
+  // Repair runs on the worker, so the POST only queues it. Rather than
+  // reporting "queued" and leaving the operator to guess, watch the health
+  // snapshot until the worker stamps a newer `lastRepairAt` on it, then report
+  // what actually happened. Gives up after REPAIR_WAIT_MS so a wedged worker
+  // doesn't spin the button forever.
   async function handleRepair() {
+    const before = health?.lastRepairAt ?? null;
     setRepairing(true);
     try {
       await api("/mail/repair", { method: "POST" });
-      toast.success("Mail stack repair queued.");
-      setTimeout(() => mutateHealth(), 3_000);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to queue repair.");
+      setRepairing(false);
+      toast.error(e instanceof Error ? e.message : "Failed to start repair.");
+      return;
+    }
+
+    const deadline = Date.now() + REPAIR_WAIT_MS;
+    try {
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, REPAIR_POLL_MS));
+        // A failed poll says nothing about the repair itself — keep waiting
+        // rather than reporting a verdict we don't have.
+        const latest = await mutateHealth().catch(() => undefined);
+        const done =
+          latest?.lastRepairAt &&
+          latest.lastRepairAt !== before &&
+          latest.lastRepairStatus !== "running";
+        if (!done) continue;
+
+        if (latest.lastRepairStatus === "succeeded") {
+          toast.success(latest.lastRepairDetail ?? "Mail stack repaired.");
+        } else {
+          toast.error(
+            latest.lastRepairDetail ?? "Repair did not fix the mail stack.",
+          );
+        }
+        return;
+      }
+      toast.error(
+        "The repair is still running — check back shortly, or see the worker logs.",
+      );
     } finally {
       setRepairing(false);
     }
@@ -172,6 +209,36 @@ export default function MailPage() {
           )
         }
       />
+
+      {/* A repair that couldn't fix the stack is the case where the operator
+          most needs detail, and a toast they may have missed isn't enough —
+          keep the reason and the steps that were tried on the page. Drop it
+          once the stack is healthy again: a past failure that no longer
+          applies is just noise contradicting the green badge. */}
+      {installed &&
+        health?.healthy === false &&
+        health.lastRepairStatus === "failed" && (
+          <InlineNotification
+            kind="error"
+            lowContrast
+            hideCloseButton
+            title="Last mail repair failed"
+            subtitle={
+              health.lastRepairDetail ?? "The mail stack is still unhealthy."
+            }
+          >
+            {(health.lastRepairSteps?.length ?? 0) > 0 && (
+              <ul
+                className="gisila-sm__note"
+                style={{ marginBlockStart: "0.5rem" }}
+              >
+                {health.lastRepairSteps!.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ul>
+            )}
+          </InlineNotification>
+        )}
 
       {statusLoading ? (
         <SkeletonText paragraph lineCount={3} />

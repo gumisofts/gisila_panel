@@ -19,7 +19,7 @@ import { fetcher } from "@/lib/api";
 import "../../_databases.scss";
 
 interface DbMetrics {
-  status: "ok" | "initializing" | "not_running" | "error";
+  status: "ok" | "initializing" | "not_running" | "unreachable" | "error";
   detail?: string;
   host?: { cpuPercent: number; memBytes: number; sampledAt: string } | null;
   connections?: {

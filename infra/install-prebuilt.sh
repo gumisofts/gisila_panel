@@ -267,6 +267,9 @@ else
     echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /etc/gisila/.env
     echo "    added REDIS_PASSWORD to existing .env"
   fi
+  # See install.sh: database.yaml is rewritten every run, .env is not, so the
+  # Redis connection is refreshed explicitly when the operator supplied one.
+  gisila_sync_redis_env /etc/gisila/.env
 fi
 
 # ── 10. /etc/gisila/database.yaml ─────────────────────────────────────────────

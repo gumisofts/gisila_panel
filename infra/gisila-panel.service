@@ -1,7 +1,14 @@
 [Unit]
 Description=Gisila Panel — control plane API
-After=network.target postgresql.service redis-server.service
-Requires=postgresql.service redis-server.service
+# Ordering only — deliberately not Requires=. PostgreSQL and Redis are external
+# services the panel is a client of, and they are often on another host or a
+# managed provider, where these units simply do not exist locally; a hard
+# Requires= would then refuse to start the panel at all. After= naming a unit
+# that isn't installed is ignored, so this still orders correctly behind a
+# local Postgres/Redis when there is one. network-online (not network) because
+# a remote database has to be reachable before the first connection attempt.
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
 
 [Service]
 Type=simple

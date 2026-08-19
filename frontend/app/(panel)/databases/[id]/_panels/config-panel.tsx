@@ -31,7 +31,8 @@ interface PgSetting {
 }
 
 interface ConfigResponse {
-  status: "ok" | "initializing" | "not_running";
+  status: "ok" | "initializing" | "not_running" | "unreachable";
+  detail?: string;
   settings: PgSetting[];
 }
 
@@ -45,11 +46,16 @@ const HEADING = (
 export function ConfigPanel({
   id,
   running,
+  editable = true,
   apiBase = "/databases",
   note = "Changing these runs ALTER SYSTEM and restarts the cluster. Leave a field blank to reset it to the Postgres default.",
 }: {
   id: string;
   running: boolean;
+  /** False for a cluster the panel can read but not operate (a system database
+   *  on another host): the values are shown, but applying them would need
+   *  ALTER SYSTEM and a restart on that machine. */
+  editable?: boolean;
   apiBase?: string;
   note?: string;
 }) {
@@ -70,6 +76,18 @@ export function ConfigPanel({
       <PageSection title={HEADING}>
         <Tile>
           <InlineLoading description="Loading settings…" />
+        </Tile>
+      </PageSection>
+    );
+  }
+
+  if (data.status !== "ok") {
+    return (
+      <PageSection title={HEADING}>
+        <Tile>
+          <p className="gisila-db__note">
+            Settings unavailable. {data.detail ?? ""}
+          </p>
         </Tile>
       </PageSection>
     );
@@ -99,19 +117,25 @@ export function ConfigPanel({
   return (
     <PageSection
       title={HEADING}
-      description={note}
+      description={
+        editable
+          ? note
+          : "Read-only: applying these runs ALTER SYSTEM and restarts the cluster, which has to happen on the machine it runs on."
+      }
       actions={
-        <>
-          {saving && <InlineLoading description="Applying…" />}
-          {dirty && (
-            <Button size="sm" kind="ghost" renderIcon={Reset} onClick={() => setEdits({})}>
-              Reset
+        editable && (
+          <>
+            {saving && <InlineLoading description="Applying…" />}
+            {dirty && (
+              <Button size="sm" kind="ghost" renderIcon={Reset} onClick={() => setEdits({})}>
+                Reset
+              </Button>
+            )}
+            <Button size="sm" onClick={save} disabled={!dirty || saving}>
+              Apply &amp; restart
             </Button>
-          )}
-          <Button size="sm" onClick={save} disabled={!dirty || saving}>
-            Apply &amp; restart
-          </Button>
-        </>
+          </>
+        )
       }
     >
       <TableContainer>
@@ -145,6 +169,7 @@ export function ConfigPanel({
                       labelText={`${s.name} value`}
                       hideLabel
                       size="sm"
+                      readOnly={!editable}
                       value={current}
                       className={changed ? "gisila-db__input--changed" : undefined}
                       onChange={(e) =>

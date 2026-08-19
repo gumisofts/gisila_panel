@@ -1,7 +1,9 @@
 [Unit]
 Description=Gisila Panel — background worker
-After=network.target postgresql.service redis-server.service
-Requires=postgresql.service redis-server.service
+# Ordering only, no Requires= — see the comment in gisila-panel.service:
+# Postgres and Redis may be remote, in which case these units don't exist here.
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
 PartOf=gisila-panel.service
 
 [Service]

@@ -8,6 +8,8 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/notification_service.dart';
+import 'package:gisila_panel/services/postgres_service.dart'
+    show isLocalInstance, statsTarget;
 import 'package:gisila_panel/workers/health_monitor_worker.dart';
 import 'package:gisila_panel/workers/host_stats_sampler.dart';
 
@@ -232,22 +234,22 @@ class AlertEvaluator {
   }
 
   Future<int?> _pgConnectionsPercent(PostgresInstance inst) async {
-    if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) return null;
+    // Local clusters need their monitor role provisioned first; a remote system
+    // database is read with the panel's own credentials instead (statsTarget).
+    if (isLocalInstance(inst) &&
+        (inst.monitorPassword == null || inst.monitorPassword!.isEmpty)) {
+      return null;
+    }
     pg.Connection? conn;
     try {
+      final target = statsTarget(
+        inst,
+        connectTimeout: const Duration(seconds: 3),
+        queryTimeout: const Duration(seconds: 5),
+      );
       conn = await pg.Connection.open(
-        pg.Endpoint(
-          host: '127.0.0.1',
-          port: inst.port,
-          database: 'postgres',
-          username: 'gisila_monitor',
-          password: inst.monitorPassword,
-        ),
-        settings: pg.ConnectionSettings(
-          sslMode: pg.SslMode.disable,
-          connectTimeout: const Duration(seconds: 3),
-          queryTimeout: const Duration(seconds: 5),
-        ),
+        target.endpoint,
+        settings: target.settings,
       );
       final activity = (await conn.execute(
         "SELECT count(*) AS total FROM pg_stat_activity WHERE backend_type='client backend'",

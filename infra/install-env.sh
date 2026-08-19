@@ -158,6 +158,18 @@ PY
 
 # Apply URL knobs, then fill any remaining defaults.
 gisila_apply_install_env() {
+  # Did the operator actually name a Redis on this run, or are we about to fall
+  # back to the localhost default? Upgrades keep the existing /etc/gisila/.env,
+  # so without this an operator moving to an external Redis would re-run the
+  # installer and silently stay pointed at the old one. Must be read before the
+  # URL parsers and defaults below fill these in.
+  if [[ -n "${REDIS_URL:-}${REDIS_HOST:-}${REDIS_PORT:-}${REDIS_PASSWORD:-}" ]]; then
+    GISILA_REDIS_EXPLICIT=1
+  else
+    GISILA_REDIS_EXPLICIT=0
+  fi
+  export GISILA_REDIS_EXPLICIT
+
   if [[ -n "${DATABASE_URL:-}" ]]; then
     echo "==> Using DATABASE_URL for PostgreSQL"
     gisila_parse_database_url "$DATABASE_URL"
@@ -184,6 +196,33 @@ gisila_apply_install_env() {
   export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_SSL
   export REDIS_HOST REDIS_PORT REDIS_PASSWORD
   export PANEL_DOMAIN ISSUE_TLS
+}
+
+# Set KEY=value in an env file, replacing any existing line for KEY. Rewrites
+# through the original inode so the file keeps its owner and 0640 mode.
+gisila_set_env_var() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$(mktemp)"
+  if [[ -f "$file" ]]; then
+    # grep exits 1 when nothing survives the filter, which is a normal outcome
+    # here and must not trip the installer's `set -e`.
+    grep -v "^${key}=" "$file" > "$tmp" || true
+  fi
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
+# Refresh the REDIS_* keys of an existing env file when the operator passed
+# Redis details explicitly (see GISILA_REDIS_EXPLICIT above). Called on the
+# upgrade path, where the env file is otherwise left untouched.
+gisila_sync_redis_env() {
+  local file="${1:-/etc/gisila/.env}"
+  [[ "${GISILA_REDIS_EXPLICIT:-0}" == "1" ]] || return 0
+  gisila_set_env_var "$file" REDIS_HOST "$REDIS_HOST"
+  gisila_set_env_var "$file" REDIS_PORT "$REDIS_PORT"
+  gisila_set_env_var "$file" REDIS_PASSWORD "$REDIS_PASSWORD"
+  echo "    updated REDIS_HOST/REDIS_PORT/REDIS_PASSWORD → $REDIS_HOST:$REDIS_PORT"
 }
 
 # Write PANEL_DOMAIN into the panel nginx vhost (replaces panel.example.com).

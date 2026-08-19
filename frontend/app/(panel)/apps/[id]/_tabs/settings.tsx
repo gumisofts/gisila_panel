@@ -279,6 +279,34 @@ export function SettingsTab({
   const isGo     = app.runtime === "go";
   const isRust   = app.runtime === "rust";
 
+  // Only a `web` app has an Nginx vhost in front of it, so anything that is
+  // really a vhost setting (health check path, the /media/ location and its
+  // client_max_body_size) has nothing to configure for tcp/internal apps.
+  const isWeb = (app.exposeMode ?? "web") === "web";
+  // A tcp app serves its own protocol, so Gunicorn's WSGI/ASGI wiring doesn't
+  // apply — and its start command is the only thing that says what to run.
+  const isTcp = app.exposeMode === "tcp";
+  const needsExplicitStart =
+    isTcp && (isPython || isNode || isBun || isRust);
+  // The agent resolves the command's program against the runtime's own tooling
+  // (virtualenv, node_modules/.bin, cargo's target dir) before systemd sees it,
+  // so say so rather than letting people hardcode absolute build paths.
+  const startCommandHelp =
+    [
+      needsExplicitStart
+        ? "A TCP service has no default we can infer — the usual one would start an HTTP server."
+        : "",
+      isPython
+        ? "Write it as if the virtualenv were active: python, manage.py and installed scripts like gunicorn resolve to this app's virtualenv."
+        : isNode || isBun
+          ? "Write it as if you were in the project: node_modules/.bin commands and script files resolve against the build."
+          : isRust
+            ? "A bare binary name resolves to cargo's target/release."
+            : "",
+    ]
+      .filter((s) => s)
+      .join(" ") || undefined;
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -290,26 +318,32 @@ export function SettingsTab({
         sourceSubdir: form.sourceSubdir || undefined,
         buildCommand: form.buildCommand || undefined,
         startCommand: form.startCommand || undefined,
-        healthCheckPath: form.healthCheckPath || undefined,
+        // Health check path is an nginx vhost setting, hidden (and meaningless)
+        // for tcp/internal apps.
+        ...(isWeb ? { healthCheckPath: form.healthCheckPath || undefined } : {}),
         memoryMbLimit: form.memoryMbLimit,
         cpuQuotaPercent: form.cpuQuotaPercent,
         tasksLimit: form.tasksLimit,
       };
       if (isPython) {
         patch.pythonVersion = form.pythonVersion;
-        patch.pythonMode = form.pythonMode;
-        patch.wsgiApp = form.wsgiApp || undefined;
-        patch.gunicornWorkers = form.gunicornWorkers
-          ? Number(form.gunicornWorkers)
-          : undefined;
-        patch.gunicornThreads = form.gunicornThreads
-          ? Number(form.gunicornThreads)
-          : undefined;
-        patch.gunicornTimeout = form.gunicornTimeout
-          ? Number(form.gunicornTimeout)
-          : undefined;
-        patch.gunicornBind = form.gunicornBind || undefined;
-        patch.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
+        // The Gunicorn fields are hidden for a tcp app, so don't send back
+        // values the user was never shown a chance to set.
+        if (!isTcp) {
+          patch.pythonMode = form.pythonMode;
+          patch.wsgiApp = form.wsgiApp || undefined;
+          patch.gunicornWorkers = form.gunicornWorkers
+            ? Number(form.gunicornWorkers)
+            : undefined;
+          patch.gunicornThreads = form.gunicornThreads
+            ? Number(form.gunicornThreads)
+            : undefined;
+          patch.gunicornTimeout = form.gunicornTimeout
+            ? Number(form.gunicornTimeout)
+            : undefined;
+          patch.gunicornBind = form.gunicornBind || undefined;
+          patch.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
+        }
       }
       if (isCelery) {
         patch.pythonVersion     = form.pythonVersion || undefined;
@@ -330,8 +364,9 @@ export function SettingsTab({
         // value (JSON.stringify drops `undefined`, which left the old path).
         patch.staticRoot = form.staticRoot;
         patch.staticSpa = form.staticSpa;
-      } else {
-        // Local disk media (Model A) — not applicable to static sites.
+      } else if (isWeb) {
+        // Local disk media (Model A) — nginx serves it, so it applies only to
+        // a web app, and never to a static site.
         patch.mediaEnabled = form.mediaEnabled;
         patch.mediaMaxUploadMb = form.mediaMaxUploadMb
           ? Number(form.mediaMaxUploadMb)
@@ -464,27 +499,42 @@ export function SettingsTab({
                 <div className="gisila-app__form-field">
                   <TextInput
                     id="s-start"
-                    labelText="Start command (optional)"
+                    labelText={
+                      needsExplicitStart
+                        ? "Start command (required)"
+                        : "Start command (optional)"
+                    }
                     placeholder={
-                      isPython
-                        ? "Auto-generated gunicorn command"
-                        : isCelery
-                          ? "Auto-generated from Celery settings below"
-                          : "./current/app"
+                      isTcp
+                        ? isPython
+                          ? "python manage.py run_tcp_server"
+                          : isNode || isBun
+                            ? "node tcp-server.js"
+                            : isRust
+                              ? "my-crate --listen 0.0.0.0:$PORT"
+                              : "./server --listen 0.0.0.0:$PORT"
+                        : isPython
+                          ? "Auto-generated gunicorn command"
+                          : isCelery
+                            ? "Auto-generated from Celery settings below"
+                            : "./current/app"
                     }
                     disabled={isCelery}
                     value={form.startCommand}
                     onChange={(e) => set("startCommand", e.target.value)}
+                    helperText={startCommandHelp}
                   />
                 </div>
               </div>
-              <TextInput
-                id="s-health"
-                labelText="Health check path (optional)"
-                placeholder="/health"
-                value={form.healthCheckPath}
-                onChange={(e) => set("healthCheckPath", e.target.value)}
-              />
+              {isWeb && (
+                <TextInput
+                  id="s-health"
+                  labelText="Health check path (optional)"
+                  placeholder="/health"
+                  value={form.healthCheckPath}
+                  onChange={(e) => set("healthCheckPath", e.target.value)}
+                />
+              )}
             </Stack>
           </Tile>
         )}
@@ -492,7 +542,9 @@ export function SettingsTab({
         {/* Python */}
         {isPython && (
           <Tile>
-            <h3 className="gisila-app__tile-title">Python / WSGI · ASGI</h3>
+            <h3 className="gisila-app__tile-title">
+              {isTcp ? "Python" : "Python / WSGI · ASGI"}
+            </h3>
             <Stack gap={6}>
               <VersionSelect
                 id="s-python-version"
@@ -503,93 +555,99 @@ export function SettingsTab({
                 {versionItems("python", form.pythonVersion, appsList, catalogList)}
               </VersionSelect>
 
-              <TileGroup
-                name="s-python-mode"
-                legend="Server mode"
-                valueSelected={form.pythonMode}
-                onChange={(v) => set("pythonMode", v)}
-              >
-                <RadioTile id="s-mode-wsgi" value="wsgi">
-                  <strong>WSGI</strong>
-                  <p className="gisila-app__hint">Django, Flask — synchronous</p>
-                </RadioTile>
-                <RadioTile id="s-mode-asgi" value="asgi">
-                  <strong>ASGI</strong>
-                  <p className="gisila-app__hint">FastAPI, Starlette — async</p>
-                </RadioTile>
-              </TileGroup>
+              {/* Gunicorn only makes sense for an HTTP app behind nginx; a tcp
+                  app runs whatever its start command says. */}
+              {!isTcp && (
+                <>
+                  <TileGroup
+                    name="s-python-mode"
+                    legend="Server mode"
+                    valueSelected={form.pythonMode}
+                    onChange={(v) => set("pythonMode", v)}
+                  >
+                    <RadioTile id="s-mode-wsgi" value="wsgi">
+                      <strong>WSGI</strong>
+                      <p className="gisila-app__hint">Django, Flask — synchronous</p>
+                    </RadioTile>
+                    <RadioTile id="s-mode-asgi" value="asgi">
+                      <strong>ASGI</strong>
+                      <p className="gisila-app__hint">FastAPI, Starlette — async</p>
+                    </RadioTile>
+                  </TileGroup>
 
-              <TextInput
-                id="s-wsgi"
-                labelText="Application target"
-                placeholder={
-                  form.pythonMode === "asgi"
-                    ? "myapp.asgi:application"
-                    : "myapp.wsgi:application"
-                }
-                value={form.wsgiApp}
-                onChange={(e) => set("wsgiApp", e.target.value)}
-              />
+                  <TextInput
+                    id="s-wsgi"
+                    labelText="Application target"
+                    placeholder={
+                      form.pythonMode === "asgi"
+                        ? "myapp.asgi:application"
+                        : "myapp.wsgi:application"
+                    }
+                    value={form.wsgiApp}
+                    onChange={(e) => set("wsgiApp", e.target.value)}
+                  />
 
-              {/* Gunicorn tuning */}
-              <div className="gisila-app__choice">
-                <Stack gap={5}>
-                  <p className="gisila-app__label">Gunicorn</p>
-                  <div className="gisila-app__form-row">
-                    <div className="gisila-app__form-field">
+                  {/* Gunicorn tuning */}
+                  <div className="gisila-app__choice">
+                    <Stack gap={5}>
+                      <p className="gisila-app__label">Gunicorn</p>
+                      <div className="gisila-app__form-row">
+                        <div className="gisila-app__form-field">
+                          <TextInput
+                            id="s-gworkers"
+                            labelText="Workers"
+                            type="number"
+                            min={1}
+                            max={64}
+                            placeholder="4"
+                            value={form.gunicornWorkers}
+                            onChange={(e) => set("gunicornWorkers", e.target.value)}
+                          />
+                        </div>
+                        <div className="gisila-app__form-field">
+                          <TextInput
+                            id="s-gthreads"
+                            labelText="Threads / worker"
+                            type="number"
+                            min={1}
+                            max={64}
+                            placeholder="1"
+                            value={form.gunicornThreads}
+                            onChange={(e) => set("gunicornThreads", e.target.value)}
+                          />
+                        </div>
+                        <div className="gisila-app__form-field">
+                          <TextInput
+                            id="s-gtimeout"
+                            labelText="Timeout (s)"
+                            type="number"
+                            min={1}
+                            max={3600}
+                            placeholder="120"
+                            value={form.gunicornTimeout}
+                            onChange={(e) => set("gunicornTimeout", e.target.value)}
+                          />
+                        </div>
+                      </div>
                       <TextInput
-                        id="s-gworkers"
-                        labelText="Workers"
-                        type="number"
-                        min={1}
-                        max={64}
-                        placeholder="4"
-                        value={form.gunicornWorkers}
-                        onChange={(e) => set("gunicornWorkers", e.target.value)}
+                        id="s-gbind"
+                        labelText="Bind address (optional)"
+                        placeholder={`0.0.0.0:${app.internalPort} (internal port)`}
+                        value={form.gunicornBind}
+                        onChange={(e) => set("gunicornBind", e.target.value)}
+                        helperText={`Defaults to 0.0.0.0:$PORT (the app's internal port ${app.internalPort}). Only override if you keep the same port so the nginx proxy still resolves.`}
                       />
-                    </div>
-                    <div className="gisila-app__form-field">
                       <TextInput
-                        id="s-gthreads"
-                        labelText="Threads / worker"
-                        type="number"
-                        min={1}
-                        max={64}
-                        placeholder="1"
-                        value={form.gunicornThreads}
-                        onChange={(e) => set("gunicornThreads", e.target.value)}
+                        id="s-gextra"
+                        labelText="Extra arguments (optional)"
+                        placeholder="--max-requests 1000 --graceful-timeout 30"
+                        value={form.gunicornExtraArgs}
+                        onChange={(e) => set("gunicornExtraArgs", e.target.value)}
                       />
-                    </div>
-                    <div className="gisila-app__form-field">
-                      <TextInput
-                        id="s-gtimeout"
-                        labelText="Timeout (s)"
-                        type="number"
-                        min={1}
-                        max={3600}
-                        placeholder="120"
-                        value={form.gunicornTimeout}
-                        onChange={(e) => set("gunicornTimeout", e.target.value)}
-                      />
-                    </div>
+                    </Stack>
                   </div>
-                  <TextInput
-                    id="s-gbind"
-                    labelText="Bind address (optional)"
-                    placeholder={`0.0.0.0:${app.internalPort} (internal port)`}
-                    value={form.gunicornBind}
-                    onChange={(e) => set("gunicornBind", e.target.value)}
-                    helperText={`Defaults to 0.0.0.0:$PORT (the app's internal port ${app.internalPort}). Only override if you keep the same port so the nginx proxy still resolves.`}
-                  />
-                  <TextInput
-                    id="s-gextra"
-                    labelText="Extra arguments (optional)"
-                    placeholder="--max-requests 1000 --graceful-timeout 30"
-                    value={form.gunicornExtraArgs}
-                    onChange={(e) => set("gunicornExtraArgs", e.target.value)}
-                  />
-                </Stack>
-              </div>
+                </>
+              )}
             </Stack>
           </Tile>
         )}
@@ -815,8 +873,10 @@ export function SettingsTab({
           </Tile>
         )}
 
-        {/* Media (local disk) */}
-        {!isStatic && (
+        {/* Media (local disk). Every part of this — the /media/ location, the
+            /_protected/ X-Accel-Redirect handoff, client_max_body_size — is
+            written into the app's nginx vhost, which only a `web` app has. */}
+        {!isStatic && isWeb && (
           <Tile>
             <h3 className="gisila-app__tile-title">
               Media storage (local disk)

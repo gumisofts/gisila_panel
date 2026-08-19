@@ -278,6 +278,10 @@ Future<void> _seedSuperuser(Database database) async {
 /// is unique), making this idempotent and safe to call on every startup. Its
 /// port is never editable and its version is read from config, never requested.
 ///
+/// The cluster may well be on another host, in which case it is registered as
+/// a read-only entry the panel can only *read* — no data directory, and every
+/// agent-driven action refused (see `isLocalInstance` in PostgresService).
+///
 /// Skipped when `server_version` is not configured in database.yaml.
 Future<void> _seedSystemInstance(Database database) async {
   final version = systemPgVersion;
@@ -296,7 +300,12 @@ Future<void> _seedSystemInstance(Database database) async {
               .first(database.context()) ==
           null;
 
-  logger.i('Seeding system Postgres instance: v$version on port $port');
+  // Only claim a data directory for a cluster that is actually on this host —
+  // pointing at /var/lib/postgresql on a machine that hosts no such cluster
+  // would be a plain lie in the UI.
+  final local = isLoopbackHost(systemPgHost);
+  logger.i('Seeding system Postgres instance: v$version on '
+      '${local ? 'this host' : systemPgHost}:$port');
   final now = DateTime.now().toUtc().toIso8601String();
   try {
     await Query<PostgresInstance>(PostgresInstanceTable.metadata)
@@ -306,7 +315,7 @@ Future<void> _seedSystemInstance(Database database) async {
       'port': port,
       'status': 'running',
       'isDefault': isFirst,
-      'dataDirectory': '/var/lib/postgresql/$version/main',
+      'dataDirectory': local ? '/var/lib/postgresql/$version/main' : null,
       'installedAt': now,
       'createdAt': now,
     }).run(database.context());

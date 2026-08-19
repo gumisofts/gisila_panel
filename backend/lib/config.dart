@@ -52,9 +52,32 @@ Future<void> init() async {
 // Connection details come straight from [databaseConfig]; the major version is
 // read from config (the `server_version` key under the default connection's
 // `additional_params`) rather than requested in the UI.
+//
+// That cluster does not have to be on this host. Unlike the instances the panel
+// installs — which the agent creates locally and can drive through systemd and
+// a local socket — the system cluster can be a machine on the LAN or a managed
+// provider, in which case the panel is only its client. Everything that
+// connects to it, or asks the agent to act on it, has to respect that; see
+// `instanceHost` / `isLocalInstance` in services/postgres_service.dart.
+
+/// Host of the system PostgreSQL cluster that backs the panel. Read-only.
+String get systemPgHost => databaseConfig.defaultConnection.host;
 
 /// Port of the system PostgreSQL cluster that backs the panel. Read-only.
 int get systemPgPort => databaseConfig.defaultConnection.port;
+
+/// Database name the panel itself uses on the system cluster.
+String get systemPgDatabase => databaseConfig.defaultConnection.database;
+
+/// Credentials the panel authenticates to the system cluster with.
+///
+/// Used to read stats from a *remote* system cluster, where the agent cannot
+/// provision the usual read-only `gisila_monitor` role because it has no way
+/// to reach that host. These credentials are known to work — the panel is
+/// already connected with them.
+String get systemPgUser => databaseConfig.defaultConnection.username;
+String get systemPgPassword => databaseConfig.defaultConnection.password;
+bool get systemPgUseSsl => databaseConfig.defaultConnection.useSSL;
 
 /// Major version of the system PostgreSQL cluster, read from config
 /// (`additional_params.server_version` in database.yaml). Returns null when it

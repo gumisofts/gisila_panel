@@ -290,6 +290,10 @@ else
     echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /etc/gisila/.env
     echo "    added REDIS_PASSWORD to existing .env"
   fi
+  # Redis is the one connection that lives in .env rather than database.yaml
+  # (which is rewritten on every run), so it is the one that would otherwise go
+  # stale when an operator re-runs the installer to move to a different Redis.
+  gisila_sync_redis_env /etc/gisila/.env
 fi
 
 # ── 9. /etc/gisila/database.yaml ──────────────────────────────────────────────

@@ -151,6 +151,114 @@ instead of `apply-vhost`:
 (`_destroyApp`) always runs `unexpose-port` first for a `tcp` app so the
 firewall hole never outlives the app.
 
+### A `tcp` app has to say what to run
+
+With no `start_command`, `apply-unit` derives one — and for python that
+derivation is a gunicorn invocation, while for node/bun it's whatever
+`NodeFramework.plan()` detects (Next, Nuxt, `npm start`, …). Both produce an
+**HTTP server**, which is the right guess behind nginx and the wrong one for
+an app whose whole point is speaking its own protocol: the unit would start
+cleanly and then answer the wrong thing on the wire. Rust has no usable
+default at all, since cargo leaves its binary at a crate-specific
+`target/release/<name>` rather than the conventional `<workDir>/current/app`.
+
+So a `tcp` app on `python`, `node`, `bun` or `rust` must supply a start
+command. It's enforced in three places, closest-to-the-user first:
+
+| Where | What it does |
+|---|---|
+| Create form / Settings | Marks the field required and explains why |
+| `AppsService.create`/`update` (`kTcpRuntimesNeedingStartCommand`) | 400s a create or a patch that would leave it empty |
+| `apply-unit` | Throws rather than falling through to an HTTP default — catches apps predating the rule or created straight through the API |
+
+Compiled runtimes (`go`, `dart`, `zig`, binary uploads) are deliberately
+exempt: their default is the built artifact at `<workDir>/current/app`, which
+is protocol-agnostic and correct for a TCP service.
+
+### How a start command becomes `ExecStart`
+
+A start command is typed the way you'd run it in a shell sitting inside the
+project: the virtualenv activated, `node_modules/.bin` on `PATH`, cargo's
+`target/release` a relative hop away. A unit has none of that. Systemd (and
+supervisord) take an absolute path or a bare name looked up on the *system*
+`PATH`, which holds none of the app's own tooling, and reject anything
+relative outright as a "bad unit file setting". Left alone, `python manage.py
+runserver` reaches an interpreter that never heard of the app's dependencies,
+`next start` isn't found at all, and `./target/release/api` won't even load
+the unit.
+
+[`ExecResolver`](../agent/lib/runtime/exec_resolver.dart) closes that gap. Each
+runtime declares where its executables actually live and what runs its source
+files, and the command's first token is rewritten to match before the unit is
+written:
+
+| Runtime | Searched for a bare name | Runs its scripts |
+|---|---|---|
+| `python`, `celery` | `<workDir>/current/.venv/bin` | `<venv>/bin/python` for `.py` |
+| `node` | `<src>/node_modules/.bin` | `node` for `.js` / `.mjs` / `.cjs` |
+| `bun` | `<src>/node_modules/.bin` | `bun`, also for `.ts` / `.tsx` |
+| `rust` | `<src>/target/release`, `target/debug` | — (cargo emits real binaries) |
+| `go`, `dart`, `zig`, binary | `<workDir>/current` | — |
+
+Worked through, for a python and a node app:
+
+| Typed | Becomes |
+|---|---|
+| `python manage.py run_tcp_server` | `<venv>/bin/python manage.py run_tcp_server` |
+| `gunicorn app:application` | `<venv>/bin/gunicorn app:application` |
+| `manage.py runserver`, `./manage.py …` | `<venv>/bin/python <src>/manage.py runserver` |
+| `next start -p 3000` | `node <src>/node_modules/.bin/next start -p 3000` |
+| `esbuild --serve` | `<src>/node_modules/.bin/esbuild --serve` |
+| `api` (rust), `app` (go) | `<src>/target/release/api`, `<workDir>/current/app` |
+| `npm start`, `/opt/x/bin/x` | unchanged |
+
+Two rules make that table fall out of one implementation rather than a pile of
+per-runtime special cases:
+
+- **Whether to prepend the interpreter** is decided by reading the program's
+  shebang, not by which directory it came from. `#!/usr/bin/env node` — every
+  `node_modules/.bin` shim — resolves through `PATH`, the one thing the unit
+  can't supply (and AppArmor won't follow the indirection), so those are handed
+  to `node` explicitly. A venv console script like `gunicorn` carries an
+  absolute `#!…/.venv/bin/python` that works as-is, and a compiled binary such
+  as `esbuild` has no shebang at all; both are exec'd directly.
+- **Anything the resolver can't place is returned untouched** for `PATH`, so
+  `npm start` and friends behave exactly as they did before.
+
+A relative path is resolved against the unit's working directory, falling back
+to the app root — so the `./current/app` spelling this doc and the panel's
+placeholder text both use keeps working for compiled runtimes even though the
+unit's cwd is already `<workDir>/current`. Rust apps run with their cwd set to
+the source tree (cargo installs nothing to `current/`, so it is the only
+directory where their own paths mean anything). Every rewrite is logged as
+`[agent] ExecStart: "…" → "…"` in the deploy output.
+
+For a Django project the agent also pins `Environment=DJANGO_SETTINGS_MODULE=…`
+in the unit, read out of the project's own
+`os.environ.setdefault(...)` in `manage.py`/`wsgi.py`/`asgi.py`. The stock
+entrypoints set it themselves, so this changes nothing for them; it matters for
+a custom command that imports Django directly (a TCP server reusing the app's
+models), which would otherwise raise `ImproperlyConfigured`. It's emitted
+*before* `EnvironmentFile=`, so setting the same key in the app's env vars
+still overrides it. Nothing else is inlined into the unit — user env stays in
+the 0640 `.env`, because unit files are world-readable.
+
+### Config the panel hides for non-`web` apps
+
+Following "if it doesn't apply, don't ask": the create form and Settings tab
+hide options that only exist because of nginx or HTTP, since a user has no
+way to know they're inert.
+
+| Hidden | For | Why |
+|---|---|---|
+| Server mode (WSGI/ASGI), application target, Gunicorn tuning | `tcp` | Gunicorn is an HTTP server; a tcp app runs its own start command. The Python **version** picker stays — that applies to any python app. |
+| Health check path | `tcp`, `internal` | An nginx vhost setting; these apps have no vhost. |
+| Media storage / max upload size | `tcp`, `internal` | Renders the `/media/` location, the `/_protected/` X-Accel-Redirect handoff and `client_max_body_size` — all vhost-only. |
+| Domains tab | `tcp`, `internal` | No vhost for a hostname to point at (see above). |
+
+The corresponding fields are also dropped from the PATCH body when hidden, so
+saving Settings can't write back a value the user was never shown.
+
 **Never locking out SSH.** `expose-port`/`unexpose-port` are thin wrappers
 around [`Priv.ufwAllow`/`Priv.ufwDeny`](../agent/lib/runtime/priv.dart) — the
 same helpers `PostgresService`/`MongoService` public exposure already use

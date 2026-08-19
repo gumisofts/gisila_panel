@@ -5,6 +5,8 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/mail_service.dart' show effectiveMailHostname;
+import 'package:gisila_panel/workers/health_monitor_worker.dart'
+    show mailHealthRedisKey, patchCachedHealth;
 
 /// Syncs the DB's mail domains + accounts into the host's Postfix/Dovecot
 /// virtual-mailbox configuration and OpenDKIM signing setup
@@ -25,7 +27,7 @@ class MailWorker {
       case 'repair':
         // Triggered manually (POST /mail/repair) or by HealthMonitorWorker
         // when a periodic probe finds the stack unhealthy.
-        await _runAgent(['mail', 'repair']);
+        await _repair();
       default:
         return;
     }
@@ -90,6 +92,66 @@ class MailWorker {
       throw Exception(
           'Agent mail sync exited ${result.exitCode}: ${result.stderr}'.trim());
     }
+  }
+
+  /// Run the agent's mail repair and publish the outcome to the health cache
+  /// the Mail page reads.
+  ///
+  /// Without this the job was write-only: the agent exits 0 whether or not the
+  /// stack came back (it reports the post-repair health in its JSON payload
+  /// instead), the worker discarded that payload, and the health monitor only
+  /// re-probes once a minute. So a failed repair was indistinguishable from a
+  /// successful one, and the operator's only feedback was the "queued" toast.
+  Future<void> _repair() async {
+    final startedAt = DateTime.now().toUtc();
+    await patchCachedHealth(mailHealthRedisKey, {
+      'lastRepairAt': startedAt.toIso8601String(),
+      'lastRepairStatus': 'running',
+    });
+
+    final r = await _execAgent(['mail', 'repair']);
+    final report = _findJsonWith(r.stdout, 'healthy');
+    final finishedAt = DateTime.now().toUtc().toIso8601String();
+
+    // No parseable report means the agent died before probing (sudo denied,
+    // binary missing, crash) — the exit code and stderr are all we have, and
+    // they're far more useful than silence.
+    if (report == null) {
+      final reason = r.exitCode != 0
+          ? 'The repair command failed (exit ${r.exitCode}). ${r.stderr}'.trim()
+          : 'The repair command returned no health report.';
+      await patchCachedHealth(mailHealthRedisKey, {
+        'lastRepairAt': finishedAt,
+        'lastRepairStatus': 'failed',
+        'lastRepairDetail': reason,
+        'lastRepairSteps': <String>[],
+      });
+      throw Exception('Mail repair failed: $reason');
+    }
+
+    final healthy = report['healthy'] == true;
+    final steps = (report['repairSteps'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    await patchCachedHealth(mailHealthRedisKey, {
+      // Fold in the agent's post-repair probe so the badge flips immediately
+      // rather than waiting out the health monitor's next tick.
+      ...report,
+      'checkedAt': finishedAt,
+      if (healthy) 'unhealthySince': null,
+      'lastRepairAt': finishedAt,
+      'lastRepairStatus': healthy ? 'succeeded' : 'failed',
+      'lastRepairDetail': healthy
+          ? 'The mail stack is healthy again.'
+          : (report['detail'] as String? ??
+              'The mail stack is still unhealthy after the repair.'),
+      'lastRepairSteps': steps,
+    });
+
+    if (!healthy) {
+      throw Exception('Mail repair did not restore the stack: '
+          '${report['detail']}');
+    }
+    logger.i('mail_worker: repair succeeded — stack healthy');
   }
 
   /// Parse the agent's DKIM report from stdout and persist the public keys and

@@ -6,6 +6,8 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/services/postgres_service.dart'
+    show isLocalInstance;
 
 /// Periodically samples per-app CPU / memory usage from the host and writes
 /// rows into `metric_samples`, which the panel's Metrics tab reads back.
@@ -96,6 +98,11 @@ class MetricsCollector {
     final activeIds = <int>{};
     for (final inst in instances) {
       if (inst.id == null) continue;
+      // A system database on another host has no systemd unit here to stat —
+      // the panel is only its client. Skipping keeps it out of the CPU/RAM
+      // card (the API tolerates a missing snapshot) instead of logging a
+      // failed agent call on every tick.
+      if (!isLocalInstance(inst)) continue;
       activeIds.add(inst.id!);
       try {
         final unit = 'postgresql@${inst.version}-main.service';

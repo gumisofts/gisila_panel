@@ -46,6 +46,38 @@
         systemd  ·  nginx  ·  apparmor  ·  cgroups v2  ·  certbot
 ```
 
+### Postgres and Redis are dependencies, not components
+
+Neither is installed or managed by the panel — it is a client of both. They can
+be on the panel host, on another machine on the network, or on a managed
+provider; `database.yaml` and `REDIS_HOST`/`REDIS_PORT` in `/etc/gisila/.env`
+are the only things that decide. The systemd units order themselves *behind* a
+local `postgresql.service` / `redis-server.service` if one is installed, but
+must never `Requires=` them: on a host where those units don't exist, that
+would refuse to start the panel at all.
+
+The Databases page complicates this slightly, because it registers the panel's
+own cluster as a read-only **system instance** so operators can see it
+alongside the ones they install. Every instance the panel *installs* is created
+by the agent on this host, so it is always on loopback with a systemd unit, a
+data directory and a local socket to drive. The system instance is the sole
+exception, and the split is explicit in the code:
+
+| Helper (`services/postgres_service.dart`) | Meaning |
+|---|---|
+| `isSystemInstance(i)` | The cluster behind `database.yaml` (matched by port). |
+| `instanceHost(i)` | `127.0.0.1`, or `database.yaml`'s host for the system one. |
+| `isLocalInstance(i)` | Whether the agent can act on it at all. |
+| `statsTarget(i)` | `gisila_monitor` locally; the panel's own credentials remotely. |
+
+When `isLocalInstance` is false the API refuses every agent-backed operation
+with a 422 that says where the cluster actually lives, the worker drops any
+such job already in the queue, the metrics sampler skips it (no systemd unit
+here to stat), and the UI hides the controls rather than offering buttons that
+can only fail. Reads still work: metrics and settings come over a direct
+connection using the panel's own credentials, since the `gisila_monitor` role
+the agent provisions locally can't exist on a host it cannot reach.
+
 ## Data flow — a deployment
 
 1. UI calls `POST /apps/{id}/deployments/` (JSON body
@@ -145,6 +177,44 @@ existing `tcp` app (`POST /apps/{id}/network`) reconciles the firewall via a
 dedicated `gisila:queue:network` job — no rebuild, no restart. Domains are
 rejected outright for `tcp`/`internal` apps (`DomainsService.add`) since
 there's no vhost for a hostname to attach to.
+
+Because a `tcp` app's start command can't be guessed the way a web app's can,
+it's required for some runtimes — see
+[A `tcp` app has to say what to run](DEPLOYMENT_ENGINE.md#a-tcp-app-has-to-say-what-to-run).
+
+## Health monitoring & repair
+
+`HealthMonitorWorker` probes the mail stack, every installed `ManagedService`
+and every installed runtime toolchain on a timer, caching each result in Redis
+under `gisila:healthstat:*`. That snapshot is what `GET /mail/health`,
+`GET /services/{id}/health` and the alert evaluator all read — the lifecycle
+`status` column only says "did the last install job succeed", not "is it up
+right now".
+
+Mail and services are auto-repaired (restart, escalating to reinstall) on a
+cooldown when a probe finds them unhealthy, and a superuser can trigger the
+same repair sooner from the UI.
+
+**Repairs report their outcome.** A repair runs on the worker, so the HTTP
+call only queues it — and the agent exits 0 whether or not the stack came
+back, reporting post-repair health in its JSON payload instead. The worker is
+therefore responsible for reading that payload and writing the verdict into
+the health snapshot the moment the job ends, rather than leaving the UI to
+infer it from the next periodic probe:
+
+| Field | Meaning |
+|---|---|
+| `detail` | Human-readable summary of what is currently down (`"postfix is not running; nothing is listening on imaps (port 993)"`) |
+| `lastRepairAt` | When the last repair finished (also drives the auto-repair cooldown) |
+| `lastRepairStatus` | `running` \| `succeeded` \| `failed` |
+| `lastRepairDetail` | Why it failed, when it did |
+| `lastRepairSteps` | Ordered log of what the repair attempted, including the steps that errored |
+
+Periodic probes deliberately carry the `lastRepair*` fields forward: a probe
+reports health, it is not a repair, so overwriting them would erase the
+outcome on the very next tick. The UI polls the snapshot after queueing a
+repair and reports success or the actual failure reason once `lastRepairAt`
+advances.
 
 ## Multi-tenancy & isolation
 

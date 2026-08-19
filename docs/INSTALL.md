@@ -157,6 +157,39 @@ Or afterwards:
 `DATABASE_URL` at install time (or discrete `DB_*` vars). Never installed by
 the panel itself. Both files are owned `gisila:gisila`, mode `0640`.
 
+### Changing the Postgres or Redis connection later
+
+`database.yaml` is rewritten on every install run, so re-running the installer
+with a new `DATABASE_URL` moves the panel to a different Postgres. `.env` is
+deliberately *not* rewritten (it holds secrets and operator edits), so the
+Redis keys are refreshed only when you actually pass Redis details on that run:
+
+```bash
+sudo env REDIS_URL='redis://:SECRET@10.0.0.9:6379' bash infra/install.sh
+```
+
+Without a `REDIS_URL`/`REDIS_*` on the command line, the existing `REDIS_HOST`
+is left alone. You can also edit `/etc/gisila/.env` by hand and
+`systemctl restart gisila-panel gisila-worker`.
+
+### Running Postgres or Redis on another machine
+
+Both are supported, together or separately — the panel's systemd units order
+themselves behind a local `postgresql.service` / `redis-server.service` when
+one exists, but never require it, so a host with neither installed still
+starts.
+
+One thing changes in the UI: the Databases page surfaces the panel's own
+cluster as a read-only **system database**. When that cluster is remote, the
+panel is purely its client — it reads live metrics and settings over the
+connection from `database.yaml`, and hides everything that would need a local
+`psql`, `pg_dump`, data directory or systemd unit (creating databases and
+roles, applying settings, backups, public exposure, start/stop). Manage those
+on the machine the cluster runs on. Connection and throughput counters come
+back slightly coarser there too: the panel authenticates as its own role rather
+than the `gisila_monitor` role it provisions on local clusters, and Postgres
+hides other users' session state from a non-superuser.
+
 ## Logs
 
 ```bash
@@ -187,7 +220,7 @@ sudo bash infra/uninstall.sh --purge  # also drops the gisila_panel DB/role + gi
 sudo bash infra/uninstall.sh --all    # both of the above
 ```
 
-`--purge`'s database/Redis cleanup is a best-effort, same-host convenience
-(it only works when Postgres/Redis are reachable via `sudo -u postgres` /
-local `redis-cli`). For a remote or externally-managed instance, drop the
-database/role and flush `gisila:*` keys yourself.
+`--purge` flushes `gisila:*` from whichever Redis `/etc/gisila/.env` names,
+including a remote or password-protected one. The Postgres side is a
+same-host convenience only (it goes through `sudo -u postgres`); for a remote
+or externally-managed cluster, drop the database and role yourself.

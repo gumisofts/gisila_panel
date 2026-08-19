@@ -5,6 +5,7 @@ import 'package:gisila_agent/generators/nginx_vhost.dart';
 import 'package:gisila_agent/generators/supervisor_conf.dart';
 import 'package:gisila_agent/generators/systemd_unit.dart';
 import 'package:gisila_agent/runtime/exec.dart';
+import 'package:gisila_agent/runtime/exec_resolver.dart';
 import 'package:gisila_agent/runtime/priv.dart';
 
 /// Parameters for a Celery deployment passed to [Applier.applyCeleryUnits].
@@ -76,6 +77,8 @@ class Applier {
     String? workingDir,
     bool writableSource = false,
     Map<String, String> envVars = const {},
+    Map<String, String> unitEnvironment = const {},
+    ExecResolver execResolver = const ExecResolver(),
     bool directSocket = false,
   }) async {
     if (isDocker) {
@@ -88,6 +91,7 @@ class Applier {
         runtimeBinDir: runtimeBinDir,
         workingDir: workingDir,
         envVars: envVars,
+        execResolver: execResolver,
       );
     } else {
       await _applyUnitSystemd(
@@ -105,6 +109,8 @@ class Applier {
         workingDir: workingDir,
         writableSource: writableSource,
         envVars: envVars,
+        unitEnvironment: unitEnvironment,
+        execResolver: execResolver,
         directSocket: directSocket,
       );
     }
@@ -119,12 +125,19 @@ class Applier {
     String? runtimeBinDir,
     String? workingDir,
     Map<String, String> envVars = const {},
+    ExecResolver execResolver = const ExecResolver(),
   }) async {
+    // Supervisord looks a bare command up on PATH just like systemd does, so
+    // the start command needs the same runtime-aware resolution to reach the
+    // app's own tooling rather than the container's.
     final conf = SupervisorConf(
       appId: appId,
       linuxUser: linuxUser,
       workDir: workDir,
-      startCommand: startCommand,
+      startCommand: execResolver.resolve(
+        startCommand,
+        workingDirectory: workingDir ?? '$workDir/current',
+      ),
       port: port,
       runtimeBinDir: runtimeBinDir,
       workingDir: workingDir,
@@ -152,6 +165,8 @@ class Applier {
     String? workingDir,
     bool writableSource = false,
     Map<String, String> envVars = const {},
+    Map<String, String> unitEnvironment = const {},
+    ExecResolver execResolver = const ExecResolver(),
     bool directSocket = false,
   }) async {
     final profile = ApparmorProfile(
@@ -164,17 +179,20 @@ class Applier {
     await ShellExec.run('apparmor_parser', ['-r', apparmorPath],
         requireSuccess: false);
 
-    // systemd rejects relative ExecStart paths with a slash (e.g. bin/server.exe)
-    // as a "bad unit file setting". Resolve those against the unit working dir.
-    // For compiled runtimes the real binary is always installed at current/app.
     final unitWorkingDir = workingDir ??
         ((isPython || isJit)
             ? '$workDir/releases/current_build'
             : '$workDir/current');
-    var resolvedStart = SystemdUnit.absolutizeExecStart(
+    var resolvedStart = execResolver.resolve(
       startCommand,
       workingDirectory: unitWorkingDir,
     );
+    if (resolvedStart != startCommand.trim()) {
+      stdout.writeln('[agent] ExecStart: "$startCommand" → "$resolvedStart"');
+    }
+    // Last resort for the compiled runtimes: the build always installs their
+    // artifact at current/app, so a start command pointing somewhere that
+    // doesn't exist is better served by the thing that does.
     if (!isPython && !isJit) {
       final exe = resolvedStart.split(RegExp(r'\s+')).first;
       final installed = '$workDir/current/app';
@@ -205,6 +223,8 @@ class Applier {
       workingDirectory: workingDir,
       writableSource: writableSource,
       envVars: envVars,
+      unitEnvironment: unitEnvironment,
+      execResolver: execResolver,
       directSocket: directSocket,
     );
     final unitPath = '$systemdDir/gisila-$linuxUser.service';

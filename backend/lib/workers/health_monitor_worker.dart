@@ -18,6 +18,11 @@ String serviceHealthRedisKey(int serviceId) => 'gisila:healthstat:service:$servi
 String runtimeHealthRedisKey(int applicationVersionId) =>
     'gisila:healthstat:runtime:$applicationVersionId';
 
+/// How long a cached health snapshot lives. Comfortably longer than
+/// [HealthMonitorWorker.interval] so a couple of missed probes don't make a
+/// resource look like it vanished from the UI.
+const healthSnapshotTtl = Duration(minutes: 6);
+
 /// Read back a cached health snapshot, or null if no probe has landed yet
 /// (e.g. right after a worker restart) — used by both the health/repair
 /// endpoints and [AlertEvaluator].
@@ -29,6 +34,22 @@ Future<Map<String, Object?>?> readCachedHealth(String key) async {
   } catch (_) {
     return null;
   }
+}
+
+/// Merge [patch] into the cached health snapshot at [key], leaving every other
+/// field untouched.
+///
+/// Lets a repair job publish its outcome the moment it finishes instead of
+/// leaving the UI to infer it from the next periodic probe, which can be a
+/// full [HealthMonitorWorker.interval] away.
+Future<void> patchCachedHealth(
+  String key,
+  Map<String, Object?> patch,
+) async {
+  final snapshot = Map<String, Object?>.from(await readCachedHealth(key) ?? {});
+  snapshot.addAll(patch);
+  await RedisClient.instance
+      .setEx(key, healthSnapshotTtl.inSeconds, jsonEncode(snapshot));
 }
 
 /// Periodically probes the mail stack, every installed [ManagedService], and
@@ -196,13 +217,28 @@ class HealthMonitorWorker {
 
     final snapshot = <String, Object?>{
       ...report,
+      // Carry over every repair field: a probe reports current health, it
+      // isn't a repair, so overwriting these would erase the outcome the last
+      // repair recorded — including the failure reason the UI shows — on the
+      // very next tick.
+      for (final field in const [
+        'lastRepairAt',
+        'lastRepairStatus',
+        'lastRepairDetail',
+        'lastRepairSteps',
+      ])
+        if (prev?[field] != null) field: prev![field],
       'checkedAt': now.toIso8601String(),
       if (unhealthySince != null) 'unhealthySince': unhealthySince,
-      if (prev?['lastRepairAt'] != null) 'lastRepairAt': prev!['lastRepairAt'],
     };
     // Keep the cache alive for a few missed ticks so a single failed probe
-    // doesn't make the resource appear to vanish from the UI.
-    await RedisClient.instance.setEx(key, interval.inSeconds * 6, jsonEncode(snapshot));
+    // doesn't make the resource appear to vanish from the UI. Never shorter
+    // than [healthSnapshotTtl], which is what out-of-band writers
+    // ([patchCachedHealth]) use.
+    final ttl = interval * 6;
+    final ttlSeconds =
+        ttl > healthSnapshotTtl ? ttl.inSeconds : healthSnapshotTtl.inSeconds;
+    await RedisClient.instance.setEx(key, ttlSeconds, jsonEncode(snapshot));
   }
 
   Future<bool> _cooldownElapsed(String key) async {
@@ -214,11 +250,10 @@ class HealthMonitorWorker {
     return DateTime.now().toUtc().difference(last) >= repairCooldown;
   }
 
-  Future<void> _markRepairAttempt(String key) async {
-    final snapshot = Map<String, Object?>.from(await readCachedHealth(key) ?? {});
-    snapshot['lastRepairAt'] = DateTime.now().toUtc().toIso8601String();
-    await RedisClient.instance.setEx(key, interval.inSeconds * 6, jsonEncode(snapshot));
-  }
+  Future<void> _markRepairAttempt(String key) => patchCachedHealth(key, {
+        'lastRepairAt': DateTime.now().toUtc().toIso8601String(),
+        'lastRepairStatus': 'running',
+      });
 
   // ── Agent probing ───────────────────────────────────────────────────────
 

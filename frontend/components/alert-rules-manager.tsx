@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import useSWR from "swr";
 import {
   Add,
@@ -41,8 +41,6 @@ import {
   type AlertSeverity,
   type ListResponse,
 } from "@/lib/types";
-
-const FORM_ID = "alert-rule-form";
 
 /// Metrics available per scope — mirrors what `AlertEvaluator` actually knows
 /// how to sample (see backend/lib/workers/alert_worker.dart): whole-host
@@ -136,6 +134,18 @@ export function AlertRulesManager({
   title?: string;
   description?: string;
 }) {
+  // Every DOM id below has to be unique to this instance, because more than
+  // one manager can be mounted on the same page — Settings → Alerts & Email
+  // renders the server-wide and mail-stack cards together, and each keeps its
+  // (hidden) modal in the DOM. With a shared id, the footer's
+  // `<button form="…">` resolves to the *first* matching form in the document,
+  // so submitting the second card ran the first card's handler and created a
+  // rule with the wrong scope. React 19 ids contain punctuation that is legal
+  // in an id but awkward in a selector, hence the strip.
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const formId = `alert-rule-form-${uid}`;
+  const fieldId = (name: string) => `${uid}-${name}`;
+
   const target = {
     scope,
     appId,
@@ -301,7 +311,7 @@ export function AlertRulesManager({
               {canWrite && (
                 <div className="gisila-alerts__rule-actions">
                   <Toggle
-                    id={`rule-toggle-${rule.id}`}
+                    id={fieldId(`rule-toggle-${rule.id}`)}
                     size="sm"
                     hideLabel
                     labelText="Enabled"
@@ -359,10 +369,10 @@ export function AlertRulesManager({
       <ComposedModal open={creating || !!editing} onClose={closeModal} size="sm">
         <ModalHeader title={editing ? "Edit alert rule" : "Add alert rule"} />
         <ModalBody hasForm>
-          <Form id={FORM_ID} onSubmit={handleSubmit}>
+          <Form id={formId} onSubmit={handleSubmit}>
             <div className="gisila-alerts__form">
               <Select
-                id="rule-metric"
+                id={fieldId("rule-metric")}
                 labelText="Metric"
                 value={form.metric}
                 disabled={!!editing}
@@ -376,7 +386,7 @@ export function AlertRulesManager({
               {form.metric !== "status_down" && (
                 <>
                   <Select
-                    id="rule-comparison"
+                    id={fieldId("rule-comparison")}
                     labelText="Condition"
                     value={form.comparison}
                     onChange={(e) => set("comparison", e.target.value as AlertComparison)}
@@ -386,7 +396,7 @@ export function AlertRulesManager({
                   </Select>
 
                   <NumberInput
-                    id="rule-threshold"
+                    id={fieldId("rule-threshold")}
                     label="Threshold (%)"
                     min={1}
                     max={100}
@@ -398,7 +408,7 @@ export function AlertRulesManager({
               )}
 
               <Select
-                id="rule-severity"
+                id={fieldId("rule-severity")}
                 labelText="Severity"
                 value={form.severity}
                 onChange={(e) => set("severity", e.target.value as AlertSeverity)}
@@ -408,7 +418,7 @@ export function AlertRulesManager({
               </Select>
 
               <NumberInput
-                id="rule-cooldown"
+                id={fieldId("rule-cooldown")}
                 label="Cooldown (minutes)"
                 helperText="Minimum time between repeated notifications for the same breach."
                 // min must be a multiple of step away from every value the field can
@@ -422,7 +432,7 @@ export function AlertRulesManager({
               />
 
               <Toggle
-                id="rule-notify-email"
+                id={fieldId("rule-notify-email")}
                 labelText="Send email"
                 labelA="Off"
                 labelB="On"
@@ -436,7 +446,7 @@ export function AlertRulesManager({
 
               {editing && (
                 <Toggle
-                  id="rule-enabled"
+                  id={fieldId("rule-enabled")}
                   labelText="Rule enabled"
                   labelA="Off"
                   labelB="On"
@@ -455,7 +465,7 @@ export function AlertRulesManager({
           <Button kind="secondary" onClick={closeModal}>
             Cancel
           </Button>
-          <Button kind="primary" type="submit" form={FORM_ID} disabled={busy}>
+          <Button kind="primary" type="submit" form={formId} disabled={busy}>
             {busy ? "Saving…" : editing ? "Save changes" : "Create rule"}
           </Button>
         </ModalFooter>

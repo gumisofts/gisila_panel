@@ -131,13 +131,25 @@ if $PURGE; then
     sudo -u postgres dropuser --if-exists gisila       2>/dev/null || true
   fi
 
-  # Redis: delete only the panel's keys (queues, pub/sub, caches). Best-effort
-  # — only reaches a Redis on localhost:6379 with no auth; for a remote or
-  # password-protected instance, flush `gisila:*` keys yourself.
+  # Redis: delete only the panel's keys (queues, pub/sub, caches). Read the
+  # connection out of /etc/gisila/.env first — the panel's Redis is frequently
+  # remote and/or password-protected, and a bare redis-cli would quietly talk to
+  # a local one instead (deleting nothing, or the wrong instance's keys).
   if command -v redis-cli >/dev/null 2>&1; then
-    keys=$(redis-cli --scan --pattern 'gisila:*' 2>/dev/null || true)
+    redis_host=127.0.0.1; redis_port=6379; redis_pass=
+    if [[ -f /etc/gisila/.env ]]; then
+      redis_host="$(sed -n 's/^REDIS_HOST=//p' /etc/gisila/.env | tail -1)"
+      redis_port="$(sed -n 's/^REDIS_PORT=//p' /etc/gisila/.env | tail -1)"
+      redis_pass="$(sed -n 's/^REDIS_PASSWORD=//p' /etc/gisila/.env | tail -1)"
+    fi
+    redis_args=(-h "${redis_host:-127.0.0.1}" -p "${redis_port:-6379}")
+    if [[ -n "$redis_pass" ]]; then
+      redis_args+=(-a "$redis_pass" --no-auth-warning)
+    fi
+    echo "==> Removing gisila:* keys from Redis (${redis_host:-127.0.0.1}:${redis_port:-6379})"
+    keys=$(redis-cli "${redis_args[@]}" --scan --pattern 'gisila:*' 2>/dev/null || true)
     if [[ -n "$keys" ]]; then
-      echo "$keys" | xargs -r redis-cli del >/dev/null 2>&1 || true
+      echo "$keys" | xargs -r redis-cli "${redis_args[@]}" del >/dev/null 2>&1 || true
     fi
   fi
 

@@ -8,6 +8,7 @@ import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/deploy_mode.dart';
+import 'package:gisila_agent/runtime/exec_resolver.dart';
 import 'package:gisila_agent/runtime/node_framework.dart';
 import 'package:gisila_agent/runtime/provision.dart';
 import 'package:gisila_agent/runtime/priv.dart';
@@ -396,7 +397,8 @@ Future<void> _applyUnit(List<String> args) async {
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
   final runtime = r['runtime'] as String;
-  final directSocket = (r['expose-mode'] as String) != 'web';
+  final exposeMode = r['expose-mode'] as String; // web | tcp | internal
+  final directSocket = exposeMode != 'web';
 
   // ── Static: no process unit, no port needed ──────────────────────────────
   if (runtime == 'static') {
@@ -461,8 +463,11 @@ Future<void> _applyUnit(List<String> args) async {
   // self-contained output (Next standalone). [unitWritableSource] grants the
   // tree write access so server frameworks can write their runtime caches.
   // Python (gunicorn) also runs with its cwd set explicitly here so a
-  // configured source subdirectory (not just the repo root) is honoured.
-  String? unitWorkingDir = isPython ? src : null;
+  // configured source subdirectory (not just the repo root) is honoured. Rust
+  // likewise: cargo leaves its binary under the source tree's target/release
+  // and nothing is installed to current/, so that is the only cwd from which
+  // the app's own paths mean anything.
+  String? unitWorkingDir = (isPython || runtime == 'rust') ? src : null;
   var unitWritableSource = false;
 
   String startCommand;
@@ -473,6 +478,19 @@ Future<void> _applyUnit(List<String> args) async {
     // Node/Bun — historically these ran from $workDir/current, which holds no
     // package.json, so `npm start` crashed with ENOENT.
     if (isJit) unitWritableSource = true;
+  } else if (exposeMode == 'tcp' && (isPython || isJit)) {
+    // Both remaining derivations below produce an HTTP server (gunicorn for
+    // python, the detected web framework for node/bun). That is the right
+    // guess behind nginx, but a tcp app serves its own protocol straight to
+    // clients — starting an HTTP server for it would "work" as a unit yet
+    // speak the wrong thing on the wire. The panel blocks this at creation
+    // (AppsService.kTcpRuntimesNeedingStartCommand); this catches apps that
+    // predate that rule or were changed via the API.
+    throw ArgumentError(
+      'No start command set for this TCP-exposed $runtime app. The default '
+      'would start an HTTP server, which a raw TCP service is not. Set an '
+      'explicit start command in the panel (App → Settings → Start command).',
+    );
   } else if (isPython) {
     // Auto-generate the gunicorn start command from the configurable options.
     final mode = r['python-mode'] as String; // wsgi | asgi
@@ -545,6 +563,21 @@ Future<void> _applyUnit(List<String> args) async {
     startCommand = '$workDir/current/app';
   }
 
+  // Pin the Django settings module in the unit. manage.py and wsgi.py/asgi.py
+  // each setdefault it themselves, so this changes nothing for the stock
+  // entrypoints — it matters for a custom start command that imports Django
+  // directly (a TCP server reusing the app's models, a management command run
+  // as the service), which would otherwise die on ImproperlyConfigured. Read
+  // from the project's own setdefault, so the value is the one it already
+  // expects, and overridable from the app's env file.
+  final unitEnvironment = <String, String>{};
+  if (isPython) {
+    final settingsModule = Builders.djangoSettingsModule(src);
+    if (settingsModule != null) {
+      unitEnvironment['DJANGO_SETTINGS_MODULE'] = settingsModule;
+    }
+  }
+
   var runtimeBinDir = r['runtime-bin-dir'] as String?;
 
   // Node apps: prepend the build-resolved pnpm store bin dir (recorded by the
@@ -577,9 +610,11 @@ Future<void> _applyUnit(List<String> args) async {
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
         ? runtimeBinDir
         : null,
+    execResolver: ExecResolver.forRuntime(runtime, workDir: workDir, src: src),
     workingDir: unitWorkingDir,
     writableSource: unitWritableSource,
     envVars: envVars,
+    unitEnvironment: unitEnvironment,
     directSocket: directSocket,
   );
 }
@@ -1148,27 +1183,49 @@ Future<void> _mail(List<String> args) async {
   }
 }
 
+/// The mail listeners probed by [_mailHealthReport], by service name.
+const _mailPorts = <String, int>{
+  'smtp': 25,
+  'submission': 587,
+  'smtps': 465,
+  'imaps': 993,
+  'milter': 8891,
+};
+
 /// Live health snapshot for the mail stack: whether each daemon's systemd
 /// unit is active, plus TCP reachability on the standard mail ports. A daemon
 /// can be "active" per systemd yet still refuse connections (e.g. crashed
 /// listener thread), so both signals are checked.
+///
+/// Carries a human-readable `detail` naming exactly what is down, because
+/// every consumer (the panel's health badge, the repair result, alert emails)
+/// otherwise has to re-derive that sentence from the raw maps — and the two
+/// that didn't simply showed "Unhealthy" with no reason at all.
 Future<Map<String, Object?>> _mailHealthReport() async {
   final daemons = <String, Object?>{};
   for (final unit in const ['postfix', 'dovecot', 'opendkim']) {
     daemons[unit] = {'active': await _unitIsActive(unit)};
   }
   final ports = <String, bool>{
-    'smtp': await _tcpOpen('127.0.0.1', 25),
-    'submission': await _tcpOpen('127.0.0.1', 587),
-    'smtps': await _tcpOpen('127.0.0.1', 465),
-    'imaps': await _tcpOpen('127.0.0.1', 993),
-    'milter': await _tcpOpen('127.0.0.1', 8891),
+    for (final e in _mailPorts.entries)
+      e.key: await _tcpOpen('127.0.0.1', e.value),
   };
   final daemonsHealthy =
       daemons.values.every((d) => (d as Map)['active'] == true);
   final portsHealthy = ports.values.every((v) => v);
+
+  final problems = <String>[
+    for (final e in daemons.entries)
+      if ((e.value as Map)['active'] != true) '${e.key} is not running',
+    for (final e in ports.entries)
+      if (!e.value) 'nothing is listening on ${e.key} (port ${_mailPorts[e.key]})',
+  ];
+
   return {
     'healthy': daemonsHealthy && portsHealthy,
+    'detail': problems.isEmpty
+        ? 'Postfix, Dovecot and OpenDKIM are running and accepting connections.'
+        : problems.join('; '),
     'daemons': daemons,
     'ports': ports,
   };
@@ -1176,18 +1233,34 @@ Future<Map<String, Object?>> _mailHealthReport() async {
 
 /// Restart unhealthy mail daemons; if that isn't enough, force-reinstall the
 /// underlying packages and re-run the full stack setup. Returns the health
-/// report taken after repair so the caller can tell whether it worked.
+/// report taken after repair, plus a `repairSteps` log of what was attempted
+/// and what failed along the way.
+///
+/// Individual restart failures are deliberately not fatal — a broken
+/// OpenDKIM shouldn't stop us trying to bring Postfix back — but they are the
+/// most useful thing to show an operator when the repair doesn't work, so
+/// they're recorded rather than only written to stderr where nothing read
+/// them.
 Future<Map<String, Object?>> _mailRepairStack() async {
+  final steps = <String>[];
   final before = await _mailHealthReport();
-  if (before['healthy'] == true) return before;
+  if (before['healthy'] == true) {
+    return {
+      ...before,
+      'repairSteps': ['Nothing to repair — the stack was already healthy.'],
+    };
+  }
+  steps.add('Before repair: ${before['detail']}');
 
   stdout.writeln('[agent] mail repair: restarting unhealthy daemons…');
   for (final unit in const ['opendkim', 'postfix', 'dovecot']) {
     try {
       await _serviceCtl(
           unit == 'postfix' ? 'restart' : 'reload-or-restart', unit);
+      steps.add('Restarted $unit.');
     } catch (e) {
       stderr.writeln('[agent] mail repair: restart $unit failed: $e');
+      steps.add('Restarting $unit failed: $e');
     }
   }
 
@@ -1195,19 +1268,30 @@ Future<Map<String, Object?>> _mailRepairStack() async {
   if (after['healthy'] != true) {
     stdout.writeln(
         '[agent] mail repair: restart insufficient, reinstalling packages…');
-    await _aptReinstall(const [
-      'postfix',
-      'dovecot-core',
-      'dovecot-imapd',
-      'dovecot-pop3d',
-      'dovecot-lmtpd',
-      'opendkim',
-      'opendkim-tools',
-    ]);
-    await _mailEnsureStack();
+    steps.add('Restarts left the stack unhealthy (${after['detail']}) — '
+        'reinstalling the mail packages.');
+    try {
+      await _aptReinstall(const [
+        'postfix',
+        'dovecot-core',
+        'dovecot-imapd',
+        'dovecot-pop3d',
+        'dovecot-lmtpd',
+        'opendkim',
+        'opendkim-tools',
+      ]);
+      await _mailEnsureStack();
+      steps.add('Reinstalled the mail packages and re-applied the config.');
+    } catch (e) {
+      // Report the reason instead of propagating: the post-repair probe below
+      // is what decides success, and an operator needs to see *why* the
+      // reinstall bailed (no network, held packages, dpkg lock, …).
+      stderr.writeln('[agent] mail repair: reinstall failed: $e');
+      steps.add('Reinstalling the mail packages failed: $e');
+    }
     after = await _mailHealthReport();
   }
-  return after;
+  return {...after, 'repairSteps': steps};
 }
 
 /// Whether the core mail daemons are present on this host. The panel calls this
@@ -2120,10 +2204,12 @@ Future<void> _serviceInstall(String type, Map<String, dynamic> config) async {
 
 // ── Dedicated managed instances (Redis / Memcached) ──────────────────────────
 //
-// The panel itself runs on the distro `redis-server.service` (port 6379, no
-// password) installed by infra/install.sh. A managed Redis/Memcached service
-// must therefore be a *separate* systemd unit + config + data dir so that
-// configuring — or uninstalling — it can never disturb the panel's own queue.
+// The panel's own queue runs on a Redis it does not manage — configured via
+// REDIS_HOST/REDIS_PORT in /etc/gisila/.env, commonly the distro
+// `redis-server.service` on port 6379 but just as often a remote or managed
+// instance. A managed Redis/Memcached service must therefore be a *separate*
+// systemd unit + config + data dir so that configuring — or uninstalling — it
+// can never disturb the panel's own queue on a host where both live.
 
 const String _kRedisConf = '/etc/redis/gisila-redis.conf';
 const String _kRedisDataDir = '/var/lib/gisila-redis';

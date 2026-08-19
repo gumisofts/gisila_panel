@@ -403,6 +403,14 @@ export interface PostgresInstance {
   /** The always-available cluster that backs the panel itself. Its port is
    *  fixed and it cannot be stopped or uninstalled. */
   isSystem?: boolean;
+  /** Host the instance is reachable at. Always 127.0.0.1 except for a system
+   *  database that database.yaml points at another machine. */
+  host?: string;
+  /** Whether the instance runs on the panel's host and can therefore be
+   *  operated from here — databases, roles, settings, backups, exposure. False
+   *  only for a remote system database, which the panel can read but not
+   *  manage. */
+  isManaged?: boolean;
   dataDirectory?: string | null;
   errorMessage?: string | null;
   installedAt?: string | null;
@@ -822,6 +830,14 @@ export interface HealthStatus {
   detail?: string | null;
   unhealthySince?: string | null;
   lastRepairAt?: string | null;
+  // Outcome of that last repair, written by the worker as soon as the job
+  // finishes so the UI can report what happened instead of just "queued".
+  // `running` means a repair is in flight.
+  lastRepairStatus?: "running" | "succeeded" | "failed" | null;
+  lastRepairDetail?: string | null;
+  // What the repair actually tried, in order, including the steps that
+  // failed — the answer to "so what went wrong?".
+  lastRepairSteps?: string[] | null;
   // Present for `/mail/health` (per-daemon) and `/services/{id}/health`
   // (per-port) — kept loose since the shape differs by resource type.
   [key: string]: unknown;

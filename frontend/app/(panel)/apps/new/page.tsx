@@ -127,6 +127,43 @@ export default function NewAppPage() {
   const isGo   = form.runtime === "go";
   const isRust = form.runtime === "rust";
 
+  // A tcp app speaks its own protocol straight to clients: everything HTTP
+  // (Gunicorn's WSGI/ASGI wiring) belongs to the nginx-fronted `web` mode and
+  // is hidden here rather than asking for answers that would be ignored.
+  const isTcp = !isStatic && form.exposeMode === "tcp";
+  // These runtimes' start commands are only derivable by assuming HTTP
+  // (gunicorn for Python, the detected web framework for Node/Bun) or aren't
+  // derivable at all (Rust builds no fixed artifact path), so a tcp app on one
+  // of them has to say what to run. Compiled runtimes keep their protocol-
+  // agnostic default of the built binary at <workDir>/current/app.
+  const needsExplicitStart =
+    isTcp && (isPython || isNode || isBun || isRust);
+  // The agent resolves the command's program against the runtime's own tooling
+  // (virtualenv, node_modules/.bin, cargo's target dir) before systemd sees it,
+  // so say so rather than letting people hardcode absolute build paths.
+  const runtimeStartHint = isPython
+    ? "Write it as if the virtualenv were active: python, manage.py and installed scripts like gunicorn resolve to this app's virtualenv."
+    : isNode || isBun
+      ? "Write it as if you were in the project: node_modules/.bin commands and script files resolve against the build."
+      : isRust
+        ? "A bare binary name resolves to cargo's target/release."
+        : "";
+  const startCommandHelp =
+    [
+      needsExplicitStart
+        ? "A TCP service has no default we can infer — the usual one would start an HTTP server, which isn't what you're deploying."
+        : isTcp
+          ? "Exactly what systemd runs. Leave blank to run the compiled binary at current/app."
+          : "",
+      needsExplicitStart
+        ? runtimeStartHint
+        : isPython
+          ? "Leave blank to auto-generate the gunicorn command based on mode + target above."
+          : "",
+    ]
+      .filter((s) => s)
+      .join(" ") || undefined;
+
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
   }
@@ -201,13 +238,17 @@ export default function NewAppPage() {
       };
       if (isPython) {
         payload.pythonVersion = form.pythonVersion;
-        payload.pythonMode    = form.pythonMode;
-        payload.wsgiApp       = form.wsgiApp || undefined;
-        payload.gunicornWorkers = form.gunicornWorkers ? Number(form.gunicornWorkers) : undefined;
-        payload.gunicornThreads = form.gunicornThreads ? Number(form.gunicornThreads) : undefined;
-        payload.gunicornTimeout = form.gunicornTimeout ? Number(form.gunicornTimeout) : undefined;
-        payload.gunicornBind    = form.gunicornBind || undefined;
-        payload.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
+        // Gunicorn wiring is hidden for a tcp app (it starts its own
+        // process), so don't send defaults the user never saw.
+        if (!isTcp) {
+          payload.pythonMode    = form.pythonMode;
+          payload.wsgiApp       = form.wsgiApp || undefined;
+          payload.gunicornWorkers = form.gunicornWorkers ? Number(form.gunicornWorkers) : undefined;
+          payload.gunicornThreads = form.gunicornThreads ? Number(form.gunicornThreads) : undefined;
+          payload.gunicornTimeout = form.gunicornTimeout ? Number(form.gunicornTimeout) : undefined;
+          payload.gunicornBind    = form.gunicornBind || undefined;
+          payload.gunicornExtraArgs = form.gunicornExtraArgs || undefined;
+        }
       }
       if (isCelery) {
         payload.pythonVersion     = form.pythonVersion;
@@ -444,9 +485,13 @@ export default function NewAppPage() {
               <Tile>
                 <Stack gap={5}>
                   <div className="gisila-app-form__banner">
-                    <Tag type="blue" size="sm">Python / WSGI·ASGI</Tag>
+                    <Tag type="blue" size="sm">
+                      {isTcp ? "Python" : "Python / WSGI·ASGI"}
+                    </Tag>
                     <span className="gisila-app-form__hint">
-                      Served by Gunicorn via pyenv-managed virtualenv
+                      {isTcp
+                        ? "Runs your own command in a pyenv-managed virtualenv"
+                        : "Served by Gunicorn via pyenv-managed virtualenv"}
                     </span>
                   </div>
 
@@ -467,122 +512,130 @@ export default function NewAppPage() {
                     {versionItems("python", form.pythonVersion, appsList, catalogList)}
                   </Select>
 
-                  {/* Server mode */}
-                  <div className="gisila-tile-grid gisila-tile-grid--2">
-                    <TileGroup
-                      name="pythonMode"
-                      legend="Server mode"
-                      valueSelected={form.pythonMode}
-                      onChange={(selection) => set("pythonMode", selection)}
-                    >
-                      {[
-                        {
-                          id: "wsgi",
-                          label: "WSGI",
-                          desc: "Django, Flask, Pyramid — synchronous apps",
-                        },
-                        {
-                          id: "asgi",
-                          label: "ASGI",
-                          desc: "FastAPI, Django Channels, Starlette — async apps",
-                        },
-                      ].map(({ id, label, desc }) => (
-                        <RadioTile key={id} id={`python-mode-${id}`} value={id}>
-                          <span className="gisila-app-form__tile-title">{label}</span>
-                          <span className="gisila-app-form__tile-desc">{desc}</span>
-                        </RadioTile>
-                      ))}
-                    </TileGroup>
-                    <p className="gisila-app-form__hint">
-                      {form.pythonMode === "asgi"
-                        ? "Uses uvicorn worker class: --worker-class uvicorn.workers.UvicornWorker"
-                        : "Standard sync workers: --workers 4"}
-                    </p>
-                  </div>
-
-                  {/* WSGI/ASGI application target */}
-                  <TextInput
-                    id="wsgiApp"
-                    labelText={labelWithNote(
-                      "Application target",
-                      "(passed to gunicorn as the app argument)",
-                    )}
-                    placeholder={
-                      form.pythonMode === "asgi"
-                        ? "myapp.asgi:application"
-                        : "myapp.wsgi:application"
-                    }
-                    value={form.wsgiApp}
-                    onChange={(e) => set("wsgiApp", e.target.value)}
-                    helperText={
-                      <>
-                        Leave blank to default to{" "}
-                        <code className="gisila-code">app:application</code>.
-                        Examples:{" "}
-                        <code className="gisila-code">myproject.wsgi:application</code>{" "}
-                        (Django), <code className="gisila-code">main:app</code>{" "}
-                        (FastAPI/Flask).
-                      </>
-                    }
-                  />
-
-                  {/* Gunicorn tuning */}
-                  <FormGroup legendText="Gunicorn (optional)">
-                    <Stack gap={5}>
-                      <div className="gisila-app-form__three-col">
-                        <NumberInput
-                          id="g-workers"
-                          label="Workers"
-                          min={1}
-                          allowEmpty
-                          placeholder="4"
-                          value={form.gunicornWorkers}
-                          onChange={(_event, { value }) =>
-                            set("gunicornWorkers", String(value))
-                          }
-                        />
-                        <NumberInput
-                          id="g-threads"
-                          label="Threads"
-                          min={1}
-                          allowEmpty
-                          placeholder="1"
-                          value={form.gunicornThreads}
-                          onChange={(_event, { value }) =>
-                            set("gunicornThreads", String(value))
-                          }
-                        />
-                        <NumberInput
-                          id="g-timeout"
-                          label="Timeout (s)"
-                          min={1}
-                          allowEmpty
-                          placeholder="120"
-                          value={form.gunicornTimeout}
-                          onChange={(_event, { value }) =>
-                            set("gunicornTimeout", String(value))
-                          }
-                        />
+                  {/* Everything below is Gunicorn wiring, i.e. how the app
+                      speaks HTTP behind nginx. A tcp app serves its own
+                      protocol from its own start command, so asking for a
+                      WSGI target or worker class would be noise. */}
+                  {!isTcp && (
+                    <>
+                      {/* Server mode */}
+                      <div className="gisila-tile-grid gisila-tile-grid--2">
+                        <TileGroup
+                          name="pythonMode"
+                          legend="Server mode"
+                          valueSelected={form.pythonMode}
+                          onChange={(selection) => set("pythonMode", selection)}
+                        >
+                          {[
+                            {
+                              id: "wsgi",
+                              label: "WSGI",
+                              desc: "Django, Flask, Pyramid — synchronous apps",
+                            },
+                            {
+                              id: "asgi",
+                              label: "ASGI",
+                              desc: "FastAPI, Django Channels, Starlette — async apps",
+                            },
+                          ].map(({ id, label, desc }) => (
+                            <RadioTile key={id} id={`python-mode-${id}`} value={id}>
+                              <span className="gisila-app-form__tile-title">{label}</span>
+                              <span className="gisila-app-form__tile-desc">{desc}</span>
+                            </RadioTile>
+                          ))}
+                        </TileGroup>
+                        <p className="gisila-app-form__hint">
+                          {form.pythonMode === "asgi"
+                            ? "Uses uvicorn worker class: --worker-class uvicorn.workers.UvicornWorker"
+                            : "Standard sync workers: --workers 4"}
+                        </p>
                       </div>
+
+                      {/* WSGI/ASGI application target */}
                       <TextInput
-                        id="g-bind"
+                        id="wsgiApp"
                         labelText={labelWithNote(
-                          "Bind address",
-                          "(defaults to 0.0.0.0:$PORT)",
+                          "Application target",
+                          "(passed to gunicorn as the app argument)",
                         )}
-                        placeholder="0.0.0.0:$PORT"
-                        value={form.gunicornBind}
-                        onChange={(e) => set("gunicornBind", e.target.value)}
+                        placeholder={
+                          form.pythonMode === "asgi"
+                            ? "myapp.asgi:application"
+                            : "myapp.wsgi:application"
+                        }
+                        value={form.wsgiApp}
+                        onChange={(e) => set("wsgiApp", e.target.value)}
+                        helperText={
+                          <>
+                            Leave blank to default to{" "}
+                            <code className="gisila-code">app:application</code>.
+                            Examples:{" "}
+                            <code className="gisila-code">myproject.wsgi:application</code>{" "}
+                            (Django), <code className="gisila-code">main:app</code>{" "}
+                            (FastAPI/Flask).
+                          </>
+                        }
                       />
-                      <TextInput
-                        id="g-extra"
-                        labelText={labelWithNote("Extra arguments", "(optional)")}
-                        placeholder="--max-requests 1000 --graceful-timeout 30"
-                        value={form.gunicornExtraArgs}
-                        onChange={(e) => set("gunicornExtraArgs", e.target.value)}
-                      />
-                    </Stack>
-                  </FormGroup>
+
+                      {/* Gunicorn tuning */}
+                      <FormGroup legendText="Gunicorn (optional)">
+                        <Stack gap={5}>
+                          <div className="gisila-app-form__three-col">
+                            <NumberInput
+                              id="g-workers"
+                              label="Workers"
+                              min={1}
+                              allowEmpty
+                              placeholder="4"
+                              value={form.gunicornWorkers}
+                              onChange={(_event, { value }) =>
+                                set("gunicornWorkers", String(value))
+                              }
+                            />
+                            <NumberInput
+                              id="g-threads"
+                              label="Threads"
+                              min={1}
+                              allowEmpty
+                              placeholder="1"
+                              value={form.gunicornThreads}
+                              onChange={(_event, { value }) =>
+                                set("gunicornThreads", String(value))
+                              }
+                            />
+                            <NumberInput
+                              id="g-timeout"
+                              label="Timeout (s)"
+                              min={1}
+                              allowEmpty
+                              placeholder="120"
+                              value={form.gunicornTimeout}
+                              onChange={(_event, { value }) =>
+                                set("gunicornTimeout", String(value))
+                              }
+                            />
+                          </div>
+                          <TextInput
+                            id="g-bind"
+                            labelText={labelWithNote(
+                              "Bind address",
+                              "(defaults to 0.0.0.0:$PORT)",
+                            )}
+                            placeholder="0.0.0.0:$PORT"
+                            value={form.gunicornBind}
+                            onChange={(e) => set("gunicornBind", e.target.value)}
+                          />
+                          <TextInput
+                            id="g-extra"
+                            labelText={labelWithNote("Extra arguments", "(optional)")}
+                            placeholder="--max-requests 1000 --graceful-timeout 30"
+                            value={form.gunicornExtraArgs}
+                            onChange={(e) => set("gunicornExtraArgs", e.target.value)}
+                          />
+                        </Stack>
+                      </FormGroup>
+                    </>
+                  )}
                 </Stack>
               </Tile>
             )}
@@ -952,20 +1005,27 @@ export default function NewAppPage() {
                 />
                 <TextInput
                   id="startCommand"
-                  labelText={labelWithNote("Start command", "(optional)")}
+                  labelText={labelWithNote(
+                    "Start command",
+                    needsExplicitStart ? "(required)" : "(optional)",
+                  )}
+                  required={needsExplicitStart}
                   placeholder={
-                    isPython
-                      ? "Auto-generated gunicorn command"
-                      : "./current/app"
+                    isTcp
+                      ? isPython
+                        ? "python manage.py run_tcp_server"
+                        : isNode || isBun
+                          ? "node tcp-server.js"
+                          : isRust
+                            ? "my-crate --listen 0.0.0.0:$PORT"
+                            : "./server --listen 0.0.0.0:$PORT"
+                      : isPython
+                        ? "Auto-generated gunicorn command"
+                        : "./current/app"
                   }
-                  disabled={isPython && !form.startCommand}
                   value={form.startCommand}
                   onChange={(e) => set("startCommand", e.target.value)}
-                  helperText={
-                    isPython
-                      ? "Leave blank to auto-generate the gunicorn command based on mode + target above."
-                      : undefined
-                  }
+                  helperText={startCommandHelp}
                 />
               </div>
             )}

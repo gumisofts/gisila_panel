@@ -1,3 +1,5 @@
+import 'package:gisila_agent/runtime/exec_resolver.dart';
+
 /// Systemd .target that groups all Celery services for one app.
 ///
 /// Lifecycle commands (`systemctl start gisila-<user>.target`) cascade to all
@@ -309,6 +311,8 @@ class SystemdUnit {
     this.workingDirectory,
     this.writableSource = false,
     this.envVars = const {},
+    this.unitEnvironment = const {},
+    this.execResolver = const ExecResolver(),
     this.directSocket = false,
   });
 
@@ -322,6 +326,23 @@ class SystemdUnit {
   final int tasksMax;
   final String? apparmorProfile;
   final Map<String, String> envVars;
+
+  /// Values the *runtime* needs that the operator did not type — today just a
+  /// Django project's own `DJANGO_SETTINGS_MODULE`, read out of its manage.py.
+  ///
+  /// Written as `Environment=` lines rather than into `<workDir>/.env`, which
+  /// belongs to the operator. They are emitted before `EnvironmentFile=`, so
+  /// anything the operator sets for the same key still wins.
+  ///
+  /// Never put a secret here: unit files are world-readable, which is the whole
+  /// reason user env vars live in the 0600 env file instead.
+  final Map<String, String> unitEnvironment;
+
+  /// Turns the operator's shell-style [startCommand] into an `ExecStart=`
+  /// systemd will accept and that reaches the runtime's own tooling rather
+  /// than the system's. Defaults to plain path resolution; the caller supplies
+  /// the runtime-aware one via [ExecResolver.forRuntime].
+  final ExecResolver execResolver;
 
   /// True for `tcp`/`internal`-exposed apps, which bind their port and
   /// terminate every client socket themselves — unlike a `web` app, where
@@ -358,39 +379,6 @@ class SystemdUnit {
   /// Nuxt/Nitro temp). Set for Node/Bun server apps.
   final bool writableSource;
 
-  /// Resolve [startCommand] so systemd accepts ExecStart.
-  ///
-  /// Systemd allows a bare executable name (`node`, `true`) — looked up on
-  /// PATH — or an absolute path. A relative path with a slash (`bin/server.exe`)
-  /// is rejected as a "bad unit file setting". Those are resolved against
-  /// [workingDirectory].
-  static String absolutizeExecStart(
-    String startCommand, {
-    required String workingDirectory,
-  }) {
-    final trimmed = startCommand.trim();
-    if (trimmed.isEmpty) {
-      throw ArgumentError('startCommand must not be empty');
-    }
-    final parts = trimmed.split(RegExp(r'\s+'));
-    var exe = parts.first;
-    if (exe.startsWith('/')) {
-      return trimmed;
-    }
-    if (exe.startsWith('./')) {
-      exe = exe.substring(2);
-    }
-    // Bare command name (no slash) — valid; systemd resolves via PATH.
-    if (!exe.contains('/')) {
-      return trimmed;
-    }
-    final abs = workingDirectory.endsWith('/')
-        ? '$workingDirectory$exe'
-        : '$workingDirectory/$exe';
-    parts[0] = abs;
-    return parts.join(' ');
-  }
-
   String render() {
     final src = '$workDir/releases/current_build';
 
@@ -418,7 +406,7 @@ class SystemdUnit {
     final workingDir = workingDirectory ??
         ((isPython || isJit) ? src : '$workDir/current');
 
-    final execStart = absolutizeExecStart(
+    final execStart = execResolver.resolve(
       startCommand,
       workingDirectory: workingDir,
     );
@@ -429,6 +417,10 @@ class SystemdUnit {
     // management commands by hand. The `-` prefix makes systemd tolerate a
     // missing file instead of failing the unit.
     final envFileLine = 'EnvironmentFile=-$workDir/.env';
+
+    final unitEnvLines = unitEnvironment.entries
+        .map((e) => 'Environment=${e.key}=${e.value}\n')
+        .join();
 
     // For Node.js / Bun apps pinned to a specific version, prepend the
     // versioned runtime's bin directory to PATH so `node` / `bun` in the
@@ -513,7 +505,7 @@ RestartSec=5
 
 Environment=PORT=$port
 Environment=GISILA_APP_ID=$appId
-${pathLine}${corepkLines}${homeLines}${pnpmLines}$envFileLine
+${pathLine}${corepkLines}${homeLines}${pnpmLines}${unitEnvLines}$envFileLine
 
 # ── Sandboxing ─────────────────────────────────────────────────
 NoNewPrivileges=true
