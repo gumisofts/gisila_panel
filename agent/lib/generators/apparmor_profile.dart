@@ -114,6 +114,36 @@ ${writableSource ? '''
     # RestrictAddressFamilies, which also lists AF_NETLINK.
     network netlink raw,
 
+    # ── Signals inside this app's own process tree ─────────────────────────
+    # Prefork servers manage their own children and signal them directly:
+    # gunicorn's arbiter walks its worker table and os.kill()s each pid on
+    # SIGTERM, on a reload, and when the worker timeout fires. Celery, uwsgi and
+    # node's cluster module all do the same.
+    #
+    # abstractions/base grants only `signal peer=@{profile_name}`, which is the
+    # bare label `$profileName`. The forked workers actually carry the *stacked*
+    # label `$profileName//&unconfined`, which that rule does not match, so every
+    # one of those kills was refused:
+    #
+    #   apparmor="DENIED" operation="signal" class="signal"
+    #     profile="$profileName" comm="gunicorn" requested_mask="send"
+    #     signal=term peer="$profileName//&unconfined"
+    #
+    # gunicorn's arbiter only tolerates ESRCH from os.kill(), so the EPERM came
+    # back as PermissionError and killed the master mid-shutdown. That is why
+    # systemd recorded status=1/FAILURE for every stop instead of the process's
+    # real exit code — masking a worker boot failure (exit 3) as a generic one,
+    # and making every `systemctl restart` of a Python app a failed stop.
+    #
+    # `**` rather than `*` so a label stacked more than one level deep still
+    # matches; `*` stops at the next `/`. The peer stays anchored to this app's
+    # own profile name either way, so the app can signal its own processes and
+    # nothing else on the host. Same shape as the rule
+    # abstractions/apache2-common ships for Apache's children
+    # (`signal peer=apache2//*`).
+    signal (send, receive) peer=$profileName,
+    signal (send, receive) peer=$profileName//**,
+
     # Deny dangerous syscalls implicitly via systemd's seccomp filters.
     deny ptrace,
     deny mount,

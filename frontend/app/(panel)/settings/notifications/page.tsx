@@ -33,6 +33,7 @@ type SmtpForm = {
   fromEmail: string;
   fromName: string;
   emailEnabled: boolean;
+  alertEmail: string;
 };
 
 function formFromConfig(cfg: SmtpConfig): SmtpForm {
@@ -47,6 +48,7 @@ function formFromConfig(cfg: SmtpConfig): SmtpForm {
     fromEmail: cfg.fromEmail ?? "",
     fromName: cfg.fromName,
     emailEnabled: cfg.emailEnabled,
+    alertEmail: cfg.alertEmail ?? "",
   };
 }
 
@@ -106,6 +108,9 @@ export default function NotificationSettingsPage() {
           fromEmail: form.fromEmail || undefined,
           fromName: form.fromName || undefined,
           emailEnabled: form.emailEnabled,
+          // Always sent so a blank field clears the dedicated recipient
+          // (unlike smtpPassword, where blank means "leave unchanged").
+          alertEmail: form.alertEmail.trim(),
         }),
       });
       toast.success("SMTP settings saved");
@@ -137,7 +142,7 @@ export default function NotificationSettingsPage() {
     <Page>
       <PageHeader
         title="Alerts & Email"
-        description="Outbound SMTP for alert emails, and server-wide alert thresholds."
+        description="Outbound SMTP for alert emails, a dedicated alert inbox, and server-wide alert thresholds."
       />
 
       <PageSection title="Outbound email (SMTP)">
@@ -232,6 +237,16 @@ export default function NotificationSettingsPage() {
                   />
                 </div>
               </div>
+
+              <TextInput
+                id="smtp-alert-email"
+                labelText="Alert recipient"
+                helperText="Every firing alert email is also sent here, in addition to superuser (or team) inboxes. Leave blank to email those inboxes only."
+                placeholder="ops@example.com"
+                type="email"
+                value={form.alertEmail}
+                onChange={(e) => set("alertEmail", e.target.value)}
+              />
 
               <div className="gisila-settings__row-actions" style={{ justifyContent: "flex-start" }}>
                 <Button type="submit" disabled={saving} renderIcon={Email}>

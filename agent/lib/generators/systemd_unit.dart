@@ -69,6 +69,22 @@ Description=Gisila Celery worker $workerIndex for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
 
+# Give up instead of restarting forever — same reasoning, and deliberately the
+# same numbers, as the web unit in SystemdUnit. A worker that dies on startup
+# fails identically on every attempt, and the cgroup OOM killer reaping a worker
+# the moment it allocates is exactly that: unbounded Restart=always turns it
+# into a permanent fork loop that fills the journal and burns CPU while the
+# queue is unserved either way.
+#
+# RestartSec here is 10s rather than the web unit's 5s, so five attempts span
+# ~50s instead of ~25s. Both fit comfortably inside the same 300s window, which
+# is what matters: the limit still trips on a worker that is failing on every
+# boot, while a worker that crashes at any slower cadence than once a minute
+# keeps restarting indefinitely. Holding the numbers identical across all of an
+# app's units also means one threshold to reason about rather than three.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=$linuxUser
@@ -155,6 +171,13 @@ class CeleryBeatUnit {
 Description=Gisila Celery beat scheduler for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
+
+# Give up instead of restarting forever; see CeleryWorkerUnit for why these
+# numbers. With RestartSec=10 the five attempts span ~50s, well inside the 300s
+# window, so a beat that cannot start (a corrupt schedule shelve, an unreachable
+# broker) parks in `failed` where the panel can report it.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -245,6 +268,13 @@ class CeleryFlowerUnit {
 Description=Gisila Celery Flower UI for $linuxUser (id=$appId)
 After=network.target
 PartOf=gisila-$linuxUser.target
+
+# Give up instead of restarting forever; see CeleryWorkerUnit for why these
+# numbers. Flower's RestartSec is 5s, the same as the web unit's, so the five
+# attempts span ~25s — the shortest span of the three, and still the case the
+# 300s window was chosen for.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

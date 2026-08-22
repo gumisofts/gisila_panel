@@ -39,14 +39,16 @@ import {
   type AlertRule,
   type AlertScope,
   type AlertSeverity,
+  type AppLimits,
   type ListResponse,
 } from "@/lib/types";
 
 /// Metrics available per scope — mirrors what `AlertEvaluator` actually knows
 /// how to sample (see backend/lib/workers/alert_worker.dart): whole-host
-/// stats come from /proc + df, app usage from cgroup metric samples relative
-/// to its own quota, and database health from a lightweight direct
-/// connection (no CPU/memory sampling exists yet for either engine).
+/// stats come from /proc + df, app usage from cgroup samples relative to the
+/// app's own quota, postgres CPU from the instance's systemd cgroup (percent
+/// of one core, so multi-core hosts can exceed 100%), and connection pressure
+/// from a lightweight direct probe. Mongo has connections + down, not CPU.
 const METRICS_BY_SCOPE: Record<AlertScope, AlertMetric[]> = {
   system: ["cpu_percent", "memory_percent", "disk_percent"],
   app: ["cpu_percent", "memory_percent", "status_down"],
@@ -109,6 +111,21 @@ function query(params: Record<string, string | number | undefined>): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
+function byCreatedAtDesc<T extends { createdAt: string }>(a: T, b: T): number {
+  return b.createdAt.localeCompare(a.createdAt);
+}
+
+/// CPU on a postgres instance is percent of one core (same unit as the
+/// metrics card), so the input max is host cores × 100 rather than 100.
+function thresholdMax(
+  scope: AlertScope,
+  metric: AlertMetric,
+  maxCpuPercent: number,
+): number {
+  if (metric === "cpu_percent" && scope === "postgres") return maxCpuPercent;
+  return 100;
+}
+
 /// Threshold-based alert rules attached to a single resource (the whole host,
 /// one app, or one database instance). Embedded directly on that resource's
 /// own page/tab rather than a separate global list, matching how the rules
@@ -166,6 +183,10 @@ export function AlertRulesManager({
     fetcher,
     { refreshInterval: 30000 },
   );
+  const { data: limits } = useSWR<AppLimits>(
+    scope === "postgres" ? "/apps/limits" : null,
+    fetcher,
+  );
 
   const [editing, setEditing] = useState<AlertRule | null>(null);
   const [creating, setCreating] = useState(false);
@@ -173,9 +194,12 @@ export function AlertRulesManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const rules = rulesData?.results ?? [];
-  const events = eventsData?.results ?? [];
+  const rules = [...(rulesData?.results ?? [])].sort(byCreatedAtDesc);
+  const events = [...(eventsData?.results ?? [])].sort(byCreatedAtDesc);
   const metrics = METRICS_BY_SCOPE[scope];
+  const cpuCores = limits?.cpuCores ?? 1;
+  const maxCpuPercent = limits?.maxCpuQuotaPercent ?? 100;
+  const maxThreshold = thresholdMax(scope, form.metric, maxCpuPercent);
 
   function openCreate() {
     setForm(defaultForm(scope));
@@ -376,7 +400,15 @@ export function AlertRulesManager({
                 labelText="Metric"
                 value={form.metric}
                 disabled={!!editing}
-                onChange={(e) => set("metric", e.target.value as AlertMetric)}
+                onChange={(e) => {
+                  const metric = e.target.value as AlertMetric;
+                  const nextMax = thresholdMax(scope, metric, maxCpuPercent);
+                  setForm((f) => ({
+                    ...f,
+                    metric,
+                    thresholdPercent: Math.min(f.thresholdPercent, nextMax),
+                  }));
+                }}
               >
                 {metrics.map((m) => (
                   <SelectItem key={m} value={m} text={ALERT_METRIC_LABEL[m]} />
@@ -398,8 +430,13 @@ export function AlertRulesManager({
                   <NumberInput
                     id={fieldId("rule-threshold")}
                     label="Threshold (%)"
+                    helperText={
+                      form.metric === "cpu_percent" && scope === "postgres"
+                        ? `100% is one full core. This host has ${cpuCores} core${cpuCores === 1 ? "" : "s"}, so usage can reach ${maxCpuPercent}%.`
+                        : undefined
+                    }
                     min={1}
-                    max={100}
+                    max={maxThreshold}
                     step={1}
                     value={form.thresholdPercent}
                     onChange={(_, { value }) => set("thresholdPercent", Number(value) || 0)}
@@ -441,7 +478,8 @@ export function AlertRulesManager({
               />
               <p className="gisila-alerts__hint">
                 In-panel notifications are always sent to affected users; this also
-                sends an email if outbound email is configured.
+                emails them — and the dedicated alert address in Alerts & Email
+                settings — if outbound email is configured.
               </p>
 
               {editing && (

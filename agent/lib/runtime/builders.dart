@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 import 'package:gisila_agent/runtime/priv.dart';
@@ -18,6 +20,12 @@ class Builders {
   /// source refresh so the cache layer can reuse them. The git fetch path keeps
   /// these implicitly (it never touches ignored files); the zip path has to
   /// stash and restore them explicitly.
+  ///
+  /// `.venv` is no longer where a virtualenv is built (see [venvRoot]), but it
+  /// stays on this list: on a host upgrading from the old layout the service is
+  /// still running out of `<staging>/.venv` until this deploy restarts it, so
+  /// the source refresh must not delete it. [publishRelease] keeps the dead copy
+  /// from being hardlinked into releases instead.
   static const _artifactDirs = ['node_modules', '.venv'];
 
   /// Resolve the actual project root to build/run from: the repo is always
@@ -30,19 +38,70 @@ class Builders {
     return '$base/$sourceSubdir';
   }
 
-  /// The app's virtualenv, deliberately OUTSIDE `releases/`.
+  /// Directory holding the app's virtualenv generations, deliberately OUTSIDE
+  /// `releases/`.
   ///
-  /// It used to live at `<src>/.venv`, inside the tree every build rewrites —
-  /// which meant the running service's interpreter and site-packages were the
-  /// files a deploy was busy replacing. A restart landing in that window
-  /// re-exec'd a half-installed `bin/gunicorn` and the unit crash-looped.
+  /// The venv used to live at `<src>/.venv`, inside the tree every build
+  /// rewrites — which meant the running service's interpreter and site-packages
+  /// were the files a deploy was busy replacing. A restart landing in that
+  /// window re-exec'd a half-installed `bin/gunicorn` and the unit crash-looped.
   ///
-  /// It cannot simply be copied into each release either: a virtualenv records
-  /// its own absolute path in `pyvenv.cfg` and in the shebang of every console
-  /// script, so a venv that is moved or copied to a new path is broken. Giving
-  /// it one permanent path solves both problems — the deploy never touches it,
-  /// and the paths baked inside it stay true forever.
-  static String venvDir(String workDir) => '$workDir/venv';
+  /// Moving it out of `releases/` fixes the ordinary deploy, but not a rebuild:
+  /// a venv cannot be recreated in place either, because `rm -rf` + recreate
+  /// deletes the very interpreter the live service is executing from. That is
+  /// the same crash loop with a different trigger — a force-rebuild or a Python
+  /// version change instead of every deploy. And it cannot be built elsewhere
+  /// and moved into place, because a venv records its own absolute path in
+  /// `pyvenv.cfg`, in `bin/activate`, and in the shebang of every console
+  /// script, so a venv that changes path is broken.
+  ///
+  /// So each rebuild gets its own immutable generation directory in here and
+  /// [venvLink] is repointed at it. The paths baked inside a generation stay
+  /// true forever, and a process still running out of the previous generation
+  /// keeps every file it started with.
+  static String venvRoot(String workDir) => '$workDir/venv';
+
+  /// The stable path everything outside the build references the venv by.
+  ///
+  /// A symlink to the current generation under [venvRoot], repointed
+  /// atomically once a rebuild has fully succeeded. The systemd `ExecStart`
+  /// (`…/current/.venv/bin/gunicorn`), the supervisord `command=`, the
+  /// [ExecResolver] and the console all go through this rather than naming a
+  /// generation, so a rebuild is picked up by the next start without rewriting
+  /// anything and without disturbing the process already running.
+  static String venvLink(String workDir) => '$workDir/current/.venv';
+
+  /// Generation directories are millisecond timestamps. Matching on that is
+  /// what keeps [_pruneVenvs] from touching the `bin/` `lib/` `include/`
+  /// directories of a pre-migration venv that still sits at [venvRoot] itself.
+  static final _venvGeneration = RegExp(r'^\d+$');
+
+  /// The venv [venvLink] currently resolves to, or null when there is none this
+  /// build may reuse.
+  ///
+  /// Only a generation directory under [venvRoot] qualifies. A link left by an
+  /// older agent — pointing into `releases/current_build/.venv`, or at
+  /// [venvRoot] itself back when that was a venv rather than a container of
+  /// generations — is deliberately rejected, so the first deploy after an
+  /// upgrade builds a fresh generation instead of adopting a venv that the
+  /// running process is still using and that the next build would rewrite.
+  static String? _reusableVenv(String workDir) {
+    final root = venvRoot(workDir);
+    String target;
+    try {
+      target = Link(venvLink(workDir)).targetSync();
+    } on FileSystemException {
+      return null; // missing, or a plain directory rather than a symlink
+    }
+    // Normalise lexically rather than with resolveSymbolicLinksSync: a relative
+    // target has to lose its `..` segments before the prefix test below means
+    // anything, but resolving symlinks would also rewrite the work dir itself
+    // (`/srv` is often a link), and then no generation would ever match.
+    final abs = p.normalize(
+        target.startsWith('/') ? target : '$workDir/current/$target');
+    if (!p.isWithin(root, abs)) return null;
+    return _venvGeneration.hasMatch(p.relative(abs, from: root)) ? abs : null;
+  }
 
   /// The stable path the *running* service reads its code from.
   ///
@@ -73,10 +132,16 @@ class Builders {
   /// at any instant sees either the whole old release or the whole new one.
   ///
   /// The copy is `cp -al` (hardlinks, not bytes), so publishing a 500 MB
-  /// `node_modules` costs directory entries rather than disk. It is safe
-  /// against the next build because git, pip and the package managers all
-  /// replace files by rename or unlink-and-create, which breaks the link and
-  /// leaves the published release untouched.
+  /// `node_modules` costs directory entries rather than disk. That is safe only
+  /// for writers that replace a file by rename or unlink-and-create, which
+  /// breaks the link and leaves the published release untouched — `git reset`,
+  /// `tar -x`, `unzip`, `cp -a`, `install` and the package managers all do.
+  /// A writer that instead truncates or appends to the existing file (`>` and
+  /// `>>` redirection, `cp -f`, `open(…, 'w')`, `fs.writeFileSync`) writes
+  /// *through* the link and its change appears in every release sharing that
+  /// inode, including the one being served. Nothing this file runs does that,
+  /// but an operator's build command can, and so can a framework that writes a
+  /// runtime cache back into its own build tree.
   static Future<String> publishRelease({
     required String workDir,
     required String user,
@@ -94,16 +159,33 @@ class Builders {
         ? releaseId.trim()
         : DateTime.now().toUtc().millisecondsSinceEpoch.toString();
     final releasesRoot = '$workDir/releases';
-    final releaseDir = '$releasesRoot/$id';
     final link = '$workDir/current/src';
 
-    // A retried deployment reuses its id, so start from a clean directory.
-    await ShellExec.run('rm', ['-rf', releaseDir]);
+    // A release directory is written once and never reopened. A retried
+    // deployment reuses its id, so the name may already be taken — by, in the
+    // worst case, the release the service is running out of right now (the
+    // worker re-queues a deployment that died after publishing, keeping its id).
+    // Clearing it out to start fresh would delete that live tree and leave
+    // `current/src` dangling for the whole of the copy below. Take a new name
+    // instead; the old directory is left for the prune to reclaim once it is no
+    // longer the newest.
+    var releaseDir = '$releasesRoot/$id';
+    if (Directory(releaseDir).existsSync()) {
+      releaseDir =
+          '$releasesRoot/$id-${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    }
     await ShellExec.run('mkdir', ['-p', releaseDir]);
     await ShellExec.run('cp', ['-al', '$staging/.', releaseDir]);
     // The release is what the app runs from; it has no use for VCS metadata,
     // which also carries the remote URL the deploy key authenticated against.
     await ShellExec.run('rm', ['-rf', '$releaseDir/.git'],
+        requireSuccess: false);
+    // Hosts that predate the venv moving out of the source tree still have one
+    // at `<staging>/.venv`, which nothing references any more. Unlink the
+    // release's copy rather than hardlink a dead interpreter into every release
+    // from here on. The staging copy is left alone on purpose — until this
+    // deploy restarts the service, that is still the venv it is running from.
+    await ShellExec.run('rm', ['-rf', '$releaseDir/.venv'],
         requireSuccess: false);
     await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
         requireSuccess: false);
@@ -948,11 +1030,12 @@ class Builders {
   ///   1. Ensure Python C-extension build dependencies are installed.
   ///   2. Ensure pyenv is installed at [pyenvRoot] (default /opt/pyenv).
   ///   3. Install the requested [pythonVersion] if not present.
-  ///   4. Create a virtualenv at `<workDir>/venv` using that Python.
+  ///   4. Resolve the virtualenv — a generation under `<workDir>/venv/`,
+  ///      created with that Python when the current one can't be reused.
   ///   5. `pip install` deps from requirements.txt (if present).
   ///   6. Install gunicorn + uvicorn[standard] for serving.
-  ///   7. Symlink the venv → `<workDir>/current/.venv` so the systemd unit
-  ///      can always reference `<workDir>/current/.venv/bin/gunicorn`.
+  ///   7. Point `<workDir>/current/.venv` at it so the systemd unit can always
+  ///      reference `<workDir>/current/.venv/bin/gunicorn`.
   static Future<void> buildPython({
     required String workDir,
     required String user,
@@ -964,8 +1047,6 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    final venv = venvDir(workDir);
-    final currentVenv = '$workDir/current/.venv';
 
     final version = pythonVersion?.trim();
 
@@ -982,17 +1063,19 @@ class Builders {
         ? await _pyenvPython(pyenvRoot, version)
         : 'python3'; // fallback to system python3
 
-    // 3. Create (or reuse) the virtualenv. Reused as-is when the pinned Python
-    //    version is unchanged; rebuilt from scratch on a version change or
-    //    force-rebuild. See _ensureVenv for why --copies is required.
-    final venvRebuilt = await _ensureVenv(
+    // 3. Resolve (or build) the virtualenv. Reused as-is when the pinned Python
+    //    version is unchanged; a version change or force-rebuild gets a fresh
+    //    generation rather than overwriting the one in use. See _ensureVenv for
+    //    why --copies is required.
+    final resolved = await _ensureVenv(
       user: user,
-      venv: venv,
       workDir: workDir,
       pythonBin: pythonBin,
       version: version,
       noCache: noCache,
     );
+    final venv = resolved.path;
+    final venvRebuilt = resolved.rebuilt;
 
     // Persistent pip cache so unchanged wheels are not re-downloaded.
     final pipEnv = _pythonBuildEnv(workDir, appEnv);
@@ -1056,13 +1139,10 @@ class Builders {
     //     in the build log without aborting the whole deployment.
     await _runDjangoManagementCommands(user, src, venv, workDir, appEnv);
 
-    // 6. Symlink the venv into <workDir>/current so the systemd ExecStart
-    //    path is stable across deployments.
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    final link = Link(currentVenv);
-    if (link.existsSync()) link.deleteSync();
-    await ShellExec.run('ln', ['-sfn', venv, currentVenv]);
-    await ShellExec.run('chown', ['-hR', '$user:$user', venv]);
+    // 6. Publish the venv: point <workDir>/current/.venv at it so the systemd
+    //    ExecStart path is stable across deployments. Last, so the link only
+    //    ever names a venv that is fully installed.
+    await _linkVenv(workDir, user, venv);
   }
 
   /// Persistent build environment for pip-based runtimes.
@@ -1084,10 +1164,16 @@ class Builders {
         },
       );
 
-  /// Create the project virtualenv at [venv] (see [venvDir]), reusing an
-  /// existing one when the pinned Python [version] is unchanged. Returns true
-  /// when a fresh venv was built (so the caller can force its dependent
-  /// installs to re-run). [noCache] forces a rebuild.
+  /// Resolve the virtualenv this build should install into, creating a fresh
+  /// generation under [venvRoot] when the current one cannot be reused.
+  ///
+  /// Returns the venv's path plus whether it was newly built (so the caller can
+  /// force its dependent installs to re-run). Reuse requires an unchanged
+  /// pinned Python [version]; [noCache] forces a rebuild.
+  ///
+  /// A rebuild never writes over the venv in use — see [venvRoot] for why that
+  /// would take the running service down. The new generation is populated in
+  /// full and only then does [_linkVenv] make it the current one.
   ///
   /// --copies is required: without it the venv's bin/python is a symlink to the
   /// pyenv binary. On Linux, Python uses /proc/self/exe to find its real path,
@@ -1095,9 +1181,8 @@ class Builders {
   /// looks for pyvenv.cfg relative to the resolved path — which has none — so it
   /// treats the pyenv prefix as sys.prefix and leaves the venv's site-packages
   /// off sys.path entirely, making app dependencies missing at runtime.
-  static Future<bool> _ensureVenv({
+  static Future<({String path, bool rebuilt})> _ensureVenv({
     required String user,
-    required String venv,
     required String workDir,
     required String pythonBin,
     required String? version,
@@ -1106,33 +1191,94 @@ class Builders {
     const venvKey = 'py-venv';
     final venvFp =
         BuildCache.fingerprint(const <String>[], ['py:${version ?? 'system'}']);
-    final reusable = !noCache &&
-        File('$venv/bin/python').existsSync() &&
+    final live = _reusableVenv(workDir);
+    if (!noCache &&
+        live != null &&
+        File('$live/bin/python').existsSync() &&
         BuildCache.isFresh(workDir, venvKey, venvFp,
-            artifact: '$venv/bin/python');
-    if (reusable) {
-      stdout.writeln('[agent] reusing cached virtualenv ($venv)');
-      return false;
+            artifact: '$live/bin/python')) {
+      stdout.writeln('[agent] reusing cached virtualenv ($live)');
+      return (path: live, rebuilt: false);
     }
-    // Rebuild from scratch: the venv is tied to a specific interpreter, so a
-    // version change (or force-rebuild) must not reuse the old one.
-    //
-    // Recreating it in place is the one moment the running service's
-    // interpreter is genuinely absent, so it only happens on a Python version
-    // change or an explicit force-rebuild — never on an ordinary deploy.
-    await ShellExec.run('rm', ['-rf', venv], requireSuccess: false);
+
+    final root = venvRoot(workDir);
+    final venv =
+        '$root/${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    await ShellExec.run('mkdir', ['-p', root]);
+    // The venv itself is created by the app user, so it must own the directory
+    // the generation is created in.
+    await ShellExec.run('chown', ['$user:$user', root], requireSuccess: false);
     await _runAsUser(
       user,
       workDir,
       '$pythonBin -m venv --copies $venv',
       workDir: workDir,
     );
+    stdout.writeln('[agent] built virtualenv generation $venv');
     await BuildCache.store(workDir, user, venvKey, venvFp);
     // A fresh venv has no packages, so any dependent install markers are stale.
     BuildCache.invalidate(workDir, 'py-deps');
     BuildCache.invalidate(workDir, 'py-server');
     BuildCache.invalidate(workDir, 'py-celery');
-    return true;
+    return (path: venv, rebuilt: true);
+  }
+
+  /// Make [venv] the generation [venvLink] points at, then drop superseded ones.
+  ///
+  /// `ln -sfn` replaces the existing symlink without descending into its target,
+  /// so the link goes from naming the old generation to naming the new one in a
+  /// single step — a service starting at any instant finds a complete venv.
+  /// (Deleting the link first, as this used to, opened a window in which
+  /// `ExecStart=…/current/.venv/bin/gunicorn` simply did not exist.)
+  static Future<void> _linkVenv(
+      String workDir, String user, String venv) async {
+    final link = venvLink(workDir);
+    await ShellExec.run('chown', ['-R', '$user:$user', venv],
+        requireSuccess: false);
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('ln', ['-sfn', venv, link]);
+    await ShellExec.run('chown', ['-h', '$user:$user', link],
+        requireSuccess: false);
+    await _pruneVenvs(workDir, liveTarget: venv);
+  }
+
+  /// How many virtualenv generations to keep (the live one always counts toward
+  /// this budget and is never pruned).
+  ///
+  /// Deliberately smaller than [_keepReleases]: a venv is hundreds of megabytes
+  /// where a hardlinked release is almost free. Keeping more than one still
+  /// matters — the generation a process started from has to outlive the deploy
+  /// that replaced it, because that process does not restart until the very end
+  /// of the deploy (and not at all if the restart fails).
+  static const _keepVenvs = 3;
+
+  /// Delete all but the newest [_keepVenvs] generations under [venvRoot], never
+  /// [liveTarget]. Best-effort: a failed prune must not fail a good deploy.
+  static Future<void> _pruneVenvs(String workDir,
+      {required String liveTarget}) async {
+    final root = venvRoot(workDir);
+    final dir = Directory(root);
+    if (!dir.existsSync()) return;
+    final dirs = dir
+        .listSync(followLinks: false)
+        .whereType<Directory>()
+        // Only generations. On a host upgrading from the layout where the venv
+        // *was* this directory, its bin/ lib/ include/ survive here and are
+        // still being used by the running process — they must never be removed.
+        .where((d) => _venvGeneration.hasMatch(d.path.split('/').last))
+        .toList()
+      ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+
+    final keep = <String>{liveTarget};
+    for (final d in dirs) {
+      if (keep.length >= _keepVenvs) break;
+      keep.add(d.path);
+    }
+    for (final d in dirs) {
+      if (!keep.contains(d.path)) {
+        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+      }
+    }
   }
 
   /// Install the server packages a runtime always needs (gunicorn/uvicorn, or
@@ -1424,8 +1570,6 @@ class Builders {
     String? sourceSubdir,
   }) async {
     final src = resolveSrc(workDir, sourceSubdir);
-    final venv = venvDir(workDir);
-    final currentVenv = '$workDir/current/.venv';
 
     final version = pythonVersion?.trim();
 
@@ -1435,14 +1579,15 @@ class Builders {
         ? await _pyenvPython(pyenvRoot, version)
         : 'python3';
 
-    final venvRebuilt = await _ensureVenv(
+    final resolved = await _ensureVenv(
       user: user,
-      venv: venv,
       workDir: workDir,
       pythonBin: pythonBin,
       version: version,
       noCache: noCache,
     );
+    final venv = resolved.path;
+    final venvRebuilt = resolved.rebuilt;
 
     final pipEnv = _pythonBuildEnv(workDir, appEnv);
 
@@ -1487,12 +1632,9 @@ class Builders {
     // Run Django management commands if applicable.
     await _runDjangoManagementCommands(user, src, venv, workDir, appEnv);
 
-    // Symlink venv for stable path in systemd units.
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    final link = Link(currentVenv);
-    if (link.existsSync()) link.deleteSync();
-    await ShellExec.run('ln', ['-sfn', venv, currentVenv]);
-    await ShellExec.run('chown', ['-hR', '$user:$user', venv]);
+    // Publish the venv last, so the stable path the units reference only ever
+    // names a venv that has celery/flower installed.
+    await _linkVenv(workDir, user, venv);
   }
 
   /// "Build" a static site deployment.

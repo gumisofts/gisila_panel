@@ -8,6 +8,23 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 
+/// The outcome of the agent's post-restart readiness probe.
+class _HealthVerdict {
+  const _HealthVerdict(this.healthy, this.detail, {this.logTail = const []});
+
+  /// `null` when the probe could not be run at all — "we don't know", which is
+  /// deliberately distinct from "it is down".
+  final bool? healthy;
+
+  /// A sentence naming what was observed, shown as the deployment's failure
+  /// reason and published to the build log.
+  final String detail;
+
+  /// The tail of the unit's journal when the app was found down, so the panel
+  /// shows why rather than only that.
+  final List<String> logTail;
+}
+
 /// Bridge between the Dart worker and the privileged `gisila-agent` CLI.
 ///
 /// Tasks are routed by queue name to specialised handlers. Everything
@@ -345,9 +362,7 @@ class DeploymentWorker {
         await _runAgent(
             ['restart', '--user', app.linuxUser!, '--runtime', app.runtime],
             deploymentId: deploymentId);
-        await _markStatus(deploymentId, 'succeeded', activate: true, app: app);
-        await _publishBuildLog(deploymentId,
-            stream: 'system', line: 'Deployment succeeded.');
+        await _finishDeployment(deploymentId, app);
         return;
       }
 
@@ -413,14 +428,13 @@ class DeploymentWorker {
         ], deploymentId: deploymentId);
       }
 
-      // 4. Start / restart the service (runtime-aware).
+      // 4. Start / restart the service (runtime-aware), then confirm it is
+      //    actually serving before calling the deployment a success.
       await _runAgent(
           ['restart', '--user', app.linuxUser!, '--runtime', app.runtime],
           deploymentId: deploymentId);
 
-      await _markStatus(deploymentId, 'succeeded', activate: true, app: app);
-      await _publishBuildLog(deploymentId,
-          stream: 'system', line: 'Deployment succeeded.');
+      await _finishDeployment(deploymentId, app);
     } catch (e, st) {
       logger.e('worker: deployment failed', error: e, stackTrace: st);
       await _markStatus(deploymentId, 'failed', reason: e.toString());
@@ -776,6 +790,125 @@ class DeploymentWorker {
         'updatedAt': now.toIso8601String(),
       }).run(database.context());
     }
+  }
+
+  // ── Post-restart verification ──────────────────────────────────────
+
+  /// Close out a deployment: confirm the app is actually serving, and only
+  /// then mark it succeeded and the app running.
+  ///
+  /// The agent's `restart` returns as soon as systemd has forked the process.
+  /// The units are `Type=simple`, so `active` says nothing about whether
+  /// gunicorn ever imported the application, and this step used to mark the
+  /// deployment succeeded on the strength of nothing at all. Every deploy that
+  /// left an app crash-looping was still recorded here as `succeeded` — one of
+  /// them at the exact second a 97-restart loop began, while nginx was already
+  /// answering real users with 502s. The operator saw a green panel and a dead
+  /// site.
+  ///
+  /// See the agent's `app-health` for what is probed, and why `is-active` is
+  /// never the only signal.
+  Future<void> _finishDeployment(int deploymentId, App app) async {
+    await _publishBuildLog(deploymentId,
+        stream: 'system', line: 'Verifying the service is up…');
+    final verdict = await _verifyServing(app);
+
+    if (verdict.healthy != false) {
+      // `null` means the probe could not run at all (dev mode, or the agent
+      // call itself failed) — which is not evidence that the app is down.
+      // Succeed, but say in the build log that nothing was verified, so a host
+      // where the check is silently broken is visible rather than a return to
+      // the old always-green behaviour.
+      await _markStatus(deploymentId, 'succeeded', activate: true, app: app);
+      await _publishBuildLog(deploymentId,
+          stream: 'system', line: 'Deployment succeeded. ${verdict.detail}');
+      return;
+    }
+
+    final now = DateTime.now().toUtc();
+    await _markStatus(deploymentId, 'failed', reason: verdict.detail);
+    // The deploy is on disk and the units are written, but nothing is serving.
+    // `crashed` is what the panel's app badge and the alert worker already use
+    // for exactly this state.
+    await Query<App>(AppTable.metadata)
+        .where(AppTable.id.eq(app.id!))
+        .update(<String, Object?>{
+      'status': 'crashed',
+      'updatedAt': now.toIso8601String(),
+    }).run(database.context());
+
+    await _publishBuildLog(deploymentId,
+        stream: 'stderr', line: 'FAILED: ${verdict.detail}');
+    for (final line in verdict.logTail) {
+      await _publishBuildLog(deploymentId, stream: 'stderr', line: line);
+    }
+  }
+
+  /// Ask the agent whether [app] is serving. Never throws — a probe that cannot
+  /// run reports "unknown" rather than taking the deployment down with it.
+  Future<_HealthVerdict> _verifyServing(App app) async {
+    if (hostConfig.agentMode == 'dev') {
+      return const _HealthVerdict(
+          null, 'Health was not verified: the agent is in dev mode.');
+    }
+    final args = <String>[
+      'app-health',
+      '--user', app.linuxUser!,
+      '--runtime', app.runtime,
+      if (app.internalPort != null) ...['--port', '${app.internalPort}'],
+      '--expose-mode', app.exposeMode ?? 'web',
+      // The strongest probe available, when the operator has configured one.
+      if ((app.healthCheckPath ?? '').trim().isNotEmpty) ...[
+        '--health-path',
+        app.healthCheckPath!.trim(),
+      ],
+    ];
+    try {
+      final cmd = buildAgentCmd(args);
+      final result = await Process.run(cmd.first, cmd.skip(1).toList());
+      final report = _findJsonWith(result.stdout as String? ?? '', 'healthy');
+      if (report == null) {
+        return _HealthVerdict(
+          null,
+          'Health could not be verified: the agent returned no report '
+          '(exit ${result.exitCode}). Update gisila-agent on this host.',
+        );
+      }
+      return _HealthVerdict(
+        report['healthy'] == true,
+        (report['detail'] as String?)?.trim().isNotEmpty == true
+            ? report['detail'] as String
+            : 'The service did not pass its post-restart health check.',
+        logTail: [
+          for (final line in (report['logTail'] as List?) ?? const [])
+            if (line is String) line,
+        ],
+      );
+    } catch (e) {
+      return _HealthVerdict(null, 'Health could not be verified: $e');
+    }
+  }
+
+  /// Pull the JSON line carrying [key] out of an agent's stdout.
+  ///
+  /// The agent's `main()` prints a trailing `{"ok":true,…}` wrapper after a
+  /// command's real output, so a naive last-line parse would return that
+  /// instead — scan bottom-up for the line that actually has the field.
+  Map<String, Object?>? _findJsonWith(String text, String key) {
+    final lines = text.trim().split('\n');
+    for (var i = lines.length - 1; i >= 0; i--) {
+      final line = lines[i].trim();
+      if (!line.startsWith('{') || !line.contains('"$key"')) continue;
+      try {
+        final decoded = jsonDecode(line);
+        if (decoded is Map<String, Object?> && decoded.containsKey(key)) {
+          return decoded;
+        }
+      } catch (_) {
+        // Not the line we want — keep scanning upward.
+      }
+    }
+    return null;
   }
 
   Future<void> _publishBuildLog(

@@ -59,6 +59,9 @@ Future<void> main(List<String> args) async {
       case 'restart':
         await _lifecycle(command, rest);
         break;
+      case 'app-health':
+        await _appHealth(rest);
+        return; // _appHealth prints its own JSON line.
       case 'uninstall':
         await _uninstall(rest);
         break;
@@ -740,6 +743,323 @@ Future<void> _lifecycle(String action, List<String> args) async {
   }
 }
 
+/// `gisila-agent app-health --user app_xxx --runtime RT [--port N]
+///   [--health-path /healthz] [--expose-mode web|tcp|internal]
+///   [--timeout-sec N] [--settle-sec N]`
+///
+/// Answer "is this app actually serving?" after a restart, as one JSON line:
+/// `{"ok":true,"healthy":<bool>,"detail":"…","units":[…],"logTail":[…]}`.
+///
+/// The app units are `Type=simple`, so systemd reports `active` the instant it
+/// forks the process — before gunicorn has imported the application object,
+/// before node has bound its port. `systemctl is-active` on its own would have
+/// reported green for every deploy that left a crash-looping app behind, so it
+/// is never the only signal here. The strongest signal an app can offer is
+/// polled instead, over a bounded window, and has to hold steady for
+/// `--settle-sec` before the app counts as up:
+///
+///   * its unit(s) stay active/running and `NRestarts` does not climb. A
+///     climbing restart counter is the cheapest crash-loop signal there is, and
+///     the only one that catches a process which died and was restarted in the
+///     gap between two probes.
+///   * something accepts a TCP connection on 127.0.0.1:<port> — readiness for
+///     anything that listens, whether or not it speaks HTTP.
+///   * for a `web` app with a health check path configured, an HTTP GET of that
+///     path answers. This is the strongest signal available: it proves the
+///     application was imported and can route a request, which a bound socket
+///     does not (a prefork master binds before any worker has finished
+///     importing).
+///
+/// Runtimes that legitimately have no listening port are never failed for the
+/// absence of one; each branch below says which check applies to it.
+Future<void> _appHealth(List<String> args) async {
+  final r = _parse(args, (p) {
+    p.addOption('user', mandatory: true);
+    p.addOption('runtime', defaultsTo: '');
+    p.addOption('port');
+    p.addOption('health-path');
+    p.addOption('expose-mode', defaultsTo: 'web');
+    p.addOption('timeout-sec', defaultsTo: '45');
+    p.addOption('settle-sec', defaultsTo: '5');
+  });
+  final user = AgentValidators.requireUser(r['user'] as String?);
+  final runtime = (r['runtime'] as String).trim();
+  final exposeMode = (r['expose-mode'] as String).trim();
+  final timeout =
+      Duration(seconds: int.tryParse(r['timeout-sec'] as String) ?? 45);
+  final settle = Duration(seconds: int.tryParse(r['settle-sec'] as String) ?? 5);
+  final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
+
+  // Static apps have no process of their own: nginx serves the published
+  // release straight off disk, so there is no unit and no port to probe. The
+  // one thing this can honestly assert is that nginx survived the reload the
+  // restart step just performed.
+  if (runtime == 'static') {
+    final up = await _unitIsActive('nginx');
+    _ok({
+      'healthy': up,
+      'detail': up
+          ? 'Static site: nginx is running and serving the published release.'
+          : 'nginx is not running, so nothing on this host is being served. '
+              'Check `nginx -t` and `systemctl status nginx`.',
+    });
+    return;
+  }
+
+  // Celery's workers hold no socket at all, and the port the app was assigned
+  // belongs to Flower rather than to the app, so a port probe would fail a
+  // perfectly healthy stack. Unit state is the whole check — see [_healthUnits].
+  final port = runtime == 'celery'
+      ? null
+      : int.tryParse((r['port'] as String?)?.trim() ?? '');
+
+  // An HTTP GET is only meaningful against something that speaks HTTP. A
+  // tcp/internal app does listen, but it may be a game server or an MQTT
+  // broker, where a GET is not a health check but garbage on the wire — those
+  // stop at the TCP connect above.
+  final configuredPath = (r['health-path'] as String?)?.trim() ?? '';
+  final healthPath = (exposeMode == 'web' && configuredPath.startsWith('/'))
+      ? configuredPath
+      : null;
+
+  final units = await _healthUnits(user, runtime, isDocker: isDocker);
+  if (units.isEmpty) {
+    _ok({
+      'healthy': false,
+      'detail': 'No process-manager unit was found for $user — apply-unit '
+          'should have written one earlier in this deploy.',
+    });
+    return;
+  }
+
+  // NRestarts as of the first reading, so what gets reported is the restarts
+  // that happened during this window rather than the unit's whole history.
+  final baseline = <String, int>{};
+  final startedAt = DateTime.now();
+  final deadline = startedAt.add(timeout);
+  DateTime? healthySince;
+  var problems = <String>['no reading was taken'];
+  var readings = <_UnitHealth>[];
+
+  while (true) {
+    readings = [
+      for (final unit in units) await _readUnitHealth(unit, isDocker: isDocker),
+    ];
+    problems = <String>[];
+    var parked = false;
+
+    for (final u in readings) {
+      final before = baseline.putIfAbsent(u.name, () => u.restarts);
+      final state = u.subState == u.activeState
+          ? u.activeState
+          : '${u.activeState}/${u.subState}';
+      if (u.activeState == 'failed') {
+        parked = true;
+        problems.add('${u.name} is $state');
+      } else if (!u.up) {
+        problems.add('${u.name} is $state');
+      } else if (u.restarts > before) {
+        final n = u.restarts - before;
+        problems.add('${u.name} restarted $n time${n == 1 ? '' : 's'} since the '
+            'deploy restarted it (NRestarts=${u.restarts}) — it is crash-looping');
+      }
+    }
+
+    if (problems.isEmpty && port != null) {
+      if (!await _tcpOpen('127.0.0.1', port)) {
+        problems.add('nothing is listening on 127.0.0.1:$port');
+      } else if (healthPath != null) {
+        final (answered, how) = await _httpProbe('127.0.0.1', port, healthPath);
+        if (!answered) {
+          problems.add('GET http://127.0.0.1:$port$healthPath failed ($how)');
+        }
+      }
+    }
+
+    final now = DateTime.now();
+    if (problems.isEmpty) {
+      healthySince ??= now;
+      if (now.difference(healthySince) >= settle) {
+        final held = <String>[
+          units.length == 1
+              ? '${units.first} is active'
+              : 'all ${units.length} units of gisila-$user.target are active',
+          if (port != null) '127.0.0.1:$port is accepting connections',
+          if (healthPath != null) '$healthPath answered',
+        ];
+        _ok({
+          'healthy': true,
+          'detail': '${held.join(', ')}, and stayed that way for '
+              '${settle.inSeconds}s after the restart.',
+        });
+        return;
+      }
+    } else {
+      healthySince = null;
+      // A unit systemd has parked in `failed` is not coming back on its own: it
+      // has either exited for good or exhausted its start-rate limit. Waiting
+      // out the rest of the window would only delay the bad news.
+      if (parked) break;
+    }
+
+    if (!now.isBefore(deadline)) break;
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+
+  final waited = DateTime.now().difference(startedAt).inSeconds;
+  _ok({
+    'healthy': false,
+    'detail': '${waited}s after the restart: ${problems.join('; ')}. The '
+        'release is published and the unit files are written, but the service '
+        'is not serving.',
+    'units': [
+      for (final u in readings)
+        {
+          'name': u.name,
+          'activeState': u.activeState,
+          'subState': u.subState,
+          'restarts': u.restarts,
+        },
+    ],
+    'logTail': isDocker
+        ? const <String>[]
+        : await _unitLogTail(
+            readings.firstWhere((u) => !u.up, orElse: () => readings.first).name,
+          ),
+  });
+}
+
+/// The process-manager units that have to be up for [runtime] to be serving.
+///
+/// Celery has no single unit: apply-unit writes one service per worker plus
+/// beat and flower, each bound into `gisila-<user>.target` with `PartOf=`,
+/// which systemd exposes on the target as `ConsistsOf`.
+Future<List<String>> _healthUnits(
+  String user,
+  String runtime, {
+  required bool isDocker,
+}) async {
+  if (runtime != 'celery') {
+    return [isDocker ? 'gisila-$user' : 'gisila-$user.service'];
+  }
+  if (isDocker) {
+    final res = await Process.run('supervisorctl', ['status', 'gisila-$user:*']);
+    return (res.stdout as String? ?? '')
+        .split('\n')
+        .map((line) => line.trim().split(RegExp(r'\s+')).first)
+        .where((name) => name.startsWith('gisila-$user'))
+        .toList();
+  }
+  final res = await Process.run('systemctl',
+      ['show', 'gisila-$user.target', '--property=ConsistsOf', '--value']);
+  return (res.stdout as String? ?? '')
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((unit) => unit.isNotEmpty)
+      .toList();
+}
+
+/// One reading of a single process-manager unit.
+class _UnitHealth {
+  const _UnitHealth({
+    required this.name,
+    required this.activeState,
+    required this.subState,
+    required this.restarts,
+  });
+
+  final String name;
+  final String activeState;
+  final String subState;
+
+  /// systemd's `NRestarts`. Compared against the value read at the start of the
+  /// health window rather than used absolutely — what matters is whether the
+  /// unit is restarting *now*. Always 0 under supervisord, which exposes no
+  /// equivalent counter, so there the unit state is the only signal.
+  final int restarts;
+
+  /// `active` alone is not enough: a `Type=simple` unit is active from the
+  /// moment it forks, and one that systemd is busy restarting reads
+  /// `activating/auto-restart`.
+  bool get up => activeState == 'active' && subState == 'running';
+}
+
+Future<_UnitHealth> _readUnitHealth(
+  String unit, {
+  required bool isDocker,
+}) async {
+  if (isDocker) {
+    // "gisila-app_x  RUNNING   pid 42, uptime 0:00:12"
+    final res = await Process.run('supervisorctl', ['status', unit]);
+    final fields = (res.stdout as String? ?? '').trim().split(RegExp(r'\s+'));
+    final state = fields.length > 1 ? fields[1] : 'UNKNOWN';
+    return _UnitHealth(
+      name: unit,
+      activeState: state == 'RUNNING' ? 'active' : 'inactive',
+      subState: state == 'RUNNING' ? 'running' : state.toLowerCase(),
+      restarts: 0,
+    );
+  }
+  final res = await Process.run('systemctl', [
+    'show',
+    unit,
+    '--property=ActiveState',
+    '--property=SubState',
+    '--property=NRestarts',
+  ]);
+  final map = <String, String>{};
+  for (final line in (res.stdout as String? ?? '').split('\n')) {
+    final i = line.indexOf('=');
+    if (i > 0) map[line.substring(0, i)] = line.substring(i + 1).trim();
+  }
+  return _UnitHealth(
+    name: unit,
+    activeState: map['ActiveState'] ?? 'unknown',
+    subState: map['SubState'] ?? 'unknown',
+    restarts: int.tryParse(map['NRestarts'] ?? '') ?? 0,
+  );
+}
+
+/// GET `http://host:port<path>` and report whether the app answered, plus a
+/// short description of what came back.
+///
+/// Any status below 500 counts as an answer: a 404 from a mistyped health path,
+/// or a 302 to a login page, still proves the application was imported and
+/// routed the request. Only a 5xx — or no response at all — means it could not
+/// serve. Redirects are not followed, so the verdict is always about this app.
+Future<(bool, String)> _httpProbe(String host, int port, String path) async {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+  try {
+    final request = await client
+        .get(host, port, path)
+        .timeout(const Duration(seconds: 5));
+    request.followRedirects = false;
+    final response = await request.close().timeout(const Duration(seconds: 5));
+    await response.drain<void>();
+    return (response.statusCode < 500, 'HTTP ${response.statusCode}');
+  } catch (e) {
+    return (false, e.toString().split('\n').first);
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// The tail of a unit's journal, so a failed verification tells the operator
+/// *why* the app is down instead of only that it is.
+Future<List<String>> _unitLogTail(String unit, {int lines = 20}) async {
+  try {
+    final res = await Process.run(
+        'journalctl', ['-u', unit, '-n', '$lines', '--no-pager', '-o', 'cat']);
+    return (res.stdout as String? ?? '')
+        .split('\n')
+        .map((line) => line.trimRight())
+        .where((line) => line.isNotEmpty)
+        .toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
 Future<void> _uninstall(List<String> args) async {
   final r = _parse(args, (p) {
     p.addOption('user', mandatory: true);
@@ -905,7 +1225,7 @@ Future<void> _exec(List<String> args) async {
       : '$workDir/current';
   // The venv no longer lives in the source tree, so activate it by its stable
   // path instead of a `.venv` relative to the working directory.
-  final venvActivate = '${Builders.venvDir(workDir)}/bin/activate';
+  final venvActivate = '${Builders.venvLink(workDir)}/bin/activate';
   final activate =
       isPython ? '[ -f $venvActivate ] && source $venvActivate; ' : '';
 
@@ -4605,6 +4925,14 @@ Subcommands:
   unexpose-port --port N     (tcp apps: close the port on the host firewall)
   issue-cert    --hostname HOSTNAME
   start|stop|restart  --user app_xxx
+  app-health    --user app_xxx --runtime RT [--port N] [--health-path PATH] \\
+                [--expose-mode web|tcp|internal] [--timeout-sec N] \\
+                [--settle-sec N]
+                  (post-restart readiness probe — prints
+                   {"healthy":bool,"detail":…}; `Type=simple` units read
+                   `active` the moment they fork, so this polls unit state
+                   plus NRestarts, a TCP connect and, where one is
+                   configured, the app's health check path)
   uninstall     --user app_xxx [--app-id ID]
   logs          --user app_xxx [--work-dir PATH] [--lines N] [--follow]
   stat          --user app_xxx | --unit UNIT   (prints resource-usage JSON)

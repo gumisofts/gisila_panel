@@ -1013,6 +1013,24 @@ class Applier {
         await ShellExec.run('supervisorctl', ['restart', 'gisila-$linuxUser:*'],
             requireSuccess: false);
       } else {
+        // Clear any tripped start-rate limit first, for the same reason the app
+        // unit does below: the worker/beat/flower units carry StartLimitBurst,
+        // so a stack that was crash-looping before this deploy (a cgroup OOM
+        // kill on every boot is the usual cause) sits in `failed` with its
+        // limit exhausted, and systemd refuses to start it again with "start
+        // request repeated too quickly" — the deploy carrying the fix would be
+        // the one deploy that cannot apply it.
+        //
+        // The restart below is issued against the target and propagates to its
+        // members via their PartOf=, but reset-failed does not propagate: it
+        // acts only on the units it is named with. Hence the glob, which is
+        // matched against loaded units (a failed unit stays loaded) and is
+        // silently a no-op when it matches nothing — unlike a literal unit
+        // name, which errors with "Unit … not loaded". The target itself is not
+        // reset: it holds no processes and no start limit of its own.
+        await ShellExec.run(
+            'systemctl', ['reset-failed', 'gisila-$linuxUser-*.service'],
+            requireSuccess: false);
         await ShellExec.run(
             'systemctl', ['restart', 'gisila-$linuxUser.target']);
       }

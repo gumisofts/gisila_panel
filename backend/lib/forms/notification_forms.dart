@@ -1,4 +1,10 @@
+import 'dart:io';
+
 import 'package:gisila/gisila.dart';
+
+/// Same ceiling as app CPU quota: percent of one core, so a database that
+/// can use every core on the host is allowed to alert above 100%.
+final int _maxCpuThresholdPercent = Platform.numberOfProcessors * 100;
 
 /// `PUT /notifications/settings` — update the panel-wide outbound SMTP config.
 /// All fields optional (partial update); an empty `smtpPassword` means "leave
@@ -12,6 +18,9 @@ class UpdateSmtpConfigForm extends Form {
   final fromEmail = StringField(name: 'fromEmail', maxLength: 255);
   final fromName = StringField(name: 'fromName', maxLength: 128);
   final emailEnabled = BoolField(name: 'emailEnabled');
+  // Dedicated ops inbox. Empty string is treated as absent by the form
+  // binder (clears the stored address — see NotificationCore).
+  final alertEmail = EmailField(name: 'alertEmail', maxLength: 255);
 
   @override
   List<FormField<Object?>> collectFields() => [
@@ -23,6 +32,7 @@ class UpdateSmtpConfigForm extends Form {
         fromEmail,
         fromName,
         emailEnabled,
+        alertEmail,
       ];
 }
 
@@ -44,7 +54,8 @@ class CreateAlertRuleForm extends Form {
   final applicationId = IntField(name: 'applicationId');
   final metric = StringField(name: 'metric', required: true, maxLength: 32);
   final comparison = StringField(name: 'comparison', maxLength: 8);
-  final thresholdPercent = IntField(name: 'thresholdPercent', min: 0, max: 100);
+  final thresholdPercent =
+      IntField(name: 'thresholdPercent', min: 0, max: _maxCpuThresholdPercent);
   final severity = StringField(name: 'severity', maxLength: 16);
   final cooldownMinutes = IntField(name: 'cooldownMinutes', min: 1, max: 1440);
   final enabled = BoolField(name: 'enabled');
@@ -74,7 +85,8 @@ class CreateAlertRuleForm extends Form {
 class UpdateAlertRuleForm extends Form {
   final metric = StringField(name: 'metric', maxLength: 32);
   final comparison = StringField(name: 'comparison', maxLength: 8);
-  final thresholdPercent = IntField(name: 'thresholdPercent', min: 0, max: 100);
+  final thresholdPercent =
+      IntField(name: 'thresholdPercent', min: 0, max: _maxCpuThresholdPercent);
   final severity = StringField(name: 'severity', maxLength: 16);
   final cooldownMinutes = IntField(name: 'cooldownMinutes', min: 1, max: 1440);
   final enabled = BoolField(name: 'enabled');

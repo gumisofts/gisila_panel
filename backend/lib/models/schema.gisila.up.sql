@@ -451,6 +451,7 @@ CREATE TABLE "smtp_configs" (
   "from_email" VARCHAR(255),
   "from_name" VARCHAR(255) DEFAULT 'Gisila Panel',
   "email_enabled" BOOLEAN DEFAULT FALSE,
+  "alert_email" VARCHAR(255),
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
   "updated_at" TIMESTAMP WITH TIME ZONE
 );

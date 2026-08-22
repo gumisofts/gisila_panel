@@ -31,7 +31,7 @@ class NotificationsApi {
   ) async {
     requireSuperuser(ctx);
     final cfg = await notifications.getSmtpConfig();
-    return cfg.toJson();
+    return cfg.toJson(exclude: ['smtp_password']);
   }
 
   @Put('/settings/smtp', summary: 'Update the panel-wide SMTP config')
@@ -50,8 +50,9 @@ class NotificationsApi {
       fromEmail: form.fromEmail.value,
       fromName: form.fromName.value,
       emailEnabled: form.emailEnabled.value,
+      alertEmail: form.alertEmail.value,
     );
-    return cfg.toJson();
+    return cfg.toJson(exclude: ['smtp_password']);
   }
 
   @Post('/settings/smtp/test', summary: 'Send a one-off test email')

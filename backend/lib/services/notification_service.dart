@@ -33,6 +33,7 @@ class NotificationService extends Service {
     String? fromEmail,
     String? fromName,
     bool? emailEnabled,
+    String? alertEmail,
   }) => _core.updateSmtpConfig(
         smtpHost: smtpHost,
         smtpPort: smtpPort,
@@ -42,6 +43,7 @@ class NotificationService extends Service {
         fromEmail: fromEmail,
         fromName: fromName,
         emailEnabled: emailEnabled,
+        alertEmail: alertEmail,
       );
 
   Future<void> sendTestEmail(String toEmail) => _core.sendTestEmail(toEmail);
@@ -181,6 +183,7 @@ class NotificationCore {
     String? fromEmail,
     String? fromName,
     bool? emailEnabled,
+    String? alertEmail,
   }) async {
     final cfg = await getSmtpConfig();
     if (emailEnabled == true) {
@@ -209,6 +212,9 @@ class NotificationCore {
     if (fromEmail != null) data['fromEmail'] = fromEmail.isEmpty ? null : fromEmail;
     if (fromName != null) data['fromName'] = fromName;
     if (emailEnabled != null) data['emailEnabled'] = emailEnabled;
+    // The settings form always submits this field. Blank (the form binder
+    // turns "" into null) clears the dedicated recipient.
+    data['alertEmail'] = (alertEmail == null || alertEmail.isEmpty) ? null : alertEmail;
 
     await Query<SmtpConfig>(SmtpConfigTable.metadata)
         .where(SmtpConfigTable.id.eq(cfg.id!))
@@ -450,13 +456,21 @@ class NotificationCore {
     'status_down',
   };
 
+  /// CPU is "percent of one core" for postgres (and apps vs their quota can
+  /// overshoot), so the ceiling is host cores × 100 rather than 100.
+  static final int _maxCpuThresholdPercent = Platform.numberOfProcessors * 100;
+
   void _validateMetric({required String metric, int? thresholdPercent}) {
     if (!validMetrics.contains(metric)) {
       throw HttpException(422, 'Unknown metric "$metric".');
     }
     if (metric == 'status_down') return;
-    if (thresholdPercent == null || thresholdPercent < 0 || thresholdPercent > 100) {
-      throw HttpException(422, 'thresholdPercent must be between 0 and 100.');
+    if (thresholdPercent == null || thresholdPercent < 0) {
+      throw HttpException(422, 'thresholdPercent is required for "$metric".');
+    }
+    final max = metric == 'cpu_percent' ? _maxCpuThresholdPercent : 100;
+    if (thresholdPercent > max) {
+      throw HttpException(422, 'thresholdPercent must be between 0 and $max.');
     }
   }
 
@@ -604,6 +618,10 @@ class NotificationCore {
         .whereType<String>()
         .where((e) => e.isNotEmpty)
         .toList();
+    final dedicated = cfg.alertEmail?.trim();
+    if (dedicated != null && dedicated.isNotEmpty && !addresses.contains(dedicated)) {
+      addresses.add(dedicated);
+    }
     if (addresses.isEmpty) return;
 
     try {

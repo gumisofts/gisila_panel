@@ -35,7 +35,8 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
         'smtpSecurity': <String, Object?>{'type': 'string'},
         'fromEmail': <String, Object?>{'type': 'string'},
         'fromName': <String, Object?>{'type': 'string'},
-        'emailEnabled': <String, Object?>{'type': 'boolean'}
+        'emailEnabled': <String, Object?>{'type': 'boolean'},
+        'alertEmail': <String, Object?>{'type': 'string', 'format': 'email'}
       }
     });
     spec.putSchema('SendTestEmailForm', <String, Object?>{

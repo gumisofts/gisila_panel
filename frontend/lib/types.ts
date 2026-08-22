@@ -737,6 +737,9 @@ export interface SmtpConfig {
   fromEmail?: string | null;
   fromName: string;
   emailEnabled: boolean;
+  // Extra inbox every firing alert email is sent to, on top of superuser /
+  // team-member recipients. Blank means "admins (and team) only".
+  alertEmail?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 }

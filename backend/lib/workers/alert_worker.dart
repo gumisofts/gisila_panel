@@ -215,7 +215,7 @@ class AlertEvaluator {
         final basisPoints = (snapshot['cpuPercent'] as num?)?.toInt();
         if (basisPoints == null) return null;
         return _Observation(
-          percent: (basisPoints / 100).round().clamp(0, 1000),
+          percent: (basisPoints / 100).round().clamp(0, 10000),
           isDown: false,
           targetLabel: inst.displayName,
         );

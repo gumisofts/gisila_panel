@@ -1292,6 +1292,11 @@ SmtpConfig:
     email_enabled:
       type: boolean
       default: false
+    # Extra inbox every firing alert email is sent to, on top of the
+    # superuser / team-member recipients. Blank means "admins only".
+    alert_email:
+      type: varchar
+      is_null: true
     created_at:
       type: timestamp
       is_null: false
@@ -1347,7 +1352,9 @@ AlertRule:
     comparison:
       type: varchar
       default: gte
-    # 0..100. Left null for the status_down metric (no threshold to configure).
+    # Percent. 0..100 for memory/disk/connections; cpu_percent on a
+    # multi-core database can go above 100 (100 = one full core).
+    # Left null for the status_down metric (no threshold to configure).
     threshold_percent:
       type: integer
       is_null: true

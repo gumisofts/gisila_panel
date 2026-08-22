@@ -34,7 +34,11 @@ export function AlertsPanel({
         mongoInstanceId={engine === "mongo" ? instanceId : undefined}
         canWrite
         title="Alert rules"
-        description="Get notified when this instance's connection usage crosses a threshold, or when it goes down."
+        description={
+          engine === "postgres"
+            ? "Get notified when this instance's CPU or connection usage crosses a threshold, or when it goes down. CPU is measured as percent of one core, so a multi-core host can go well above 100%."
+            : "Get notified when this instance's connection usage crosses a threshold, or when it goes down."
+        }
       />
     </PageSection>
   );

@@ -6110,6 +6110,7 @@ class SmtpConfig with Preloadable {
   final String? fromEmail;
   final String? fromName;
   final bool? emailEnabled;
+  final String? alertEmail;
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -6123,6 +6124,7 @@ class SmtpConfig with Preloadable {
     this.fromEmail,
     this.fromName,
     this.emailEnabled,
+    this.alertEmail,
     required this.createdAt,
     this.updatedAt,
   });
@@ -6137,6 +6139,7 @@ class SmtpConfig with Preloadable {
     fromEmail: row['from_email'] as String?,
     fromName: row['from_name'] as String?,
     emailEnabled: row['email_enabled'] as bool?,
+    alertEmail: row['alert_email'] as String?,
     createdAt: row['created_at'] is DateTime
         ? row['created_at'] as DateTime
         : DateTime.parse(row['created_at'].toString()),
@@ -6157,6 +6160,7 @@ class SmtpConfig with Preloadable {
     'from_email': fromEmail,
     'from_name': fromName,
     'email_enabled': emailEnabled,
+    'alert_email': alertEmail,
     'created_at': createdAt,
     'updated_at': updatedAt,
   };
@@ -6184,6 +6188,7 @@ class SmtpConfig with Preloadable {
     String? fromEmail,
     String? fromName,
     bool? emailEnabled,
+    String? alertEmail,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => SmtpConfig(
@@ -6196,6 +6201,7 @@ class SmtpConfig with Preloadable {
     fromEmail: fromEmail ?? this.fromEmail,
     fromName: fromName ?? this.fromName,
     emailEnabled: emailEnabled ?? this.emailEnabled,
+    alertEmail: alertEmail ?? this.alertEmail,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -6248,6 +6254,10 @@ class SmtpConfigTable {
     table: 'smtp_configs',
     column: 'email_enabled',
   );
+  static const ColumnRef<String?> alertEmail = ColumnRef<String?>(
+    table: 'smtp_configs',
+    column: 'alert_email',
+  );
   static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
     table: 'smtp_configs',
     column: 'created_at',
@@ -6270,6 +6280,7 @@ class SmtpConfigTable {
       'from_email',
       'from_name',
       'email_enabled',
+      'alert_email',
       'created_at',
       'updated_at',
     ],

@@ -19,14 +19,17 @@ class Provisioner {
     ]);
   }
 
-  /// Create /srv/apps/<user>/{current,releases,shared,tmp,logs,.corepack} with
-  /// 0750.
+  /// Create /srv/apps/<user>/{current,releases,shared,tmp,logs,venv,.corepack}
+  /// with 0750.
   ///
-  /// `.corepack` is the COREPACK_HOME for Node/pnpm apps and is listed in the
-  /// systemd unit's `ReadWritePaths=`. systemd requires every `ReadWritePaths=`
-  /// target to exist before it sets up the mount namespace, so a missing
-  /// `.corepack` makes the service fail with `status=226/NAMESPACE`. Creating
-  /// it for every app is harmless for non-Node runtimes (it stays empty).
+  /// `.corepack` is the COREPACK_HOME for Node/pnpm apps and `venv` holds a
+  /// Python app's virtualenv generations; both are listed in the systemd unit's
+  /// `ReadWritePaths=`. systemd requires every `ReadWritePaths=` target to exist
+  /// before it sets up the mount namespace, so a missing one makes the service
+  /// fail with an opaque `status=226/NAMESPACE` — which is what a Python app
+  /// whose first build never got as far as creating the venv would otherwise hit
+  /// on every restart. Creating both for every app is harmless for the runtimes
+  /// that don't use them (they stay empty).
   static Future<void> ensureWorkDir(String workDir, String user) async {
     final root = Directory(workDir);
     if (!root.existsSync()) root.createSync(recursive: true);
@@ -41,6 +44,7 @@ class Provisioner {
       'shared/media',
       'tmp',
       'logs',
+      'venv',
       '.corepack'
     ]) {
       final d = Directory('${root.path}/$sub');
@@ -78,10 +82,19 @@ class Provisioner {
   static Future<void> ensureEnvFile(
       String workDir, String user, Map<String, String> envVars,
       {bool onlyIfMissing = false}) async {
-    final file = File('$workDir/.env');
-    if (onlyIfMissing && file.existsSync()) return;
-    file.writeAsStringSync(renderEnvFile(envVars));
-    await ShellExec.run('chown', ['$user:$user', file.path]);
-    await ShellExec.run('chmod', ['0640', file.path]);
+    final path = '$workDir/.env';
+    if (onlyIfMissing && File(path).existsSync()) return;
+    // Write a sibling and rename over the destination rather than truncating in
+    // place. Every unit reads this file through `EnvironmentFile=` at start, and
+    // a service that happens to restart mid-write would otherwise come up with a
+    // half-written environment — the same class of problem as a deploy rewriting
+    // the code under a running process. rename(2) swaps the whole file at once,
+    // and the mode and owner are set on the temporary file first so the values
+    // in it are never briefly readable by anyone but the app user.
+    final tmp = '$workDir/.env.incoming';
+    File(tmp).writeAsStringSync(renderEnvFile(envVars));
+    await ShellExec.run('chown', ['$user:$user', tmp]);
+    await ShellExec.run('chmod', ['0640', tmp]);
+    await ShellExec.run('mv', ['-f', tmp, path]);
   }
 }
