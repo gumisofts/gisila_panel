@@ -29,6 +29,10 @@
   gap: spacing.$spacing-02;
 }
 
+.gisila-inbox__pagination {
+  margin-block-start: spacing.$spacing-05;
+}
+
 .gisila-inbox__item {
   display: flex;
   align-items: flex-start;

@@ -72,7 +72,7 @@ class MetricsCollector {
       if (app.id == null || user == null) continue;
       activeIds.add(app.id!);
       try {
-        await _sampleApp(app.id!, user);
+        await _sampleApp(app.id!, user, app.runtime);
       } catch (e) {
         logger.w('metrics: sampling app ${app.id} failed: $e');
       }
@@ -139,8 +139,11 @@ class MetricsCollector {
     _pgLast.removeWhere((id, _) => !activeIds.contains(id));
   }
 
-  Future<void> _sampleApp(int appId, String linuxUser) async {
-    final stat = await _agentStat(['stat', '--user', linuxUser]);
+  /// [runtime] lets the agent resolve how many units the app occupies: a Celery
+  /// app is a service per worker plus flower and beat, not one `gisila-<user>`.
+  Future<void> _sampleApp(int appId, String linuxUser, String runtime) async {
+    final stat =
+        await _agentStat(['stat', '--user', linuxUser, '--runtime', runtime]);
     if (stat == null) return;
 
     final memBytes = (stat['memBytes'] as num?)?.toInt() ?? 0;

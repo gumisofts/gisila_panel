@@ -217,14 +217,19 @@ class NotificationsApi {
     RequestContext ctx,
     bool? unreadOnly,
     int? limit,
+    int? offset,
   ) async {
     final user = currentUser(ctx);
-    final items = await notifications.listInbox(
+    final page = await notifications.listInbox(
       user.id!,
       unreadOnly: unreadOnly ?? false,
       limit: limit ?? 50,
+      offset: offset ?? 0,
     );
-    return <String, Object?>{'results': items.map((n) => n.toJson()).toList()};
+    return <String, Object?>{
+      'results': page.items.map((n) => n.toJson()).toList(),
+      'count': page.count,
+    };
   }
 
   @Get('/inbox/unread-count', summary: 'Unread notification count for the bell badge')

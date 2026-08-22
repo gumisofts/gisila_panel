@@ -1399,6 +1399,12 @@ String? _dartSdkBinDir(String? preferred) {
 /// whole process tree, e.g. gunicorn masters + workers). In Docker (supervisord)
 /// it falls back to reading `/proc/<pid>` for the program's main process.
 ///
+/// An app may occupy more than one unit — see [_statTargets] — in which case the
+/// figures are summed. Each unit is its own cgroup, so nothing is double
+/// counted. A summed `cpuUsageNsec` does drop when one of the units restarts and
+/// its counter resets; callers already have to tolerate that, since a single
+/// unit restarting does the same thing.
+///
 /// `memBytes` is the *working set*: the cgroup's memory charge minus cold
 /// reclaimable page cache. Reporting raw `MemoryCurrent` instead makes any
 /// file-heavy service (Postgres especially) appear to consume tens of GB,
@@ -1415,10 +1421,12 @@ Future<void> _stat(List<String> args) async {
     p.addOption('user'); // app linux user → unit gisila-<user>.service
     p.addOption('unit'); // explicit systemd unit (e.g. postgresql@16-main)
     p.addOption('program'); // explicit supervisord program name (Docker)
+    p.addOption('runtime'); // app runtime; celery spans one unit per worker
   });
   final user = r['user'] as String?;
   final explicitUnit = r['unit'] as String?;
-  final program = r['program'] as String? ?? (user != null ? 'gisila-$user' : null);
+  final explicitProgram = r['program'] as String?;
+  final runtime = (r['runtime'] as String?)?.trim();
   final isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true';
 
   var memBytes = 0;
@@ -1426,52 +1434,76 @@ Future<void> _stat(List<String> args) async {
   var anonBytes = 0;
   var cpuNsec = 0;
   var tasks = 0;
-  var active = 'unknown';
+  final states = <String>[];
 
   if (isDocker) {
-    if (program == null) throw ArgumentError('--user or --program required');
-    final stat = await _statFromProc(program);
-    memBytes = stat.$1;
-    memChargeBytes = stat.$1;
-    anonBytes = stat.$1;
-    cpuNsec = stat.$2;
-    active = stat.$3;
-  } else {
-    final unit = explicitUnit ?? (user != null ? 'gisila-$user.service' : null);
-    if (unit == null) throw ArgumentError('--user or --unit required');
-    final res = await Process.run('systemctl', [
-      'show',
-      unit,
-      '--property=MemoryCurrent',
-      '--property=ControlGroup',
-      '--property=CPUUsageNSec',
-      '--property=TasksCurrent',
-      '--property=ActiveState',
-    ]);
-    final map = <String, String>{};
-    for (final line in (res.stdout as String).split('\n')) {
-      final i = line.indexOf('=');
-      if (i > 0) map[line.substring(0, i)] = line.substring(i + 1).trim();
+    final programs = explicitProgram != null
+        ? [explicitProgram]
+        : user != null
+            ? await _statTargets(user: user, runtime: runtime, isDocker: true)
+            : const <String>[];
+    if (programs.isEmpty) throw ArgumentError('--user or --program required');
+    for (final program in programs) {
+      final stat = await _statFromProc(program);
+      memBytes += stat.$1;
+      memChargeBytes += stat.$1;
+      anonBytes += stat.$1;
+      cpuNsec += stat.$2;
+      states.add(stat.$3);
     }
-    memChargeBytes = _statInt(map['MemoryCurrent']);
-    cpuNsec = _statInt(map['CPUUsageNSec']);
-    tasks = _statInt(map['TasksCurrent']);
-    active = map['ActiveState'] ?? 'unknown';
+  } else {
+    final units = explicitUnit != null
+        ? [explicitUnit]
+        : user != null
+            ? await _statTargets(user: user, runtime: runtime, isDocker: false)
+            : const <String>[];
+    if (units.isEmpty) throw ArgumentError('--user or --unit required');
+    for (final unit in units) {
+      final res = await Process.run('systemctl', [
+        'show',
+        unit,
+        '--property=MemoryCurrent',
+        '--property=ControlGroup',
+        '--property=CPUUsageNSec',
+        '--property=TasksCurrent',
+        '--property=ActiveState',
+      ]);
+      final map = <String, String>{};
+      for (final line in (res.stdout as String).split('\n')) {
+        final i = line.indexOf('=');
+        if (i > 0) map[line.substring(0, i)] = line.substring(i + 1).trim();
+      }
+      final unitCharge = _statInt(map['MemoryCurrent']);
+      cpuNsec += _statInt(map['CPUUsageNSec']);
+      tasks += _statInt(map['TasksCurrent']);
+      memChargeBytes += unitCharge;
+      states.add(map['ActiveState'] ?? 'unknown');
 
-    final breakdown = await _cgroupMemory(map['ControlGroup'] ?? '');
-    if (breakdown != null) {
-      // Working set, as cAdvisor/Kubernetes define it. `inactive_file` is the
-      // cache the kernel would evict first under pressure, so excluding it
-      // leaves what the service would actually have to keep resident.
-      memBytes = (memChargeBytes - breakdown.inactiveFile).clamp(0, memChargeBytes);
-      anonBytes = breakdown.anon;
-    } else {
-      // cgroup v1, or memory.stat unreadable. Better to over-report than to
-      // silently report zero for a running unit.
-      memBytes = memChargeBytes;
-      anonBytes = memChargeBytes;
+      final breakdown = await _cgroupMemory(map['ControlGroup'] ?? '');
+      if (breakdown != null) {
+        // Working set, as cAdvisor/Kubernetes define it. `inactive_file` is the
+        // cache the kernel would evict first under pressure, so excluding it
+        // leaves what the service would actually have to keep resident.
+        memBytes += (unitCharge - breakdown.inactiveFile).clamp(0, unitCharge);
+        anonBytes += breakdown.anon;
+      } else {
+        // cgroup v1, or memory.stat unreadable. Better to over-report than to
+        // silently report zero for a running unit.
+        memBytes += unitCharge;
+        anonBytes += unitCharge;
+      }
     }
   }
+
+  // One reading covering several units is "active" as long as something is
+  // running: a Celery app with a crashed worker is degraded, not stopped, and
+  // health reporting (which inspects each unit separately) is what draws that
+  // distinction.
+  final active = states.contains('active')
+      ? 'active'
+      : states.isEmpty
+          ? 'unknown'
+          : states.first;
 
   stdout.writeln(jsonEncode({
     'ok': true,
@@ -1482,6 +1514,35 @@ Future<void> _stat(List<String> args) async {
     'tasks': tasks,
     'active': active,
   }));
+}
+
+/// The units (or supervisord programs) whose usage sums to one app's footprint.
+///
+/// Everything except Celery runs as the single `gisila-<user>` unit. Celery has
+/// no such unit at all — apply-unit writes one service per worker plus flower
+/// and optional beat — and `systemctl show` of a unit that does not exist still
+/// exits 0, reporting every property as "[not set]". Sampling that name is
+/// therefore silently indistinguishable from an idle app, which is why Celery
+/// metrics read as a flat zero rather than as an error.
+Future<List<String>> _statTargets({
+  required String user,
+  required String? runtime,
+  required bool isDocker,
+}) async {
+  if (runtime == 'celery') {
+    return _healthUnits(user, 'celery', isDocker: isDocker);
+  }
+  final single = isDocker ? 'gisila-$user' : 'gisila-$user.service';
+  if (runtime != null && runtime.isNotEmpty) return [single];
+
+  // Runtime unknown — an older panel calling a newer agent. `gisila-<user>.target`
+  // is written only for Celery apps, so its membership doubles as the probe.
+  // There is no equally cheap probe under supervisord, where asking about a
+  // group that does not exist prints an error line that parses like a program
+  // name, so the single program stands.
+  if (isDocker) return [single];
+  final members = await _healthUnits(user, 'celery', isDocker: false);
+  return members.isNotEmpty ? members : [single];
 }
 
 /// The subset of cgroup v2 `memory.stat` fields needed to reduce a raw memory
@@ -4935,7 +4996,9 @@ Subcommands:
                    configured, the app's health check path)
   uninstall     --user app_xxx [--app-id ID]
   logs          --user app_xxx [--work-dir PATH] [--lines N] [--follow]
-  stat          --user app_xxx | --unit UNIT   (prints resource-usage JSON)
+  stat          --user app_xxx [--runtime RT] | --unit UNIT
+                (prints resource-usage JSON; --runtime celery sums every
+                 worker/flower/beat unit of the app)
   exec          --user app_xxx --work-dir PATH --command CMD \\
                 [--runtime RT] [--timeout SECONDS]
   service       install|configure|start|stop|uninstall \\

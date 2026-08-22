@@ -63,6 +63,19 @@ class CeleryWorkerUnit {
     final extraArgsStr =
         (extraArgs != null && extraArgs!.isNotEmpty) ? ' ${extraArgs!.trim()}' : '';
 
+    // Celery node names must be unique across every worker on the broker, not
+    // just within one app. Two apps sharing a broker with colliding names share
+    // pidbox queues, so Flower lists the union of the names (10 workers show up
+    // as 6) and a remote-control command aimed at one app can be answered by
+    // the other's worker. `$linuxUser` is the per-app unix account, so it scopes
+    // the name to the app.
+    //
+    // `%%h` is deliberate: systemd expands `%h` itself, to the *manager's* home
+    // (`/root` for system units, regardless of User=), before celery ever sees
+    // the argument. Escaping it passes a literal `%h` through so celery expands
+    // it to the real hostname.
+    final nodeName = '$linuxUser-worker-$workerIndex@%%h';
+
     return '''
 [Unit]
 Description=Gisila Celery worker $workerIndex for $linuxUser (id=$appId)
@@ -90,7 +103,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$src
-ExecStart=$venv/bin/celery -A $celeryApp worker -n worker-$workerIndex@%h --loglevel=info -c $concurrency$queuesArg$extraArgsStr
+ExecStart=$venv/bin/celery -A $celeryApp worker -n $nodeName --loglevel=info -c $concurrency$queuesArg$extraArgsStr
 Restart=always
 RestartSec=10
 

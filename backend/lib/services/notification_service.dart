@@ -138,8 +138,13 @@ class NotificationService extends Service {
         limit: limit,
       );
 
-  Future<List<Notification>> listInbox(int userId, {bool unreadOnly = false, int limit = 50}) =>
-      _core.listInbox(userId, unreadOnly: unreadOnly, limit: limit);
+  Future<({List<Notification> items, int count})> listInbox(
+    int userId, {
+    bool unreadOnly = false,
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      _core.listInbox(userId, unreadOnly: unreadOnly, limit: limit, offset: offset);
 
   Future<int> unreadCount(int userId) => _core.unreadCount(userId);
 
@@ -711,15 +716,36 @@ class NotificationCore {
 
   // ── Inbox (per-user) ─────────────────────────────────────────────────────
 
-  Future<List<Notification>> listInbox(
+  /// A page of [userId]'s notifications, newest first, plus the total row
+  /// count (respecting [unreadOnly]) so the caller can render page numbers.
+  Future<({List<Notification> items, int count})> listInbox(
     int userId, {
     bool unreadOnly = false,
     int limit = 50,
+    int offset = 0,
   }) async {
-    var q = Query<Notification>(NotificationTable.metadata)
+    final capped = limit.clamp(1, 500);
+    final safeOffset = offset < 0 ? 0 : offset;
+    final db = _db.context();
+
+    // Two separate builders: `.count()` must run without the LIMIT/OFFSET/
+    // ORDER BY the page query sets, or it would count only the current page.
+    var itemsQuery = Query<Notification>(NotificationTable.metadata)
         .where(NotificationTable.userId.eq(userId));
-    if (unreadOnly) q = q.where(NotificationTable.readAt.isNull);
-    return q.orderBy(NotificationTable.createdAt, desc: true).limit(limit).all(_db.context());
+    var countQuery = Query<Notification>(NotificationTable.metadata)
+        .where(NotificationTable.userId.eq(userId));
+    if (unreadOnly) {
+      itemsQuery = itemsQuery.where(NotificationTable.readAt.isNull);
+      countQuery = countQuery.where(NotificationTable.readAt.isNull);
+    }
+
+    final items = await itemsQuery
+        .orderBy(NotificationTable.createdAt, desc: true)
+        .limit(capped)
+        .offset(safeOffset)
+        .all(db);
+    final count = await countQuery.count(db);
+    return (items: items, count: count);
   }
 
   Future<int> unreadCount(int userId) => Query<Notification>(NotificationTable.metadata)

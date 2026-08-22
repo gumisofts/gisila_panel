@@ -53,6 +53,18 @@ class CeleryWorkerSupervisorConf {
     final extraArgsStr =
         (extraArgs != null && extraArgs!.isNotEmpty) ? ' ${extraArgs!.trim()}' : '';
 
+    // Celery node names must be unique across every worker on the broker, not
+    // just within one app. Two apps sharing a broker with colliding names share
+    // pidbox queues, so Flower lists the union of the names (10 workers show up
+    // as 6) and a remote-control command aimed at one app can be answered by
+    // the other's worker. `$linuxUser` is the per-app unix account, so it scopes
+    // the name to the app.
+    //
+    // `%%h` is doubled for the same reason as the basic-auth value below:
+    // supervisor `%`-expands `command=` and rejects the whole program block on a
+    // bare `%h`. The literal `%h` that survives is expanded by celery itself.
+    String nodeName(int i) => '$linuxUser-worker-$i@%%h';
+
     // Flower is reverse-proxied at the app's domain and has no auth of its own,
     // so it must run with HTTP basic-auth from `FLOWER_BASIC_AUTH`
     // ("user:password"). Supervisor runs `command=` without a shell and does
@@ -70,7 +82,7 @@ class CeleryWorkerSupervisorConf {
     for (var i = 1; i <= workerCount; i++) {
       buf.write('''
 [program:gisila-$linuxUser-worker-$i]
-command=$venv/bin/celery -A $celeryApp worker -n worker-$i@%h --loglevel=info -c $concurrency$queuesArg$extraArgsStr --logfile=$logs/worker-$i.log
+command=$venv/bin/celery -A $celeryApp worker -n ${nodeName(i)} --loglevel=info -c $concurrency$queuesArg$extraArgsStr --logfile=$logs/worker-$i.log
 directory=$src
 user=$linuxUser
 autostart=true

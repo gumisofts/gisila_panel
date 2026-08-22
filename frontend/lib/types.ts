@@ -224,8 +224,8 @@ export interface BuildLog {
 export interface ListResponse<T> {
   results: T[];
   // Total matching rows, independent of how many `results` came back on this
-  // page. Only endpoints that support `limit`/`offset` (e.g. `/audit/`)
-  // populate this; unpaginated list endpoints omit it.
+  // page. Only endpoints that support `limit`/`offset` (e.g. `/audit/`,
+  // `/notifications/inbox`) populate this; unpaginated list endpoints omit it.
   count?: number;
 }
 
