@@ -618,20 +618,37 @@ Future<void> _applyUnit(List<String> args) async {
   }
 
   var runtimeBinDir = r['runtime-bin-dir'] as String?;
+  final extraBinDirs = <String>[];
 
-  // Node apps: prepend the build-resolved pnpm store bin dir (recorded by the
-  // `build` step in $workDir/.pnpm-bin) so `pnpm start` invokes the exact
-  // pinned pnpm by path — corepack never runs at runtime. Kept first so it wins
-  // over any node-version bin dir and the system corepack shims in /usr/bin.
+  // Node/Bun: the build writes current/.runtime even when the app has no
+  // version pin (it picks the newest installed toolchain). systemd will not
+  // find `node`/`npm`/`bun` on its own PATH — they live under /opt/fnm or
+  // /opt/bun-versions — so default the search path from that symlink when the
+  // worker did not pass --runtime-bin-dir.
   if (runtime == 'node') {
+    final nodeBin = '$workDir/current/.runtime/bin';
+    if ((runtimeBinDir == null || runtimeBinDir.isEmpty) &&
+        Directory(nodeBin).existsSync()) {
+      runtimeBinDir = nodeBin;
+    }
+    // Prepend the build-resolved pnpm store bin dir (recorded by the `build`
+    // step in $workDir/.pnpm-bin) so `pnpm start` invokes the exact pinned
+    // pnpm by path — corepack never runs at runtime. Kept first so it wins
+    // over any node-version bin dir and the system corepack shims in /usr/bin.
     final marker = File('$workDir/.pnpm-bin');
     if (marker.existsSync()) {
       final pnpmBinDir = marker.readAsStringSync().trim();
       if (pnpmBinDir.isNotEmpty) {
+        extraBinDirs.add(pnpmBinDir);
         runtimeBinDir = (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
             ? '$pnpmBinDir:$runtimeBinDir'
             : pnpmBinDir;
       }
+    }
+  } else if (runtime == 'bun') {
+    if ((runtimeBinDir == null || runtimeBinDir.isEmpty) &&
+        File('$workDir/current/.runtime').existsSync()) {
+      runtimeBinDir = '$workDir/current';
     }
   }
 
@@ -649,7 +666,12 @@ Future<void> _applyUnit(List<String> args) async {
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
         ? runtimeBinDir
         : null,
-    execResolver: ExecResolver.forRuntime(runtime, workDir: workDir, src: src),
+    execResolver: ExecResolver.forRuntime(
+      runtime,
+      workDir: workDir,
+      src: src,
+      extraBinDirs: extraBinDirs,
+    ),
     workingDir: unitWorkingDir,
     writableSource: unitWritableSource,
     envVars: envVars,

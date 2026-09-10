@@ -195,8 +195,8 @@ written:
 | Runtime | Searched for a bare name | Runs its scripts |
 |---|---|---|
 | `python`, `celery` | `<workDir>/current/.venv/bin` | `<venv>/bin/python` for `.py` |
-| `node` | `<src>/node_modules/.bin` | `node` for `.js` / `.mjs` / `.cjs` |
-| `bun` | `<src>/node_modules/.bin` | `bun`, also for `.ts` / `.tsx` |
+| `node` | `<workDir>/current/.runtime/bin`, `<src>/node_modules/.bin` | `<runtime>/bin/node` for `.js` / `.mjs` / `.cjs` |
+| `bun` | `<workDir>/current`, `<src>/node_modules/.bin` | `<workDir>/current/.runtime` (the bun binary), also for `.ts` / `.tsx` |
 | `rust` | `<src>/target/release`, `target/debug` | — (cargo emits real binaries) |
 | `go`, `dart`, `zig`, binary | `<workDir>/current` | — |
 
@@ -207,23 +207,29 @@ Worked through, for a python and a node app:
 | `python manage.py run_tcp_server` | `<venv>/bin/python manage.py run_tcp_server` |
 | `gunicorn app:application` | `<venv>/bin/gunicorn app:application` |
 | `manage.py runserver`, `./manage.py …` | `<venv>/bin/python <src>/manage.py runserver` |
-| `next start -p 3000` | `node <src>/node_modules/.bin/next start -p 3000` |
+| `next start -p 3000` | `<runtime>/bin/node <src>/node_modules/.bin/next start -p 3000` |
+| `node server.js` | `<runtime>/bin/node server.js` |
+| `npm start` | `<runtime>/bin/node <runtime>/bin/npm start` |
 | `esbuild --serve` | `<src>/node_modules/.bin/esbuild --serve` |
 | `api` (rust), `app` (go) | `<src>/target/release/api`, `<workDir>/current/app` |
-| `npm start`, `/opt/x/bin/x` | unchanged |
+| `/opt/x/bin/x` | unchanged |
+
+The Node/Bun interpreter has to be an **absolute** path. systemd looks `ExecStart=` up on *its own* PATH (`/usr/bin` and friends), not on the unit's `Environment=PATH=`. Leaving a bare `node` after installing Node via fnm under `/opt/fnm` is exactly the failure `systemd-analyze verify` reports as `Command node is not executable: No such file or directory`. The unit also sets `ExecSearchPath=` to the same runtime bin dir so any leftover bare name still resolves.
 
 Two rules make that table fall out of one implementation rather than a pile of
 per-runtime special cases:
 
 - **Whether to prepend the interpreter** is decided by reading the program's
   shebang, not by which directory it came from. `#!/usr/bin/env node` — every
-  `node_modules/.bin` shim — resolves through `PATH`, the one thing the unit
-  can't supply (and AppArmor won't follow the indirection), so those are handed
-  to `node` explicitly. A venv console script like `gunicorn` carries an
-  absolute `#!…/.venv/bin/python` that works as-is, and a compiled binary such
-  as `esbuild` has no shebang at all; both are exec'd directly.
-- **Anything the resolver can't place is returned untouched** for `PATH`, so
-  `npm start` and friends behave exactly as they did before.
+  `node_modules/.bin` shim, and npm/npx themselves — resolves through `PATH`,
+  the one thing the unit can't supply (and AppArmor won't follow the
+  indirection), so those are handed to the absolute `node` explicitly. A venv
+  console script like `gunicorn` carries an absolute `#!…/.venv/bin/python`
+  that works as-is, and a compiled binary such as `esbuild` has no shebang at
+  all; both are exec'd directly.
+- **Anything the resolver can't place is returned untouched** for
+  `ExecSearchPath=` / PATH, so an unrecognized command still behaves as it
+  did before.
 
 A relative path is resolved against the unit's working directory, falling back
 to the app root — so the `./current/app` spelling this doc and the panel's

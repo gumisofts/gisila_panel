@@ -18,24 +18,34 @@ import 'dart:io';
 /// runs its source files, and [resolve] rewrites the command's first token to
 /// match. A token it cannot place is returned untouched for PATH to resolve,
 /// so nothing that worked before starts failing.
+///
+/// systemd is stricter than that sounds. `ExecStart=` is looked up on the
+/// *manager's* PATH (`/usr/bin` and friends) — or on `ExecSearchPath=` — not
+/// on the unit's `Environment=PATH=`. A bare `node` / `npm` therefore fails
+/// `systemd-analyze verify` with "Command node is not executable" even after
+/// the app's Node install is sitting at `<workDir>/current/.runtime`. JIT
+/// interpreters are rewritten to that absolute path, the same way python is
+/// rewritten to the venv.
 class ExecResolver {
   const ExecResolver({
     this.binDirs = const [],
     this.interpreter,
     this.scriptSuffixes = const [],
     this.altBaseDir,
+    this.commandAliases = const {},
   });
 
   /// The runtime's own installation dirs for executables a start command can
-  /// name — the virtualenv's `bin`, `node_modules/.bin`, cargo's
-  /// `target/release`. Searched in order for a bare name, before PATH.
+  /// name — the virtualenv's `bin`, the pinned Node install's `bin`,
+  /// `node_modules/.bin`, cargo's `target/release`. Searched in order for a
+  /// bare name, before PATH.
   final List<String> binDirs;
 
   /// Runs this runtime's source files, and any [binDirs] entry whose shebang
-  /// the sandbox can't honour. Absolute for python, where pointing at the
-  /// venv's interpreter is the entire point; a bare `node` / `bun` for the JIT
-  /// runtimes, whose unit already pins the right version on PATH through
-  /// `runtimeBinDir`. Null for compiled runtimes, which have no scripts.
+  /// the sandbox can't honour. Always an absolute path when the runtime has
+  /// one: the venv's `python`, the pinned `node` under `.runtime/bin`, the
+  /// bun binary at `.runtime`. Null for compiled runtimes, which have no
+  /// scripts.
   final String? interpreter;
 
   /// Extensions of the source files [interpreter] can run.
@@ -48,12 +58,21 @@ class ExecResolver {
   /// which one a given runtime uses.
   final String? altBaseDir;
 
+  /// Bare command names whose on-disk file is not `$dir/$token` — today just
+  /// bun, which the build symlinks as `<workDir>/current/.runtime` rather than
+  /// as a file named `bun`. Checked before [binDirs].
+  final Map<String, String> commandAliases;
+
   /// The resolver for [runtime], given an app's layout: [workDir] is the app
   /// root (`/srv/apps/app_xxx`) and [src] the build source tree it runs from.
+  ///
+  /// [extraBinDirs] are searched first (a pinned pnpm prefix, …) so a start
+  /// command that names that tool still becomes an absolute ExecStart.
   factory ExecResolver.forRuntime(
     String runtime, {
     required String workDir,
     required String src,
+    List<String> extraBinDirs = const [],
   }) {
     switch (runtime) {
       // Celery apps share the python layout (same venv, same source tree).
@@ -61,22 +80,29 @@ class ExecResolver {
       case 'celery':
         final venv = '$workDir/current/.venv/bin';
         return ExecResolver(
-          binDirs: [venv],
+          binDirs: [...extraBinDirs, venv],
           interpreter: '$venv/python',
           scriptSuffixes: const ['.py'],
           altBaseDir: workDir,
         );
       case 'node':
+        // Builders.buildNode symlinks the fnm install to current/.runtime, so
+        // node/npm/npx live here rather than on the system PATH.
+        final nodeBin = '$workDir/current/.runtime/bin';
         return ExecResolver(
-          binDirs: ['$src/node_modules/.bin'],
-          interpreter: 'node',
+          binDirs: [...extraBinDirs, nodeBin, '$src/node_modules/.bin'],
+          interpreter: '$nodeBin/node',
           scriptSuffixes: const ['.js', '.mjs', '.cjs'],
           altBaseDir: workDir,
         );
       case 'bun':
+        // Builders.buildBun symlinks the binary itself to current/.runtime
+        // (no bin/ subdirectory). The file is not named `bun`.
+        final bunBin = '$workDir/current/.runtime';
         return ExecResolver(
-          binDirs: ['$src/node_modules/.bin'],
-          interpreter: 'bun',
+          binDirs: [...extraBinDirs, '$workDir/current', '$src/node_modules/.bin'],
+          interpreter: bunBin,
+          commandAliases: {'bun': bunBin},
           // Bun runs TypeScript directly, so its entrypoint may well be a .ts.
           scriptSuffixes: const ['.js', '.mjs', '.cjs', '.ts', '.tsx'],
           altBaseDir: workDir,
@@ -124,13 +150,19 @@ class ExecResolver {
         if (File(alt).existsSync()) program = alt;
       }
     } else {
-      // A bare name: the runtime's own bin dirs, then — for a source file
-      // named without any path ("manage.py", "server.js") — the working
-      // directory. Anything else is left for the process manager's PATH.
-      for (final dir in binDirs) {
-        if (File('$dir/$token').existsSync()) {
-          program = '$dir/$token';
-          break;
+      // A bare name: an explicit alias (bun → .runtime), then the runtime's
+      // own bin dirs, then — for a source file named without any path
+      // ("manage.py", "server.js") — the working directory. Anything else is
+      // left for the process manager's PATH / ExecSearchPath=.
+      final alias = commandAliases[token];
+      if (alias != null && File(alias).existsSync()) {
+        program = alias;
+      } else {
+        for (final dir in binDirs) {
+          if (File('$dir/$token').existsSync()) {
+            program = '$dir/$token';
+            break;
+          }
         }
       }
       if (program == null && _isScript(token)) program = '$cwd/$token';

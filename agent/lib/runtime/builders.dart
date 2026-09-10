@@ -980,6 +980,13 @@ class Builders {
       await ShellExec.run('ln', [
         '-sfn', bunBin.path, '$workDir/current/.runtime'
       ], requireSuccess: false);
+      // Named `bun` so PATH / ExecSearchPath lookups of the command succeed.
+      // `.runtime` is the binary itself (no bin/ subdirectory); without this
+      // extra name, `bun run start` is "command not found" even with
+      // PATH=$workDir/current.
+      await ShellExec.run('ln', [
+        '-sfn', bunBin.path, '$workDir/current/bun'
+      ], requireSuccess: false);
     }
     // HOME sandbox + optional bun PATH. App env is layered under infra so a
     // user-set HOME cannot escape the workDir.

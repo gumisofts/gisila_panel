@@ -397,9 +397,11 @@ class SystemdUnit {
   /// MinIO (`65536`) vs. Nginx-proxied services like pgAdmin (`4096`).
   final bool directSocket;
 
-  /// When set (e.g. for Node.js or Bun deployments with a pinned version),
-  /// this directory is prepended to the service's PATH so commands like
-  /// `node` or `bun` in [startCommand] resolve to the correct version.
+  /// When set (e.g. for Node.js or Bun deployments), this directory is
+  /// prepended to the service's PATH *and* written as `ExecSearchPath=` so
+  /// both child processes and systemd's ExecStart lookup find `node` / `bun`.
+  /// `Environment=PATH` alone is not enough: systemd does not use it to
+  /// resolve the ExecStart binary.
   final String? runtimeBinDir;
 
   /// When true, relax sandbox flags that break the CPython interpreter:
@@ -472,9 +474,16 @@ class SystemdUnit {
         .map((e) => 'Environment=${e.key}=${e.value}\n')
         .join();
 
-    // For Node.js / Bun apps pinned to a specific version, prepend the
-    // versioned runtime's bin directory to PATH so `node` / `bun` in the
-    // start command resolves to the right version.
+    // systemd looks a bare ExecStart name up on *its own* PATH (typically
+    // /usr/bin), not on Environment=PATH. That is why `ExecStart=node …`
+    // fails `systemd-analyze verify` ("Command node is not executable") after
+    // Node was installed for the app under /opt/fnm. ExecSearchPath= is the
+    // setting systemd actually consults for the executable; Environment=PATH
+    // still matters for children the process itself spawns (npm lifecycle
+    // scripts, `child_process.spawn('node')`, …).
+    final execSearchLine = runtimeBinDir != null
+        ? 'ExecSearchPath=$runtimeBinDir\n'
+        : '';
     final pathLine = runtimeBinDir != null
         ? 'Environment=PATH=$runtimeBinDir:/usr/local/bin:/usr/bin:/bin\n'
         : '';
@@ -559,7 +568,7 @@ Type=simple
 User=$linuxUser
 Group=$linuxUser
 WorkingDirectory=$workingDir
-ExecStart=$execStart
+${execSearchLine}ExecStart=$execStart
 Restart=always
 RestartSec=5
 

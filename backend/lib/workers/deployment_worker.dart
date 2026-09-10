@@ -322,12 +322,16 @@ class DeploymentWorker {
             app.gunicornExtraArgs!,
           ],
         ],
-        // Node.js / Bun: pass the runtime bin dir so the unit's PATH is correct.
-        // The build step has already created the symlink at .runtime.
-        if (app.runtime == 'node' && app.nodeVersion != null)
+        // Node.js / Bun: pass the runtime bin dir so ExecSearchPath= and PATH
+        // find the pinned toolchain. The build always creates current/.runtime
+        // (picking the newest installed version when the app has no pin), so
+        // this is not gated on nodeVersion/bunVersion — gating left systemd
+        // looking for a system `node` that does not exist.
+        if (app.runtime == 'node')
           ...['--runtime-bin-dir', '${app.workDir}/current/.runtime/bin'],
-        if (app.runtime == 'bun' && app.bunVersion != null)
-          // Bun is a single binary — its "bin dir" is the parent of .runtime.
+        if (app.runtime == 'bun')
+          // Bun is a single binary — its "bin dir" is the parent of .runtime
+          // (and of the `bun` name symlink next to it).
           ...['--runtime-bin-dir', '${app.workDir}/current'],
         // Celery-specific unit options.
         if (app.runtime == 'celery') ...[
