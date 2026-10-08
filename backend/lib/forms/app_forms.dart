@@ -8,6 +8,15 @@ import 'package:gisila/gisila.dart';
 // cores the panel process itself sees on this host.
 final int _maxCpuQuotaPercent = Platform.numberOfProcessors * 100;
 
+/// A [StringField] that binds an empty string as `""` rather than treating it
+/// as absent, so a PATCH can tell "clear this field" apart from "leave it".
+class _ClearableStringField extends StringField {
+  _ClearableStringField({required super.name});
+
+  @override
+  bool isAbsent(Object? raw) => raw == null;
+}
+
 /// `POST /apps`
 class CreateAppForm extends Form {
   final projectId = IntField(name: 'projectId', required: true);
@@ -137,7 +146,8 @@ class UpdateAppForm extends Form {
   final name = StringField(name: 'name', maxLength: 60);
   final gitUrl = StringField(name: 'gitUrl');
   final gitBranch = StringField(name: 'gitBranch');
-  final sourceSubdir = StringField(name: 'sourceSubdir');
+  // Sent as "" to go back to building/running from the repo root.
+  final sourceSubdir = _ClearableStringField(name: 'sourceSubdir');
   final buildCommand = StringField(name: 'buildCommand');
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');

@@ -163,8 +163,11 @@ class AppsApi {
       if (form.name.value != null) 'name': form.name.value,
       if (form.gitUrl.value != null) 'gitUrl': form.gitUrl.value,
       if (form.gitBranch.value != null) 'gitBranch': form.gitBranch.value,
+      // An empty directory clears the subdir (null = repo root).
       if (form.sourceSubdir.value != null)
-        'sourceSubdir': form.sourceSubdir.value,
+        'sourceSubdir': form.sourceSubdir.value!.isEmpty
+            ? null
+            : form.sourceSubdir.value,
       if (form.buildCommand.value != null)
         'buildCommand': form.buildCommand.value,
       if (form.startCommand.value != null)

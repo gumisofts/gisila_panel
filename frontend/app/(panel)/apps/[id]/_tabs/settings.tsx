@@ -315,7 +315,8 @@ export function SettingsTab({
         name: form.name,
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
-        sourceSubdir: form.sourceSubdir || undefined,
+        // Always sent: "" clears it back to the repo root.
+        sourceSubdir: form.sourceSubdir.trim(),
         buildCommand: form.buildCommand || undefined,
         startCommand: form.startCommand || undefined,
         // Health check path is an nginx vhost setting, hidden (and meaningless)

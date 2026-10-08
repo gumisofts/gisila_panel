@@ -493,8 +493,11 @@ Future<void> _applyUnit(List<String> args) async {
   // configured source subdirectory (not just the repo root) is honoured. Rust
   // likewise: cargo leaves its binary under the source tree's target/release
   // and nothing is installed to current/, so that is the only cwd from which
-  // the app's own paths mean anything.
-  String? unitWorkingDir = (isPython || runtime == 'rust') ? src : null;
+  // the app's own paths mean anything. Node/Bun get [src] too so an explicit
+  // start command runs inside the configured subdirectory — the Applier's
+  // fallback is the repo root and knows nothing of the subdir.
+  String? unitWorkingDir =
+      (isPython || isJit || runtime == 'rust') ? src : null;
   var unitWritableSource = false;
 
   String startCommand;
