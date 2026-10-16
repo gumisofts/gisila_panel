@@ -322,12 +322,37 @@ class AppsService extends Service {
         '"${app.runtime}" — it has no HTTP-free default to fall back to.',
       );
     }
+    if (patch['projectId'] case final int targetId
+        when targetId != app.projectId) {
+      await _authorizeMove(actor, app, targetId);
+    }
     patch['updatedAt'] = DateTime.now().toUtc().toIso8601String();
     final rows = await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(app.id!))
         .update(patch)
         .run(_db.context());
     return rows.first;
+  }
+
+  /// Gate moving [app] into project [targetId].
+  ///
+  /// A project is only a grouping and an access boundary — nothing on the host
+  /// (Linux user, work dir, port, units) depends on it — so a move is a row
+  /// update. Within one team it is a developer-level edit like any other.
+  /// Across teams it changes who can see and operate the app, so it takes
+  /// admin on both sides.
+  Future<void> _authorizeMove(User actor, App app, int targetId) async {
+    final projectsSvc = ProjectsService()..attach(ctx);
+    final target = await projectsSvc.findForUser(actor, targetId);
+    final current = await Query<Project>(ProjectTable.metadata)
+        .where(ProjectTable.id.eq(app.projectId))
+        .first(_db.context());
+    if (current == null || current.teamId == target.teamId) {
+      await requireTeamRole(_db, actor, target.teamId, TeamRole.developer);
+      return;
+    }
+    await requireTeamRole(_db, actor, current.teamId, TeamRole.admin);
+    await requireTeamRole(_db, actor, target.teamId, TeamRole.admin);
   }
 
   /// Toggle whether a `tcp`-exposed app's port is opened on the host

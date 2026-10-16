@@ -26,7 +26,9 @@ import type {
   Application,
   ApplicationDef,
   ListResponse,
+  Project,
   SshKey,
+  Team,
 } from "@/lib/types";
 import { EXPOSE_MODE_LABEL } from "@/lib/types";
 import { versionItems } from "../../_runtime-versions";
@@ -174,6 +176,11 @@ export function SettingsTab({
     fetcher,
   );
   const limits = useSWR<AppLimits>("/apps/limits", fetcher);
+  const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
+  const teams = useSWR<ListResponse<Team>>("/teams/", fetcher);
+  const teamName = new Map(
+    (teams.data?.results ?? []).map((t) => [t.id, t.name]),
+  );
   const appsList = applications.data?.results;
   const catalogList = catalog.data?.results;
   // Fall back to a single core's worth while /apps/limits hasn't loaded yet,
@@ -182,6 +189,7 @@ export function SettingsTab({
 
   const [form, setForm] = useState({
     name: app.name,
+    projectId: String(app.projectId),
     gitUrl: app.gitUrl ?? "",
     gitBranch: app.gitBranch ?? "",
     sourceSubdir: app.sourceSubdir ?? "",
@@ -227,6 +235,7 @@ export function SettingsTab({
   useEffect(() => {
     setForm({
       name: app.name,
+      projectId: String(app.projectId),
       gitUrl: app.gitUrl ?? "",
       gitBranch: app.gitBranch ?? "",
       sourceSubdir: app.sourceSubdir ?? "",
@@ -315,6 +324,11 @@ export function SettingsTab({
     try {
       const patch: Record<string, unknown> = {
         name: form.name,
+        // Only on change: moving across teams needs admin on both sides, and
+        // a plain save shouldn't trip that check.
+        ...(form.projectId !== String(app.projectId)
+          ? { projectId: Number(form.projectId) }
+          : {}),
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
         // Always sent: "" clears it back to the repo root.
@@ -407,6 +421,29 @@ export function SettingsTab({
               onChange={(e) => set("name", e.target.value)}
               required
             />
+            <Select
+              id="s-project"
+              labelText="Project"
+              value={form.projectId}
+              onChange={(e) => set("projectId", e.target.value)}
+              helperText="Moving an app only changes where it is listed and who can access it — nothing is redeployed. Moving to another team's project requires admin in both teams."
+            >
+              {/* Keep the current project selectable even before the list loads. */}
+              {!projects.data?.results.some((p) => p.id === app.projectId) && (
+                <SelectItem value={String(app.projectId)} text="Current project" />
+              )}
+              {(projects.data?.results ?? []).map((p) => (
+                <SelectItem
+                  key={p.id}
+                  value={String(p.id)}
+                  text={
+                    teamName.size > 1 && teamName.get(p.teamId)
+                      ? `${p.name} (${teamName.get(p.teamId)})`
+                      : p.name
+                  }
+                />
+              ))}
+            </Select>
             <TextInput
               id="s-port"
               labelText="Internal port"

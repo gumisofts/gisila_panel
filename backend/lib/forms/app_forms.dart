@@ -144,6 +144,8 @@ class CreateAppForm extends Form {
 
 class UpdateAppForm extends Form {
   final name = StringField(name: 'name', maxLength: 60);
+  // Moves the app to another project (see AppsService._authorizeMove).
+  final projectId = IntField(name: 'projectId');
   final gitUrl = StringField(name: 'gitUrl');
   final gitBranch = StringField(name: 'gitBranch');
   // Sent as "" to go back to building/running from the repo root.
@@ -186,6 +188,7 @@ class UpdateAppForm extends Form {
   @override
   List<FormField<Object?>> collectFields() => <FormField<Object?>>[
         name,
+        projectId,
         gitUrl,
         gitBranch,
         sourceSubdir,

@@ -103,6 +103,7 @@ extension AppsApiGisilaDoc on AppsApi {
       'type': 'object',
       'properties': <String, Object?>{
         'name': <String, Object?>{'type': 'string'},
+        'projectId': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'gitUrl': <String, Object?>{'type': 'string'},
         'gitBranch': <String, Object?>{'type': 'string'},
         'sourceSubdir': <String, Object?>{},

@@ -161,6 +161,7 @@ class AppsApi {
     final user = ctx.principal!.claims['user'] as User;
     final patch = <String, Object?>{
       if (form.name.value != null) 'name': form.name.value,
+      if (form.projectId.value != null) 'projectId': form.projectId.value,
       if (form.gitUrl.value != null) 'gitUrl': form.gitUrl.value,
       if (form.gitBranch.value != null) 'gitBranch': form.gitBranch.value,
       // An empty directory clears the subdir (null = repo root).
