@@ -31,7 +31,7 @@ const STAGES = [
   {
     id: "build",
     label: "Fetch & Build",
-    match: /^\[?agent.*\bbuild\b|git clone|pip install|dart compile|go build|cargo build/i,
+    match: /^\[?agent.*\bbuild\b|git clone|pip install|dart compile|go build|cargo build|rolling back to|activate-release/i,
   },
   {
     id: "apply-unit",
@@ -289,9 +289,13 @@ export function DeploymentsTab({ appId }: { appId: number }) {
 
   async function rollback(d: Deployment) {
     try {
-      await api(`/apps/${appId}/deployments/${d.id}/rollback`, { method: "POST" });
-      toast.success("Rollback queued");
-      mutate();
+      const rb = await api<Deployment>(
+        `/apps/${appId}/deployments/${d.id}/rollback`,
+        { method: "POST" },
+      );
+      toast.success(`Rolling back to #${d.id}`);
+      await mutate();
+      setSelected(rb);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed");
     }
@@ -335,6 +339,11 @@ export function DeploymentsTab({ appId }: { appId: number }) {
                     live
                   </Tag>
                 )}
+                {d.rollbackOfId && (
+                  <Tag type="purple" size="sm">
+                    rollback → #{d.rollbackOfId}
+                  </Tag>
+                )}
               </div>
               <span className="gisila-app__label">
                 {formatRelative(d.createdAt)}
@@ -375,15 +384,22 @@ export function DeploymentsTab({ appId }: { appId: number }) {
                   iconDescription="Refresh deployments"
                   onClick={() => mutate()}
                 />
-                {selected.status === "succeeded" && !selected.isActive && (
+                {selected.canRollback && (
                   <Button
                     kind="tertiary"
                     size="sm"
                     onClick={() => rollback(selected)}
                   >
-                    Rollback
+                    Roll back to this
                   </Button>
                 )}
+                {selected.status === "succeeded" &&
+                  !selected.isActive &&
+                  !selected.canRollback && (
+                    <span className="gisila-app__label">
+                      Build no longer kept — redeploy to restore it
+                    </span>
+                  )}
               </div>
             </div>
 

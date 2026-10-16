@@ -116,9 +116,29 @@ class Builders {
     return '$base/$sourceSubdir';
   }
 
-  /// How many published releases to keep under `releases/` (the live one always
-  /// counts toward this budget and is never pruned).
+  /// How many published releases to keep under `releases/` when the panel
+  /// does not say which ones (the live one always counts toward this budget and
+  /// is never pruned).
   static const _keepReleases = 5;
+
+  /// Per-release record of the runtime state that lives outside the source
+  /// tree, written inside each published release.
+  ///
+  /// A release directory alone is not enough to run the code it holds: the
+  /// compiled executable sits at `current/app`, the pinned toolchain behind the
+  /// `current/.runtime` (and bun's `current/bun`) link and the virtualenv
+  /// behind `current/.venv`, and every later build repoints or replaces them.
+  /// Recording them here is what lets [activateRelease] put an old release
+  /// back exactly as it ran — no rebuild, no newer toolchain or venv.
+  static const releaseMetaDir = '.gisila-release';
+
+  /// Links under `current/` captured per release, keyed by the name they are
+  /// stored under in [releaseMetaDir].
+  static const _releaseLinks = {
+    'runtime': '.runtime',
+    'bun': 'bun',
+    'venv': '.venv',
+  };
 
   /// Publish the staging tree as an immutable release and point `current/src`
   /// at it.
@@ -142,13 +162,22 @@ class Builders {
   /// inode, including the one being served. Nothing this file runs does that,
   /// but an operator's build command can, and so can a framework that writes a
   /// runtime cache back into its own build tree.
+  ///
+  /// [keepIds], when given, names the releases the panel can still roll back
+  /// to; every other release is pruned (see [_pruneReleases]).
+  ///
+  /// [sourceless] publishes a release for an uploaded binary: there is no
+  /// staging tree, so the release holds only its [releaseMetaDir] and
+  /// `current/src` is left where it is.
   static Future<String> publishRelease({
     required String workDir,
     required String user,
     String? releaseId,
+    Set<String>? keepIds,
+    bool sourceless = false,
   }) async {
     final staging = '$workDir/releases/current_build';
-    if (!Directory(staging).existsSync()) {
+    if (!sourceless && !Directory(staging).existsSync()) {
       throw StateError(
         'Nothing to publish: $staging does not exist. The build step must '
         'populate the staging tree before a release can be published.',
@@ -160,6 +189,10 @@ class Builders {
         : DateTime.now().toUtc().millisecondsSinceEpoch.toString();
     final releasesRoot = '$workDir/releases';
     final link = '$workDir/current/src';
+    // The release the service is running from until the restart at the end of
+    // this deploy. It must survive the prune below even when the panel no
+    // longer lists it, or the old process loses files it has yet to load.
+    final previous = _linkTarget(link);
 
     // A release directory is written once and never reopened. A retried
     // deployment reuses its id, so the name may already be taken — by, in the
@@ -175,55 +208,195 @@ class Builders {
           '$releasesRoot/$id-${DateTime.now().toUtc().millisecondsSinceEpoch}';
     }
     await ShellExec.run('mkdir', ['-p', releaseDir]);
-    await ShellExec.run('cp', ['-al', '$staging/.', releaseDir]);
-    // The release is what the app runs from; it has no use for VCS metadata,
-    // which also carries the remote URL the deploy key authenticated against.
-    await ShellExec.run('rm', ['-rf', '$releaseDir/.git'],
-        requireSuccess: false);
-    // Hosts that predate the venv moving out of the source tree still have one
-    // at `<staging>/.venv`, which nothing references any more. Unlink the
-    // release's copy rather than hardlink a dead interpreter into every release
-    // from here on. The staging copy is left alone on purpose — until this
-    // deploy restarts the service, that is still the venv it is running from.
-    await ShellExec.run('rm', ['-rf', '$releaseDir/.venv'],
-        requireSuccess: false);
+    if (!sourceless) {
+      await ShellExec.run('cp', ['-al', '$staging/.', releaseDir]);
+      // The release is what the app runs from; it has no use for VCS metadata,
+      // which also carries the remote URL the deploy key authenticated against.
+      await ShellExec.run('rm', ['-rf', '$releaseDir/.git'],
+          requireSuccess: false);
+      // Hosts that predate the venv moving out of the source tree still have
+      // one at `<staging>/.venv`, which nothing references any more. Unlink the
+      // release's copy rather than hardlink a dead interpreter into every
+      // release from here on. The staging copy is left alone on purpose — until
+      // this deploy restarts the service, that is still the venv it is running
+      // from.
+      await ShellExec.run('rm', ['-rf', '$releaseDir/.venv'],
+          requireSuccess: false);
+    }
+    await _recordReleaseState(workDir, releaseDir, sourceless: sourceless);
     await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
         requireSuccess: false);
 
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
-    await ShellExec.run('chown', ['-h', '$user:$user', link],
-        requireSuccess: false);
-    stdout.writeln('[agent] published release $id → current/src');
+    if (!sourceless) {
+      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+      await ShellExec.run('ln', ['-sfn', releaseDir, link]);
+      await ShellExec.run('chown', ['-h', '$user:$user', link],
+          requireSuccess: false);
+      stdout.writeln('[agent] published release $id → current/src');
+    } else {
+      stdout.writeln('[agent] recorded binary release $id');
+    }
 
-    await _pruneReleases(releasesRoot, liveTarget: releaseDir);
+    await _pruneReleases(
+      releasesRoot,
+      liveTarget: releaseDir,
+      keepIds: keepIds,
+      alsoKeep: {if (previous != null) previous},
+    );
+    // Releases pinned venv generations; with some of them gone, so may be the
+    // generations only they referenced.
+    final venv = _linkTarget(venvLink(workDir));
+    if (venv != null) await _pruneVenvs(workDir, liveTarget: venv);
     return releaseDir;
   }
 
-  /// Delete all but the newest [_keepReleases] published releases.
+  /// Snapshot the out-of-tree runtime state into [releaseDir]/[releaseMetaDir].
+  static Future<void> _recordReleaseState(String workDir, String releaseDir,
+      {required bool sourceless}) async {
+    final meta = '$releaseDir/$releaseMetaDir';
+    await ShellExec.run('rm', ['-rf', meta], requireSuccess: false);
+    await ShellExec.run('mkdir', ['-p', meta]);
+    final app = File('$workDir/current/app');
+    if (app.existsSync()) {
+      // A hardlink, not a copy: the next build installs its executable by
+      // rename (see [_installExecutable]), which leaves this inode exactly the
+      // binary this release ran.
+      final linked = await ShellExec.run('ln', ['-f', app.path, '$meta/app'],
+          requireSuccess: false);
+      if (linked != 0) await ShellExec.run('cp', ['-a', app.path, '$meta/app']);
+    }
+    for (final e in _releaseLinks.entries) {
+      final target = _linkTarget('$workDir/current/${e.value}');
+      if (target == null) continue;
+      await ShellExec.run('ln', ['-sfn', target, '$meta/${e.key}']);
+    }
+    if (sourceless) File('$meta/sourceless').writeAsStringSync('');
+  }
+
+  /// Make an already-published release the one the app runs, without
+  /// rebuilding anything.
   ///
-  /// Never touches [liveTarget], the `current_build` staging tree, or the
-  /// `web/` subtree (static sites publish their own releases in there). Keeping
-  /// several is what makes a rollback a symlink flip instead of a rebuild.
+  /// Restores the executable and the toolchain/venv links recorded by
+  /// [_recordReleaseState], then repoints `current/src`. The caller re-applies
+  /// the unit (with the env and settings the release ran with) and restarts.
+  /// Throws when the release, or something it depends on, is gone — a partial
+  /// rollback onto today's toolchain is exactly what this exists to avoid.
+  static Future<String> activateRelease({
+    required String workDir,
+    required String user,
+    required String releaseId,
+  }) async {
+    final releaseDir = '$workDir/releases/$releaseId';
+    if (!Directory(releaseDir).existsSync()) {
+      throw StateError(
+        'Release $releaseId is no longer on disk (only the newest releases '
+        'are kept). Redeploy that commit instead.',
+      );
+    }
+    final meta = '$releaseDir/$releaseMetaDir';
+    if (!Directory(meta).existsSync()) {
+      throw StateError(
+        'Release $releaseId was published before releases recorded their '
+        'runtime state, so it cannot be restored as it ran. Redeploy instead.',
+      );
+    }
+
+    // Check every dependency before changing anything, so a failure leaves
+    // the live release untouched.
+    final links = <String, String>{};
+    for (final e in _releaseLinks.entries) {
+      final target = _linkTarget('$meta/${e.key}');
+      if (target == null) continue;
+      final allowed = e.key == 'venv'
+          ? p.isWithin(venvRoot(workDir), p.normalize(target))
+          : p.isWithin('/opt', p.normalize(target));
+      if (!allowed) {
+        throw StateError('Release $releaseId records an unexpected '
+            '${e.key} location ($target); refusing to restore it.');
+      }
+      if (FileSystemEntity.typeSync(target) == FileSystemEntityType.notFound) {
+        throw StateError(
+          e.key == 'venv'
+              ? 'The virtualenv release $releaseId ran with ($target) has '
+                  'been pruned. Redeploy instead.'
+              : 'The toolchain release $releaseId ran with ($target) is no '
+                  'longer installed. Reinstall it or redeploy instead.',
+        );
+      }
+      links[e.value] = target;
+    }
+
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    final app = File('$meta/app');
+    if (app.existsSync()) await _installExecutable(app.path, workDir, user);
+    for (final e in links.entries) {
+      final link = '$workDir/current/${e.key}';
+      await ShellExec.run('ln', ['-sfn', e.value, link]);
+      await ShellExec.run('chown', ['-h', '$user:$user', link],
+          requireSuccess: false);
+    }
+    if (!File('$meta/sourceless').existsSync()) {
+      final link = '$workDir/current/src';
+      await ShellExec.run('ln', ['-sfn', releaseDir, link]);
+      await ShellExec.run('chown', ['-h', '$user:$user', link],
+          requireSuccess: false);
+    }
+    stdout.writeln('[agent] activated release $releaseId');
+    return releaseDir;
+  }
+
+  /// Where the symlink at [path] points (made absolute against its own
+  /// directory), or null when it is missing or not a symlink.
+  static String? _linkTarget(String path) {
+    try {
+      final target = Link(path).targetSync();
+      return target.startsWith('/')
+          ? target
+          : p.normalize(p.join(p.dirname(path), target));
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// Delete published releases the app can no longer roll back to.
+  ///
+  /// With [keepIds] (the panel's list of rollback targets) every release not
+  /// named in it goes — a retried publish's `<id>-<ms>` directory counts as
+  /// `<id>`. Without it, all but the newest [_keepReleases] go. Never touches
+  /// [liveTarget], anything in [alsoKeep], the `current_build` staging tree, or
+  /// the `web/` subtree (static sites publish their own releases in there).
   /// Best-effort: a failed prune must never fail an otherwise good deploy.
-  static Future<void> _pruneReleases(String releasesRoot,
-      {required String liveTarget}) async {
+  static Future<void> _pruneReleases(
+    String releasesRoot, {
+    required String liveTarget,
+    Set<String>? keepIds,
+    Set<String> alsoKeep = const {},
+  }) async {
     final dir = Directory(releasesRoot);
     if (!dir.existsSync()) return;
     const reserved = {'current_build', 'web'};
     final dirs = dir
         .listSync()
         .whereType<Directory>()
-        .where((d) => !reserved.contains(d.path.split('/').last))
+        .where((d) => !reserved.contains(p.basename(d.path)))
         .toList()
       // Release ids are deployment numbers or ms timestamps, neither of which
       // sorts lexically; order by mtime so "newest" means newest.
       ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
 
-    final keep = <String>{liveTarget};
-    for (final d in dirs) {
-      if (keep.length >= _keepReleases) break;
-      keep.add(d.path);
+    final keep = <String>{liveTarget, ...alsoKeep};
+    if (keepIds != null) {
+      final wanted = {for (final id in keepIds) id.split('-').first};
+      for (final d in dirs) {
+        if (wanted.contains(p.basename(d.path).split('-').first)) {
+          keep.add(d.path);
+        }
+      }
+    } else {
+      for (final d in dirs) {
+        if (keep.length >= _keepReleases) break;
+        keep.add(d.path);
+      }
     }
     for (final d in dirs) {
       if (!keep.contains(d.path)) {
@@ -232,7 +405,20 @@ class Builders {
     }
   }
 
-  static Future<void> fromGit({
+  /// Venv generations some published release still records, so pruning venvs
+  /// never strands a release that can be rolled back to.
+  static Set<String> _venvsPinnedByReleases(String workDir) {
+    final dir = Directory('$workDir/releases');
+    if (!dir.existsSync()) return const {};
+    return {
+      for (final d in dir.listSync().whereType<Directory>())
+        if (_linkTarget('${d.path}/$releaseMetaDir/venv') case final t?) t,
+    };
+  }
+
+  /// Returns the commit the tree was checked out at (null if git cannot say),
+  /// so the panel can record what each deployment actually ran.
+  static Future<String?> fromGit({
     required String workDir,
     required String user,
     required String url,
@@ -281,6 +467,10 @@ class Builders {
           env: env);
     }
     await ShellExec.run('chown', ['-R', '$user:$user', src]);
+    final head = await Process.run('git',
+        ['-c', 'safe.directory=$src', '-C', src, 'rev-parse', 'HEAD']);
+    final sha = (head.stdout as String).trim();
+    return head.exitCode == 0 && sha.isNotEmpty ? sha : null;
   }
 
   /// Attempt an in-place shallow update of an existing git checkout at [src].
@@ -1281,6 +1471,9 @@ class Builders {
       if (keep.length >= _keepVenvs) break;
       keep.add(d.path);
     }
+    // On top of the newest few, whatever a kept release ran with — rolling
+    // back to it re-links that exact generation.
+    keep.addAll(_venvsPinnedByReleases(workDir));
     for (final d in dirs) {
       if (!keep.contains(d.path)) {
         await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);

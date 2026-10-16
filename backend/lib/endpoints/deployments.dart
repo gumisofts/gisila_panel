@@ -1,6 +1,7 @@
 import 'package:gisila_doc/gisila_doc.dart';
 import 'package:gisila_panel/forms/deployment_forms.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/services/apps_service.dart';
 import 'package:gisila_panel/services/deployments_service.dart';
 
 part 'deployments.g.dart';
@@ -12,12 +13,19 @@ class DeploymentsApi {
   Future<Map<String, Object?>> list(
     int appId,
     DeploymentsService deployments,
+    AppsService apps,
     RequestContext ctx,
   ) async {
     final user = ctx.principal!.claims['user'] as User;
+    final app = await apps.findForUser(user, appId);
     final result = await deployments.list(user, appId);
+    final rollbackable = DeploymentsService.rollbackable(app, result);
     return <String, Object?>{
-      'results': result.map((d) => d.toJson()).toList(),
+      'results': [
+        for (final d in result)
+          DeploymentsService.toPublicJson(d,
+              canRollback: rollbackable.contains(d.id)),
+      ],
     };
   }
 
@@ -37,7 +45,7 @@ class DeploymentsApi {
       artifactPath: form.artifactId.value,
       forceRebuild: form.forceRebuild.value ?? false,
     );
-    return deployment.toJson();
+    return DeploymentsService.toPublicJson(deployment);
   }
 
   @Post('/{id}/rollback', summary: 'Roll back to this deployment')
@@ -49,7 +57,7 @@ class DeploymentsApi {
   ) async {
     final user = ctx.principal!.claims['user'] as User;
     final rb = await deployments.rollback(user, appId, id);
-    return rb.toJson();
+    return DeploymentsService.toPublicJson(rb);
   }
 
   @Get('/{id}/logs', summary: 'Build logs for a deployment')

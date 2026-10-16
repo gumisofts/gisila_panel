@@ -151,6 +151,8 @@ class UpdateAppForm extends Form {
   final buildCommand = StringField(name: 'buildCommand');
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');
+  // Previous successful builds kept on disk for instant rollback.
+  final releasesToKeep = IntField(name: 'releasesToKeep', min: 1, max: 50);
   final memoryMbLimit = IntField(name: 'memoryMbLimit');
   final cpuQuotaPercent =
       IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
@@ -190,6 +192,7 @@ class UpdateAppForm extends Form {
         buildCommand,
         startCommand,
         healthCheckPath,
+        releasesToKeep,
         memoryMbLimit,
         cpuQuotaPercent,
         tasksLimit,

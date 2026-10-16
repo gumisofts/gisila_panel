@@ -45,6 +45,9 @@ Future<void> main(List<String> args) async {
       case 'apply-vhost':
         await _applyVhost(rest);
         break;
+      case 'activate-release':
+        await _activateRelease(rest);
+        break;
       case 'expose-port':
         await _exposePort(rest, allow: true);
         break;
@@ -195,6 +198,9 @@ Future<void> _build(List<String> args) async {
     // panel passes the deployment id; falls back to a timestamp when absent so
     // a hand-run agent still produces a valid release.
     p.addOption('release-id');
+    // Comma-separated release ids the panel can still roll back to; every
+    // other published release is pruned. Absent → keep the newest few.
+    p.addOption('keep-release-ids');
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -206,6 +212,10 @@ Future<void> _build(List<String> args) async {
   final sourceSubdir =
       AgentValidators.optionalSourceSubdir(r['source-subdir'] as String?);
   final noCache = r['no-cache'] as bool? ?? false;
+  final releaseId =
+      AgentValidators.optionalReleaseId(r['release-id'] as String?);
+  final keepIds =
+      AgentValidators.optionalReleaseIds(r['keep-release-ids'] as String?);
   // Drop every cache marker up front so a force-rebuild starts from a clean
   // slate and re-records fresh fingerprints as each step reinstalls.
   if (noCache) await BuildCache.clear(workDir);
@@ -225,6 +235,7 @@ Future<void> _build(List<String> args) async {
     await Provisioner.ensureEnvFile(workDir, user, appEnv);
   }
 
+  String? commit;
   switch (sourceType) {
     case 'binary':
       final artifact = r['artifact-path'] as String?;
@@ -233,11 +244,21 @@ Future<void> _build(List<String> args) async {
       }
       await Builders.binaryArtifact(
           workDir: workDir, user: user, artifactPath: artifact);
+      // No source tree, but the installed executable is still worth keeping
+      // per deployment so a rollback can put it back.
+      final published = await Builders.publishRelease(
+        workDir: workDir,
+        user: user,
+        releaseId: releaseId,
+        keepIds: keepIds,
+        sourceless: true,
+      );
+      _printBuildResult(release: published.split('/').last);
       return;
     case 'git':
       final url = r['git-url'] as String?;
       if (url == null) throw ArgumentError('Missing --git-url');
-      await Builders.fromGit(
+      commit = await Builders.fromGit(
         workDir: workDir,
         user: user,
         url: url,
@@ -293,13 +314,57 @@ Future<void> _build(List<String> args) async {
   // Static sites are excluded because they already have this: their published
   // output goes to `releases/web/<id>` behind the `current/web` symlink, and
   // nginx serves that rather than a source tree.
+  String? release;
   if (runtime != 'static') {
-    await Builders.publishRelease(
+    final published = await Builders.publishRelease(
       workDir: workDir,
       user: user,
-      releaseId: r['release-id'] as String?,
+      releaseId: releaseId,
+      keepIds: keepIds,
     );
+    release = published.split('/').last;
   }
+  _printBuildResult(release: release, commit: commit);
+}
+
+/// The line the worker reads back after a build: which release directory it
+/// published (it can differ from `--release-id` on a retry) and which commit
+/// it built, so both are recorded on the deployment.
+void _printBuildResult({String? release, String? commit}) {
+  stdout.writeln(jsonEncode({
+    'buildResult': true,
+    if (release != null) 'release': release,
+    if (commit != null) 'commit': commit,
+  }));
+}
+
+/// `gisila-agent activate-release --work-dir <d> --user <u> --runtime <r>
+///  --release-id <id>`
+///
+/// Rollback: make a release published by an earlier deploy the live one again
+/// — code, built artifacts, executable, toolchain and venv as that deploy left
+/// them. Nothing is fetched or built. For a service runtime the worker then
+/// runs `apply-unit` with that deploy's recorded env/settings and restarts; a
+/// static site is live as soon as `current/web` is repointed.
+Future<void> _activateRelease(List<String> args) async {
+  final r = _parse(args, (p) {
+    p.addOption('work-dir', mandatory: true);
+    p.addOption('user', mandatory: true);
+    p.addOption('runtime', mandatory: true);
+    p.addOption('release-id', mandatory: true);
+  });
+  final user = AgentValidators.requireUser(r['user'] as String?);
+  final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  final runtime = AgentValidators.requireRuntime(r['runtime'] as String?);
+  final releaseId =
+      AgentValidators.requireReleaseId(r['release-id'] as String?);
+  if (runtime == 'static') {
+    await Applier().activateStaticRelease(
+        workDir: workDir, releaseId: releaseId, user: user);
+    return;
+  }
+  await Builders.activateRelease(
+      workDir: workDir, user: user, releaseId: releaseId);
 }
 
 /// `gisila-agent runtime install|remove|status --key <k> [--version <v>]`
@@ -695,6 +760,7 @@ Future<void> _applyVhost(List<String> args) async {
     p.addOption('user');         // app's Linux user (owns the published release)
     p.addOption('publish-from'); // build output to publish into a new release + swap
     p.addOption('release-id');   // release dir name (defaults to a timestamp)
+    p.addOption('keep-release-ids'); // releases to retain when pruning
     p.addOption('static-dir');   // deprecated: superseded by --work-dir/--publish-from
     p.addFlag('static-spa', defaultsTo: false);
     // Reverse-proxy apps (e.g. Django) may additionally serve collected static
@@ -719,7 +785,9 @@ Future<void> _applyVhost(List<String> args) async {
       workDir: workDir,
       hostnames: hostnames,
       publishFrom: r['publish-from'] as String?,
-      releaseId: r['release-id'] as String?,
+      releaseId: AgentValidators.optionalReleaseId(r['release-id'] as String?),
+      keepIds:
+          AgentValidators.optionalReleaseIds(r['keep-release-ids'] as String?),
       user: r['user'] as String?,
       isSpa: r['static-spa'] as bool,
     );
@@ -5007,6 +5075,9 @@ Subcommands:
                    multiplexing in front, so the app holds one fd per
                    client connection itself)
   apply-vhost   --app-id ID --port N [--hostname host …]
+  activate-release --work-dir PATH --user app_xxx --runtime RT --release-id ID
+                  (rollback: re-point the app at an already-built release
+                   and restore its executable/toolchain/venv — no rebuild)
   expose-port   --port N     (tcp apps: open the port on the host firewall)
   unexpose-port --port N     (tcp apps: close the port on the host firewall)
   issue-cert    --hostname HOSTNAME

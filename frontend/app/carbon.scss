@@ -113,6 +113,50 @@ body,
   inline-size: 12rem;
 }
 
+// ── Server IP chip ───────────────────────────────────────────────────────────
+// Plain button in the global bar showing the host's public IP (click copies).
+// Hidden on narrow screens, where the bar only has room for its icon actions.
+
+.gisila-server-ip {
+  display: none;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  block-size: spacing.$spacing-09;
+  padding-inline: spacing.$spacing-05;
+  border: 0;
+  background: transparent;
+  color: theme.$text-secondary;
+  cursor: pointer;
+
+  @include breakpoint.breakpoint(md) {
+    display: inline-flex;
+  }
+
+  &:hover {
+    background-color: theme.$background-hover;
+    color: theme.$text-primary;
+  }
+
+  &:focus-visible {
+    outline: 2px solid theme.$focus;
+    outline-offset: -2px;
+  }
+
+  svg {
+    fill: currentColor;
+  }
+}
+
+.gisila-server-ip__label {
+  @include type.type-style('label-01');
+}
+
+.gisila-server-ip__value {
+  @include type.type-style('code-01');
+
+  color: theme.$text-primary;
+}
+
 // ── Notification bell ────────────────────────────────────────────────────────
 // A regular HeaderGlobalAction (so it inherits the header's icon-button
 // styling, hover and tooltip) with an unread-count badge pinned to it. The

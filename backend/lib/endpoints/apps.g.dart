@@ -105,10 +105,14 @@ extension AppsApiGisilaDoc on AppsApi {
         'name': <String, Object?>{'type': 'string'},
         'gitUrl': <String, Object?>{'type': 'string'},
         'gitBranch': <String, Object?>{'type': 'string'},
-        'sourceSubdir': <String, Object?>{'type': 'string'},
+        'sourceSubdir': <String, Object?>{},
         'buildCommand': <String, Object?>{'type': 'string'},
         'startCommand': <String, Object?>{'type': 'string'},
         'healthCheckPath': <String, Object?>{'type': 'string'},
+        'releasesToKeep': <String, Object?>{
+          'type': 'integer',
+          'format': 'int64'
+        },
         'memoryMbLimit': <String, Object?>{
           'type': 'integer',
           'format': 'int64'

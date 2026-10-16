@@ -188,6 +188,7 @@ export function SettingsTab({
     buildCommand: app.buildCommand ?? "",
     startCommand: app.startCommand ?? "",
     healthCheckPath: app.healthCheckPath ?? "",
+    releasesToKeep: app.releasesToKeep ?? 5,
     memoryMbLimit: app.memoryMbLimit,
     cpuQuotaPercent: app.cpuQuotaPercent,
     tasksLimit: app.tasksLimit,
@@ -232,6 +233,7 @@ export function SettingsTab({
       buildCommand: app.buildCommand ?? "",
       startCommand: app.startCommand ?? "",
       healthCheckPath: app.healthCheckPath ?? "",
+      releasesToKeep: app.releasesToKeep ?? 5,
       memoryMbLimit: app.memoryMbLimit,
       cpuQuotaPercent: app.cpuQuotaPercent,
       tasksLimit: app.tasksLimit,
@@ -325,6 +327,7 @@ export function SettingsTab({
         memoryMbLimit: form.memoryMbLimit,
         cpuQuotaPercent: form.cpuQuotaPercent,
         tasksLimit: form.tasksLimit,
+        releasesToKeep: form.releasesToKeep,
       };
       if (isPython) {
         patch.pythonVersion = form.pythonVersion;
@@ -956,6 +959,25 @@ export function SettingsTab({
                 max={4096}
                 value={form.tasksLimit}
                 onChange={(e) => set("tasksLimit", Number(e.target.value))}
+              />
+            </div>
+          </div>
+        </Tile>
+
+        {/* Rollback */}
+        <Tile>
+          <h3 className="gisila-app__tile-title">Rollback history</h3>
+          <div className="gisila-app__form-row">
+            <div className="gisila-app__form-field">
+              <TextInput
+                id="s-releases"
+                labelText="Previous builds to keep"
+                type="number"
+                min={1}
+                max={50}
+                value={form.releasesToKeep}
+                onChange={(e) => set("releasesToKeep", Number(e.target.value))}
+                helperText="Each successful deploy's build stays on disk so rolling back to it is instant. Older builds are deleted on the next deploy."
               />
             </div>
           </div>

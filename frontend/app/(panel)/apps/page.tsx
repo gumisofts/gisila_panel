@@ -10,15 +10,18 @@ import {
   Column,
   Grid,
   Link as CarbonLink,
+  Select,
+  SelectItem,
   SkeletonPlaceholder,
   Tag,
   Tile,
 } from "@carbon/react";
 import RouterLink from "@/compat/link";
+import { useSearchParams } from "@/compat/navigation";
 import { Page, PageHeader } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
-import type { App, AppStatus, ListResponse } from "@/lib/types";
+import type { App, AppStatus, ListResponse, Project } from "@/lib/types";
 import "./_apps.scss";
 
 // ClickableTile renders through Carbon's polymorphic Link and forwards unknown
@@ -42,6 +45,30 @@ const STATUS_TAG: Record<AppStatus, TagType> = {
 
 export default function AppsPage() {
   const { data, isLoading } = useSWR<ListResponse<App>>("/apps/", fetcher);
+  const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
+  // Kept in the URL so the Projects page's "apps" link lands pre-filtered and
+  // a filtered view survives a reload.
+  const [params, setParams] = useSearchParams();
+  const projectId = params.get("projectId") ?? "";
+
+  const projectName = new Map(
+    (projects.data?.results ?? []).map((p) => [String(p.id), p.name]),
+  );
+  const apps = (data?.results ?? []).filter(
+    (a) => !projectId || String(a.projectId) === projectId,
+  );
+
+  function setProject(id: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set("projectId", id);
+        else next.delete("projectId");
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   return (
     <Page>
@@ -55,11 +82,29 @@ export default function AppsPage() {
         }
       />
 
+      {(projects.data?.results.length ?? 0) > 1 && (
+        <div className="gisila-apps__filters">
+          <Select
+            id="apps-project-filter"
+            labelText="Project"
+            size="sm"
+            inline
+            value={projectId}
+            onChange={(e) => setProject(e.target.value)}
+          >
+            <SelectItem value="" text="All projects" />
+            {projects.data!.results.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)} text={p.name} />
+            ))}
+          </Select>
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonGrid />
-      ) : data?.results.length ? (
+      ) : apps.length ? (
         <Grid narrow className="gisila-apps__grid">
-          {data.results.map((app) => (
+          {apps.map((app) => (
             <Column
               key={app.id}
               sm={4}
@@ -81,6 +126,9 @@ export default function AppsPage() {
                       </Tag>
                     </div>
                     <p className="gisila-app-tile__endpoint">
+                      {projectName.get(String(app.projectId)) && (
+                        <>{projectName.get(String(app.projectId))} · </>
+                      )}
                       {app.linuxUser} → 127.0.0.1:{app.internalPort}
                     </p>
                   </div>
@@ -100,6 +148,14 @@ export default function AppsPage() {
             </Column>
           ))}
         </Grid>
+      ) : projectId && data?.results.length ? (
+        <Tile className="gisila-empty">
+          No apps in this project —{" "}
+          <CarbonLink href="#" onClick={(e) => { e.preventDefault(); setProject(""); }}>
+            show all projects
+          </CarbonLink>
+          .
+        </Tile>
       ) : (
         <Tile className="gisila-empty">
           No apps yet —{" "}

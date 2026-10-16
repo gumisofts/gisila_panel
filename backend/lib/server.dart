@@ -25,6 +25,7 @@ import 'package:gisila_panel/endpoints/mongo.dart';
 import 'package:gisila_panel/endpoints/notifications.dart';
 import 'package:gisila_panel/endpoints/services.dart';
 import 'package:gisila_panel/endpoints/storage.dart';
+import 'package:gisila_panel/endpoints/system.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
 import 'package:gisila_panel/infra/audit_middleware.dart';
 import 'package:gisila_panel/infra/database_provider.dart';
@@ -135,6 +136,7 @@ Future<Handler> application() async {
       StorageApi().attachToApp(app, router, spec, prefix: prefix);
       MailApi().attachToApp(app, router, spec, prefix: prefix);
       NotificationsApi().attachToApp(app, router, spec, prefix: prefix);
+      SystemApi().attachToApp(app, router, spec, prefix: prefix);
 
       router.mount('/admin', adminHandler());
       router.mount('/docs', docsHandler(spec));

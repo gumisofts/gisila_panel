@@ -53,7 +53,7 @@ class AppsService extends Service {
     if (user.isSuperuser == true) {
       var q = Query<App>(AppTable.metadata);
       if (projectId != null) q = q.where(AppTable.projectId.eq(projectId));
-      return q.all(_db.context());
+      return q.orderBy(AppTable.createdAt, desc: true).all(_db.context());
     }
 
     final projectsSvc = ProjectsService()..attach(ctx);
@@ -64,7 +64,9 @@ class AppsService extends Service {
     var q = Query<App>(AppTable.metadata)
         .where(AppTable.projectId.inList(projectIds));
     if (projectId != null) q = q.where(AppTable.projectId.eq(projectId));
-    return q.all(_db.context());
+    // Newest first, and stable: without an ORDER BY Postgres hands rows back
+    // in physical order, which an UPDATE reshuffles.
+    return q.orderBy(AppTable.createdAt, desc: true).all(_db.context());
   }
 
   Future<App> findForUser(User user, int appId) async {

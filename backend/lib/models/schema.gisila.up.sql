@@ -123,6 +123,7 @@ CREATE TABLE "apps" (
   "build_command" VARCHAR(255),
   "start_command" VARCHAR(255),
   "health_check_path" VARCHAR(255),
+  "releases_to_keep" INTEGER DEFAULT 5,
   "deploy_key_id" BIGINT,
   "python_version" VARCHAR(255),
   "python_mode" VARCHAR(255),
@@ -179,6 +180,9 @@ CREATE TABLE "deployments" (
   "status" VARCHAR(255) DEFAULT 'queued',
   "failure_reason" TEXT,
   "is_active" BOOLEAN DEFAULT FALSE,
+  "rollback_of_id" INTEGER,
+  "release_id" VARCHAR(255),
+  "deploy_config" TEXT,
   "started_at" TIMESTAMP WITH TIME ZONE,
   "finished_at" TIMESTAMP WITH TIME ZONE,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL

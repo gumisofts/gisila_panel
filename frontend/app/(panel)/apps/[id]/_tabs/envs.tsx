@@ -164,7 +164,10 @@ export function EnvsTab({ appId }: { appId: number }) {
     }
   }
 
-  const envs = data?.results ?? [];
+  // Alphabetical, so a variable keeps its place after it is edited.
+  const envs = [...(data?.results ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
   const secretCount = parsed.filter((e) => e.isSecret).length;
 
   return (

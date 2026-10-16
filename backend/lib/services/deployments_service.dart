@@ -19,6 +19,36 @@ class DeploymentsService extends Service {
         .all(_db.context());
   }
 
+  /// API shape of a deployment. `deployConfig` carries the env snapshot —
+  /// secret values included — so it never leaves the server; callers get
+  /// whether a rollback is possible instead.
+  static Map<String, Object?> toPublicJson(Deployment d,
+          {bool canRollback = false}) =>
+      d.toJson()
+        ..remove('deployConfig')
+        ..['canRollback'] = canRollback;
+
+  /// Ids of the deployments in [newestFirst] that can still be rolled back to:
+  /// successful, with a recorded release + config, not the live one, and among
+  /// the releases the worker keeps on disk (the live release plus the newest
+  /// `releasesToKeep` before it — see DeploymentWorker._releasesToRetain).
+  static Set<int> rollbackable(App app, List<Deployment> newestFirst) {
+    final keep = (app.releasesToKeep ?? 5).clamp(1, 50);
+    final retained = <String>{};
+    final out = <int>{};
+    for (final d in newestFirst) {
+      if (d.status != 'succeeded' ||
+          d.releaseId == null ||
+          d.deployConfig == null) {
+        continue;
+      }
+      if (!retained.contains(d.releaseId) && retained.length > keep) break;
+      retained.add(d.releaseId!);
+      if (d.isActive != true) out.add(d.id!);
+    }
+    return out;
+  }
+
   /// Create a deployment record, mark it as `queued`, then enqueue a job for
   /// the worker. The worker is responsible for actually building / shipping
   /// the artifact through `gisila-agent`.
@@ -102,8 +132,28 @@ class DeploymentsService extends Service {
     if (target.status != 'succeeded') {
       throw BadRequest('Only successful deployments can be rolled back to.');
     }
+    if (target.isActive == true) {
+      throw BadRequest('Deployment #${target.id} is already live.');
+    }
+    if (target.releaseId == null || target.deployConfig == null) {
+      throw BadRequest(
+        'Deployment #${target.id} was made before deployments recorded their '
+        'build and configuration, so it cannot be restored as it ran. '
+        'Redeploy instead.',
+      );
+    }
+    final history = await list(actor, appId);
+    if (!rollbackable(app, history).contains(target.id)) {
+      throw BadRequest(
+        'The build of deployment #${target.id} is no longer kept on disk '
+        '(this app keeps ${app.releasesToKeep ?? 5}). Redeploy instead.',
+      );
+    }
 
     final now = DateTime.now().toUtc();
+    // The rollback is its own deployment row carrying the target's release
+    // and config snapshot, so rolling back to a rollback works the same way
+    // and the history shows exactly what is live.
     final rb = await Query<Deployment>(DeploymentTable.metadata)
         .insert(<String, Object?>{
       'appId': app.id,
@@ -111,22 +161,42 @@ class DeploymentsService extends Service {
       'sourceType': target.sourceType,
       'gitCommitSha': target.gitCommitSha,
       'artifactPath': target.artifactPath,
+      'rollbackOfId': target.id,
+      'releaseId': target.releaseId,
+      'deployConfig': target.deployConfig,
       'status': 'queued',
       'isActive': false,
       'createdAt': now.toIso8601String(),
     }).one(_db.context());
 
-    await RedisClient.instance.rpush(
-      'gisila:queue:deployments',
-      jsonEncode(<String, Object?>{
-        'deploymentId': rb.id,
-        'appId': app.id,
-        'sourceType': target.sourceType,
-        'artifactPath': target.artifactPath,
-        'rollback': true,
-        'queuedAt': now.toIso8601String(),
-      }),
-    );
+    await Query<AppEvent>(AppEventTable.metadata).insert(<String, Object?>{
+      'appId': app.id,
+      'actorId': actor.id,
+      'kind': 'rollback',
+      'message': 'Rollback #${rb.id} to deployment #${target.id} queued.',
+      'createdAt': now.toIso8601String(),
+    }).run(_db.context());
+
+    try {
+      await RedisClient.instance.rpush(
+        'gisila:queue:deployments',
+        jsonEncode(<String, Object?>{
+          'deploymentId': rb.id,
+          'appId': app.id,
+          'rollback': true,
+          'queuedAt': now.toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.id.eq(rb.id!))
+          .update(<String, Object?>{
+        'status': 'failed',
+        'failureReason': 'Failed to enqueue rollback: $e',
+        'finishedAt': DateTime.now().toUtc().toIso8601String(),
+      }).run(_db.context());
+      rethrow;
+    }
     return rb;
   }
 

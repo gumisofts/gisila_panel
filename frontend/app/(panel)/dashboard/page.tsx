@@ -23,6 +23,7 @@ import RouterLink from "@/compat/link";
 import { Page, PageHeader, PageSection } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { useServerInfo } from "@/components/server-ip";
 import { formatRelative } from "@/lib/utils";
 import type {
   App,
@@ -68,6 +69,7 @@ export default function DashboardPage() {
   const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
   const teams = useSWR<ListResponse<Team>>("/teams/", fetcher);
   const { isSuperuser } = usePermissions();
+  const server = useServerInfo();
 
   const recentApps = apps.data?.results.slice(0, 6) ?? [];
 
@@ -75,7 +77,16 @@ export default function DashboardPage() {
     <Page>
       <PageHeader
         title="Welcome back"
-        description="Your apps, projects, and infrastructure at a glance."
+        description={
+          server.data?.publicIp ? (
+            <>
+              Your apps, projects, and infrastructure at a glance. Point app
+              domains at <code>{server.data.publicIp}</code>.
+            </>
+          ) : (
+            "Your apps, projects, and infrastructure at a glance."
+          )
+        }
       />
 
       <Grid condensed className="gisila-cards">

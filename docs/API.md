@@ -48,7 +48,7 @@ All endpoints accept either:
 |---|---|---|
 | `GET` | `/apps/{id}/deployments/` | List, newest first. |
 | `POST` | `/apps/{id}/deployments/` | Body `{sourceType, gitCommitSha?, artifactId?}`. Queues a build. |
-| `POST` | `/apps/{id}/deployments/{depId}/rollback` | Re-queues the same artifact. |
+| `POST` | `/apps/{id}/deployments/{depId}/rollback` | Instantly re-activates that deployment's kept build with its recorded env vars and settings (no rebuild). |
 | `GET` | `/apps/{id}/deployments/{depId}/logs` | Persisted build logs. |
 
 ## Domains

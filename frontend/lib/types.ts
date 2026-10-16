@@ -79,6 +79,8 @@ export interface App {
   buildCommand?: string | null;
   startCommand?: string | null;
   healthCheckPath?: string | null;
+  // Previous successful builds kept on disk for instant rollback.
+  releasesToKeep?: number | null;
   pythonVersion?: string | null;
   pythonMode?: "wsgi" | "asgi" | null;
   wsgiApp?: string | null;
@@ -152,6 +154,11 @@ export interface Deployment {
   status: DeploymentStatus;
   failureReason?: string | null;
   isActive: boolean;
+  // Set on a rollback: the deployment whose build and config it restored.
+  rollbackOfId?: ID | null;
+  releaseId?: string | null;
+  // Its build is still on disk and it is not the live one.
+  canRollback?: boolean;
   startedAt?: string | null;
   finishedAt?: string | null;
   createdAt: string;

@@ -19,6 +19,14 @@
   padding-inline: 0;
 }
 
+// Filter bar above the grid.
+.gisila-apps__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-05;
+  margin-block-end: spacing.$spacing-05;
+}
+
 // Carbon's Grid columns have no vertical gutter, so wrapped rows would collide.
 .gisila-apps__column {
   margin-block-end: spacing.$spacing-05;

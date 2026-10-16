@@ -348,6 +348,11 @@ App:
     health_check_path:
       type: varchar
       is_null: true          # e.g. /health
+    # How many successful deployments keep their built release on disk so a
+    # rollback to them is a symlink flip instead of a rebuild.
+    releases_to_keep:
+      type: integer
+      default: 5
     # Optional deploy key used for authenticated git clone.
     deploy_key:
       type: foreign_key
@@ -537,6 +542,24 @@ Deployment:
     is_active:
       type: boolean
       default: false
+    # Set on a rollback: the deployment whose release + config it re-activates.
+    # A plain integer rather than a foreign key so pruning or deleting the
+    # target never cascades into the rollback's own history.
+    rollback_of_id:
+      type: integer
+      is_null: true
+    # Name of the directory under releases/ this deployment runs from. A
+    # rollback reuses its target's, so it is not always the deployment id.
+    release_id:
+      type: varchar
+      is_null: true
+    # JSON snapshot of what this deployment ran with — the env vars and the
+    # exact apply-unit arguments — so a rollback restores those rather than
+    # whatever the app is configured with today. Holds secret values: never
+    # returned by the API.
+    deploy_config:
+      type: text
+      is_null: true
     started_at:
       type: timestamp
       is_null: true

@@ -21,6 +21,7 @@ import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { Domain, ListResponse } from "@/lib/types";
+import { useServerInfo } from "@/components/server-ip";
 import "../_app-detail.scss";
 
 export function DomainsTab({ appId }: { appId: number }) {
@@ -60,6 +61,8 @@ export function DomainsTab({ appId }: { appId: number }) {
     }
   }
 
+  const server = useServerInfo();
+
   async function remove(id: number) {
     if (!confirm("Remove this domain?")) return;
     await api(`/apps/${appId}/domains/${id}`, { method: "DELETE" });
@@ -78,6 +81,11 @@ export function DomainsTab({ appId }: { appId: number }) {
               onChange={(e) => setHostname(e.target.value)}
               placeholder="api.example.com"
               required
+              helperText={
+                server.data?.publicIp
+                  ? `Create a DNS A record for this hostname pointing at ${server.data.publicIp}.`
+                  : undefined
+              }
             />
           </div>
           <Button type="submit" renderIcon={Add} disabled={busy}>

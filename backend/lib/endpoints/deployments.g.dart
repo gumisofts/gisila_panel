@@ -51,7 +51,8 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                 final appId = coerce<int>(request.params['appId'], 'appId',
                     required: true);
                 final deployments = ctx.service<DeploymentsService>();
-                final result = await this.list(appId, deployments, ctx);
+                final apps = ctx.service<AppsService>();
+                final result = await this.list(appId, deployments, apps, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

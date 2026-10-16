@@ -1553,6 +1553,7 @@ class App with Preloadable {
   final String? buildCommand;
   final String? startCommand;
   final String? healthCheckPath;
+  final int? releasesToKeep;
   final int? deployKeyId;
   final String? pythonVersion;
   final String? pythonMode;
@@ -1605,6 +1606,7 @@ class App with Preloadable {
     this.buildCommand,
     this.startCommand,
     this.healthCheckPath,
+    this.releasesToKeep,
     this.deployKeyId,
     this.pythonVersion,
     this.pythonMode,
@@ -1658,6 +1660,7 @@ class App with Preloadable {
     buildCommand: row['build_command'] as String?,
     startCommand: row['start_command'] as String?,
     healthCheckPath: row['health_check_path'] as String?,
+    releasesToKeep: row['releases_to_keep'] as int?,
     deployKeyId: row['deploy_key_id'] as int?,
     pythonVersion: row['python_version'] as String?,
     pythonMode: row['python_mode'] as String?,
@@ -1721,6 +1724,7 @@ class App with Preloadable {
     'build_command': buildCommand,
     'start_command': startCommand,
     'health_check_path': healthCheckPath,
+    'releases_to_keep': releasesToKeep,
     'deploy_key_id': deployKeyId,
     'python_version': pythonVersion,
     'python_mode': pythonMode,
@@ -1786,6 +1790,7 @@ class App with Preloadable {
     String? buildCommand,
     String? startCommand,
     String? healthCheckPath,
+    int? releasesToKeep,
     int? deployKeyId,
     String? pythonVersion,
     String? pythonMode,
@@ -1837,6 +1842,7 @@ class App with Preloadable {
     buildCommand: buildCommand ?? this.buildCommand,
     startCommand: startCommand ?? this.startCommand,
     healthCheckPath: healthCheckPath ?? this.healthCheckPath,
+    releasesToKeep: releasesToKeep ?? this.releasesToKeep,
     deployKeyId: deployKeyId ?? this.deployKeyId,
     pythonVersion: pythonVersion ?? this.pythonVersion,
     pythonMode: pythonMode ?? this.pythonMode,
@@ -2087,6 +2093,10 @@ class AppTable {
     table: 'apps',
     column: 'health_check_path',
   );
+  static const ColumnRef<int?> releasesToKeep = ColumnRef<int?>(
+    table: 'apps',
+    column: 'releases_to_keep',
+  );
   static const ColumnRef<int?> deployKeyId = ColumnRef<int?>(
     table: 'apps',
     column: 'deploy_key_id',
@@ -2241,6 +2251,7 @@ class AppTable {
       'build_command',
       'start_command',
       'health_check_path',
+      'releases_to_keep',
       'deploy_key_id',
       'python_version',
       'python_mode',
@@ -2414,6 +2425,9 @@ class Deployment with Preloadable {
   final String? status;
   final String? failureReason;
   final bool? isActive;
+  final int? rollbackOfId;
+  final String? releaseId;
+  final String? deployConfig;
   final DateTime? startedAt;
   final DateTime? finishedAt;
   final DateTime createdAt;
@@ -2428,6 +2442,9 @@ class Deployment with Preloadable {
     this.status,
     this.failureReason,
     this.isActive,
+    this.rollbackOfId,
+    this.releaseId,
+    this.deployConfig,
     this.startedAt,
     this.finishedAt,
     required this.createdAt,
@@ -2443,6 +2460,9 @@ class Deployment with Preloadable {
     status: row['status'] as String?,
     failureReason: row['failure_reason'] as String?,
     isActive: row['is_active'] as bool?,
+    rollbackOfId: row['rollback_of_id'] as int?,
+    releaseId: row['release_id'] as String?,
+    deployConfig: row['deploy_config'] as String?,
     startedAt: row['started_at'] == null
         ? null
         : (row['started_at'] is DateTime
@@ -2468,6 +2488,9 @@ class Deployment with Preloadable {
     'status': status,
     'failure_reason': failureReason,
     'is_active': isActive,
+    'rollback_of_id': rollbackOfId,
+    'release_id': releaseId,
+    'deploy_config': deployConfig,
     'started_at': startedAt,
     'finished_at': finishedAt,
     'created_at': createdAt,
@@ -2496,6 +2519,9 @@ class Deployment with Preloadable {
     String? status,
     String? failureReason,
     bool? isActive,
+    int? rollbackOfId,
+    String? releaseId,
+    String? deployConfig,
     DateTime? startedAt,
     DateTime? finishedAt,
     DateTime? createdAt,
@@ -2509,6 +2535,9 @@ class Deployment with Preloadable {
     status: status ?? this.status,
     failureReason: failureReason ?? this.failureReason,
     isActive: isActive ?? this.isActive,
+    rollbackOfId: rollbackOfId ?? this.rollbackOfId,
+    releaseId: releaseId ?? this.releaseId,
+    deployConfig: deployConfig ?? this.deployConfig,
     startedAt: startedAt ?? this.startedAt,
     finishedAt: finishedAt ?? this.finishedAt,
     createdAt: createdAt ?? this.createdAt,
@@ -2599,6 +2628,18 @@ class DeploymentTable {
     table: 'deployments',
     column: 'is_active',
   );
+  static const ColumnRef<int?> rollbackOfId = ColumnRef<int?>(
+    table: 'deployments',
+    column: 'rollback_of_id',
+  );
+  static const ColumnRef<String?> releaseId = ColumnRef<String?>(
+    table: 'deployments',
+    column: 'release_id',
+  );
+  static const ColumnRef<String?> deployConfig = ColumnRef<String?>(
+    table: 'deployments',
+    column: 'deploy_config',
+  );
   static const ColumnRef<DateTime?> startedAt = ColumnRef<DateTime?>(
     table: 'deployments',
     column: 'started_at',
@@ -2625,6 +2666,9 @@ class DeploymentTable {
       'status',
       'failure_reason',
       'is_active',
+      'rollback_of_id',
+      'release_id',
+      'deploy_config',
       'started_at',
       'finished_at',
       'created_at',

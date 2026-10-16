@@ -174,6 +174,8 @@ class AppsApi {
         'startCommand': form.startCommand.value,
       if (form.healthCheckPath.value != null)
         'healthCheckPath': form.healthCheckPath.value,
+      if (form.releasesToKeep.value != null)
+        'releasesToKeep': form.releasesToKeep.value,
       if (form.memoryMbLimit.value != null)
         'memoryMbLimit': form.memoryMbLimit.value,
       if (form.cpuQuotaPercent.value != null)

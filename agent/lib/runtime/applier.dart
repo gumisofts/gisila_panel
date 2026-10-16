@@ -431,6 +431,7 @@ class Applier {
     required List<String> hostnames,
     String? publishFrom,
     String? releaseId,
+    Set<String>? keepIds,
     String? user,
     bool isSpa = false,
   }) async {
@@ -442,6 +443,7 @@ class Applier {
         workDir: workDir,
         sourceDir: resolved,
         releaseId: releaseId,
+        keepIds: keepIds,
         user: user,
       );
       // nginx (www-data) must reach + read the published tree. The per-app work
@@ -471,6 +473,7 @@ class Applier {
     required String workDir,
     required String sourceDir,
     String? releaseId,
+    Set<String>? keepIds,
     String? user,
   }) async {
     final id = (releaseId != null && releaseId.isNotEmpty)
@@ -479,6 +482,12 @@ class Applier {
     final webRoot = '$workDir/releases/web';
     final releaseDir = '$webRoot/$id';
     final link = '$workDir/current/web';
+    String? previous;
+    try {
+      previous = Link(link).targetSync();
+    } on FileSystemException {
+      previous = null;
+    }
 
     await ShellExec.run('mkdir', ['-p', webRoot]);
     // Re-deploying the same id (e.g. a retried deployment) must start clean.
@@ -504,25 +513,66 @@ class Applier {
           requireSuccess: false);
     }
 
-    await _pruneStaticReleases(webRoot, liveTarget: releaseDir);
+    await _pruneStaticReleases(webRoot,
+        liveTarget: releaseDir,
+        keepIds: keepIds,
+        // Requests that started before the swap may still be reading the
+        // release nginx served until a moment ago.
+        alsoKeep: {if (previous != null) previous});
     return releaseDir;
   }
 
-  /// Keep the newest [_keepStaticReleases] release dirs under [webRoot] (always
-  /// including [liveTarget]); delete the rest. Best-effort — a failed prune must
-  /// never fail the deploy.
+  /// Serve an already-published static release again — a rollback. nginx
+  /// follows `current/web`, so repointing it is the whole switch: no rebuild
+  /// and no reload.
+  Future<void> activateStaticRelease({
+    required String workDir,
+    required String releaseId,
+    String? user,
+  }) async {
+    final releaseDir = '$workDir/releases/web/$releaseId';
+    if (!Directory(releaseDir).existsSync()) {
+      throw StateError(
+        'Release $releaseId is no longer on disk (only the newest releases '
+        'are kept). Redeploy that commit instead.',
+      );
+    }
+    final link = '$workDir/current/web';
+    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
+    if (user != null && user.isNotEmpty) {
+      await ShellExec.run('chown', ['-h', '$user:$user', link],
+          requireSuccess: false);
+    }
+    await _grantNginxAccess(releaseDir);
+    await _grantTraverse('$workDir/current');
+    stdout.writeln('[agent] activated static release $releaseId');
+  }
+
+  /// Delete static releases the app can no longer roll back to: everything
+  /// not in [keepIds] when the panel passes them, otherwise all but the newest
+  /// [_keepStaticReleases]. [liveTarget] always survives. Best-effort — a
+  /// failed prune must never fail the deploy.
   Future<void> _pruneStaticReleases(String webRoot,
-      {required String liveTarget}) async {
+      {required String liveTarget,
+      Set<String>? keepIds,
+      Set<String> alsoKeep = const {}}) async {
     final dir = Directory(webRoot);
     if (!dir.existsSync()) return;
     final dirs = dir.listSync().whereType<Directory>().toList()
       // Newest first by mtime — deployment ids and ms timestamps don't sort
       // lexically, so order by modification time instead.
       ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-    final keep = <String>{liveTarget};
-    for (final d in dirs) {
-      if (keep.length >= _keepStaticReleases) break;
-      keep.add(d.path);
+    final keep = <String>{liveTarget, ...alsoKeep};
+    if (keepIds != null) {
+      for (final d in dirs) {
+        if (keepIds.contains(d.path.split('/').last)) keep.add(d.path);
+      }
+    } else {
+      for (final d in dirs) {
+        if (keep.length >= _keepStaticReleases) break;
+        keep.add(d.path);
+      }
     }
     for (final d in dirs) {
       if (!keep.contains(d.path)) {

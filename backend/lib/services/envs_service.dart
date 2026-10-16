@@ -12,6 +12,7 @@ class EnvsService extends Service {
     final app = await appsSvc.findForUser(actor, appId);
     return Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.appId.eq(app.id!))
+        .orderBy(EnvVarTable.name)
         .all(_db.context());
   }
 

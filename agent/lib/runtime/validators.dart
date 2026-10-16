@@ -14,6 +14,9 @@ class AgentValidators {
       RegExp(r'^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$');
   static final _commandRe = RegExp(r'^[^|&;`$<>]+$');
   static final _pathSegmentRe = RegExp(r'^[a-zA-Z0-9_.\-]+$');
+  // Deployment ids, optionally suffixed `-<ms>` by a retried publish. No dots
+  // or slashes: the value names a directory under releases/ that root deletes.
+  static final _releaseIdRe = RegExp(r'^[0-9]+(-[0-9]+)?$');
 
   static String requireUser(String? raw) {
     if (raw == null || !_userRe.hasMatch(raw)) {
@@ -59,6 +62,26 @@ class AgentValidators {
       throw ArgumentError('Invalid --hostname: $raw');
     }
     return raw.toLowerCase();
+  }
+
+  static String requireReleaseId(String? raw) {
+    if (raw == null || !_releaseIdRe.hasMatch(raw)) {
+      throw ArgumentError('Invalid --release-id: $raw');
+    }
+    return raw;
+  }
+
+  static String? optionalReleaseId(String? raw) =>
+      (raw == null || raw.isEmpty) ? null : requireReleaseId(raw);
+
+  /// Comma-separated release ids to retain when pruning; null when the flag
+  /// was not passed (prune by count instead).
+  static Set<String>? optionalReleaseIds(String? raw) {
+    if (raw == null) return null;
+    return {
+      for (final id in raw.split(','))
+        if (id.trim().isNotEmpty) requireReleaseId(id.trim()),
+    };
   }
 
   static String? optionalCommand(String? raw) {

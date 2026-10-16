@@ -47,8 +47,25 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 4. `succeeded` — `App.status='running'`, `Deployment.isActive=true`,
    all previous deployments for this app have `isActive=false`.
 5. `failed` — `App.status='failed'`, `failureReason` captured.
-6. `rolled_back` — caller invoked `POST …/rollback`; a fresh deployment
-   row is queued that points at the same `artifactPath`.
+6. Rollback — `POST …/{depId}/rollback` queues a new deployment row with
+   `rollbackOfId` set and the target's `releaseId` + `deployConfig` copied.
+   The worker skips provision and build entirely: `activate-release`
+   repoints `current/src` (or `current/web` for static sites) at the target's
+   release and restores the executable, toolchain link and venv it recorded,
+   then `apply-unit` runs with the target's snapshotted arguments — its env
+   vars and settings, not today's — followed by restart + the health check.
+
+### Release retention
+
+Every build publishes `releases/<deploymentId>` (static: `releases/web/<id>`)
+and records the commit, release dir and a JSON snapshot of the `apply-unit`
+arguments (env included) on the deployment row. `deployConfig` holds secret
+values and is never returned by the API. The worker passes
+`--keep-release-ids` — the new release plus those of the newest
+`App.releasesToKeep` (default 5) successful deployments — and the agent
+prunes every other release, and any venv generation no kept release uses.
+Deployments made before this existed have no snapshot and cannot be rolled
+back to.
 
 ## Agent subcommands
 
@@ -58,6 +75,7 @@ created ──▶ queued ──▶ building ──▶ deploying ──▶ succee
 | `build` | Fetch source (git / zip / binary) and dispatch to the app's `RuntimePlugin.build()` via `--deploy-mode` | ✓ (per artifact) |
 | `apply-unit` | Render + write `gisila-<user>.service` and AppArmor profile, reload systemd. `--expose-mode` (`web`\|`tcp`\|`internal`) raises `LimitNOFILE` (see [Network exposure modes](#network-exposure-modes)) | ✓ |
 | `apply-vhost` | Render + write nginx vhost, `nginx -t`, reload | ✓ |
+| `activate-release` | Rollback: make an already-built release live again and restore its recorded executable / toolchain / venv. No fetch, no build | ✓ |
 | `expose-port` / `unexpose-port` | `ufw allow`/`ufw delete allow <port>/tcp` — opens/closes the host firewall for a `tcp` app's port (no nginx involved) | ✓ |
 | `issue-cert` | `certbot --nginx -d <host>` + reload nginx | ✓ (skip if cert exists & valid) |
 | `start` / `stop` / `restart` | `systemctl <action> gisila-<user>.service` | ✓ |

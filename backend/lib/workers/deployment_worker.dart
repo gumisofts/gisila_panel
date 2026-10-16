@@ -76,6 +76,14 @@ class DeploymentWorker {
       return;
     }
 
+    // Read from the row, not the payload: the stuck-deployment sweeper
+    // re-enqueues with a generic payload, and a rollback must never turn into
+    // a fresh build of the branch head.
+    if (existing.rollbackOfId != null) {
+      await _rollback(existing, app);
+      return;
+    }
+
     await _markStatus(deploymentId, 'building');
     await _publishBuildLog(
       deploymentId,
@@ -205,7 +213,8 @@ class DeploymentWorker {
       // 2. Build / fetch artifact. A force-rebuild deployment bypasses the
       //    agent's dependency/build cache so everything is reinstalled clean.
       final forceRebuild = payload['forceRebuild'] == true;
-      await _runAgent([
+      final keepIds = await _releasesToRetain(app, current: '$deploymentId');
+      final buildOut = await _runAgent([
         'build',
         '--app-id', '${app.id}',
         '--user', app.linuxUser!,
@@ -216,6 +225,7 @@ class DeploymentWorker {
         // current/src is then repointed at. Using the deployment id keeps the
         // releases on disk traceable back to a row in the deployments table.
         '--release-id', '$deploymentId',
+        '--keep-release-ids', keepIds,
         if (forceRebuild) '--no-cache',
         // Which of the Application's supported deploy_modes this app uses —
         // lets a plugin branch between compiling and a dependency-only
@@ -275,7 +285,7 @@ class DeploymentWorker {
       //    Env vars (fetched above) are written by apply-unit to <workDir>/.env
       //    and pulled into each unit via EnvironmentFile=. The same file can be
       //    sourced (set -a; source .env) to run management commands by hand.
-      await _runAgent([
+      final applyUnitArgs = <String>[
         'apply-unit',
         '--app-id', '${app.id}',
         '--user', app.linuxUser!,
@@ -351,7 +361,31 @@ class DeploymentWorker {
           ],
           if (app.celeryBeatEnabled == true) '--celery-beat',
         ],
-      ], deploymentId: deploymentId);
+      ];
+
+      // Record what this deployment runs — its release directory, commit, and
+      // the exact unit configuration including env — before applying it, so a
+      // later rollback to it restores precisely this and nothing newer.
+      final result = _findJsonWith(buildOut.join('\n'), 'buildResult');
+      final commit = result?['commit'] as String?;
+      await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.id.eq(deploymentId))
+          .update(<String, Object?>{
+        // Static sites publish in apply-vhost below, under the deployment id.
+        'releaseId': app.runtime == 'static'
+            ? '$deploymentId'
+            : (result?['release'] as String? ?? '$deploymentId'),
+        if (commit != null) 'gitCommitSha': commit,
+        'deployConfig': jsonEncode(<String, Object?>{
+          'applyUnit': applyUnitArgs,
+        }),
+      }).run(database.context());
+      if (commit != null) {
+        await _publishBuildLog(deploymentId,
+            stream: 'system', line: 'Built commit $commit.');
+      }
+
+      await _runAgent(applyUnitArgs, deploymentId: deploymentId);
 
       // Non-web exposure (tcp/internal) has no Nginx vhost or Domain at all —
       // reconcile the firewall instead (tcp) or leave the app reachable only
@@ -406,6 +440,7 @@ class DeploymentWorker {
           '--user', app.linuxUser!,
           '--publish-from', buildOutput,
           '--release-id', '$deploymentId',
+          '--keep-release-ids', keepIds,
           if (app.staticSpa == true) '--static-spa',
           for (final h in hostnames) ...['--hostname', h],
         ], deploymentId: deploymentId);
@@ -452,6 +487,92 @@ class DeploymentWorker {
         } catch (_) {}
       }
     }
+  }
+
+  /// Re-activate an earlier deployment's release exactly as it ran.
+  ///
+  /// Nothing is fetched or built, and none of the app's current settings are
+  /// consulted for the unit: the release directory already holds that
+  /// deployment's code and build output, the agent restores the executable,
+  /// toolchain and venv it recorded alongside, and the unit is re-applied from
+  /// the arguments (env vars included) snapshotted when it was deployed. That
+  /// is what makes a rollback both instant and faithful — the old behaviour
+  /// re-ran a full build of the branch head with today's env.
+  Future<void> _rollback(Deployment rb, App app) async {
+    final deploymentId = rb.id!;
+    await _markStatus(deploymentId, 'deploying');
+    try {
+      final target = await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.id.eq(rb.rollbackOfId!))
+          .first(database.context());
+      final releaseId = rb.releaseId ?? target?.releaseId;
+      final config = _decodeConfig(rb.deployConfig ?? target?.deployConfig);
+      final applyUnit = (config?['applyUnit'] as List?)?.cast<String>();
+      if (releaseId == null || applyUnit == null || applyUnit.isEmpty) {
+        throw StateError(
+          'Deployment #${rb.rollbackOfId} has no recorded release to roll back '
+          'to. Redeploy instead.',
+        );
+      }
+
+      final commit = rb.gitCommitSha ?? target?.gitCommitSha;
+      await _publishBuildLog(
+        deploymentId,
+        stream: 'system',
+        line: 'Rolling back to deployment #${rb.rollbackOfId}'
+            '${commit != null ? ' (commit ${commit.substring(0, min(7, commit.length))})' : ''}'
+            ' — reusing its build, env vars and settings. Nothing is rebuilt.',
+      );
+
+      await _runAgent([
+        'activate-release',
+        '--work-dir', app.workDir,
+        '--user', app.linuxUser!,
+        '--runtime', app.runtime,
+        '--release-id', releaseId,
+      ], deploymentId: deploymentId);
+      await _runAgent(applyUnit, deploymentId: deploymentId);
+      await _runAgent(
+          ['restart', '--user', app.linuxUser!, '--runtime', app.runtime],
+          deploymentId: deploymentId);
+      await _finishDeployment(deploymentId, app);
+    } catch (e, st) {
+      logger.e('worker: rollback failed', error: e, stackTrace: st);
+      await _markStatus(deploymentId, 'failed', reason: e.toString());
+      await _publishBuildLog(deploymentId,
+          stream: 'stderr', line: 'FAILED: $e');
+    }
+  }
+
+  Map<String, Object?>? _decodeConfig(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, Object?> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The releases the agent must keep on disk: [current] plus those of the
+  /// newest `releasesToKeep` successful deployments that can be rolled back
+  /// to. Everything else is pruned by the build, which is what bounds disk use.
+  Future<String> _releasesToRetain(App app, {required String current}) async {
+    final keep = (app.releasesToKeep ?? 5).clamp(1, 50);
+    final succeeded = await Query<Deployment>(DeploymentTable.metadata)
+        .where(DeploymentTable.appId.eq(app.id!))
+        .where(DeploymentTable.status.eq('succeeded'))
+        .orderBy(DeploymentTable.id, desc: true)
+        .limit(200)
+        .all(database.context());
+    final ids = <String>{current};
+    final previous = <String>{};
+    for (final d in succeeded) {
+      if (previous.length >= keep) break;
+      if (d.releaseId == null || d.deployConfig == null) continue;
+      previous.add(d.releaseId!);
+    }
+    return {...ids, ...previous}.join(',');
   }
 
   Future<void> onLifecycle(Map<String, Object?> payload) async {
@@ -958,7 +1079,9 @@ class DeploymentWorker {
     return 'flower:$pw';
   }
 
-  Future<void> _runAgent(
+  /// Run the agent and return its stdout lines (for commands that report a
+  /// JSON result back).
+  Future<List<String>> _runAgent(
     List<String> args, {
     int? deploymentId,
   }) async {
@@ -969,7 +1092,7 @@ class DeploymentWorker {
       if (deploymentId != null) {
         await _publishBuildLog(deploymentId, stream: 'system', line: line);
       }
-      return;
+      return const <String>[];
     }
 
     final cmd = buildAgentCmd(args);
@@ -1012,5 +1135,6 @@ class DeploymentWorker {
         'agent exited with $exit: ${outputs[1].join("\\n")}',
       );
     }
+    return outputs[0];
   }
 }
