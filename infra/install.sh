@@ -19,6 +19,9 @@
 #   REDIS_URL      redis://[:pass@]host:6379
 #   PANEL_DOMAIN   hostname written into the nginx vhost
 #   ISSUE_TLS=1    run certbot for PANEL_DOMAIN after nginx is up
+#   ENABLE_STUDIO=1  mount GisilaStudio (raw DB admin UI) at /admin. Off by
+#                    default; on a re-run, ENABLE_STUDIO=0|1 flips it in the
+#                    existing /etc/gisila/.env.
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSL   (override URL)
 #   REDIS_HOST, REDIS_PORT, REDIS_PASSWORD                   (override URL)
 #   BUILD_FRONTEND=1   rebuild the UI from source instead of using the
@@ -248,14 +251,22 @@ systemctl daemon-reload
 systemctl enable gisila-apps.target
 systemctl enable gisila-panel.service gisila-worker.service
 
+# True when the (possibly pre-existing) .env enables GisilaStudio at /admin.
+studio_on() { grep -Eq '^STUDIO_ENABLED=(1|true|yes|on)$' /etc/gisila/.env 2>/dev/null; }
+
 # ── 8. /etc/gisila/.env ───────────────────────────────────────────────────────
 echo "==> Writing /etc/gisila/.env"
+case "${ENABLE_STUDIO:-0}" in
+  1|true|yes|on) STUDIO_ENABLED=1 ;;
+  *) STUDIO_ENABLED=0 ;;
+esac
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /etc/gisila
 if [[ ! -f /etc/gisila/.env ]]; then
   cat > /etc/gisila/.env <<EOF
 PORT=8000
 JWT_SECRET=$(head -c 32 /dev/urandom | base64)
 JWT_EXPIRE_DAYS=14
+STUDIO_ENABLED=$STUDIO_ENABLED
 STUDIO_USERNAME=admin
 STUDIO_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -d '/+=')
 SUPERUSER_EMAIL=admin@${PANEL_DOMAIN:-$(hostname -d 2>/dev/null | grep -m1 . || echo example.com)}
@@ -294,6 +305,16 @@ else
   # (which is rewritten on every run), so it is the one that would otherwise go
   # stale when an operator re-runs the installer to move to a different Redis.
   gisila_sync_redis_env /etc/gisila/.env
+  # Studio stays as configured unless this run passed ENABLE_STUDIO, which
+  # flips it on an existing install without touching anything else.
+  if [[ -n "${ENABLE_STUDIO:-}" ]]; then
+    if grep -q '^STUDIO_ENABLED=' /etc/gisila/.env; then
+      sed -i "s/^STUDIO_ENABLED=.*/STUDIO_ENABLED=$STUDIO_ENABLED/" /etc/gisila/.env
+    else
+      echo "STUDIO_ENABLED=$STUDIO_ENABLED" >> /etc/gisila/.env
+    fi
+    echo "    set STUDIO_ENABLED=$STUDIO_ENABLED"
+  fi
 fi
 
 # ── 9. /etc/gisila/database.yaml ──────────────────────────────────────────────
@@ -370,18 +391,18 @@ IP=$(hostname -I | awk '{print $1}')
 if [[ -n "$PANEL_DOMAIN" ]]; then
   echo "  Panel:  http://$PANEL_DOMAIN  (https if ISSUE_TLS=1 succeeded)"
   echo "  Docs:   http://$PANEL_DOMAIN/docs"
-  echo "  Admin:  http://$PANEL_DOMAIN/admin"
+  if studio_on; then echo "  Admin:  http://$PANEL_DOMAIN/admin"; fi
 else
   echo "  Panel:  http://$IP"
   echo "  Docs:   http://$IP/docs"
-  echo "  Admin:  http://$IP/admin"
+  if studio_on; then echo "  Admin:  http://$IP/admin"; fi
 fi
 echo
 echo "  PostgreSQL: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME (external, /etc/gisila/database.yaml)"
 echo "  Redis:      $REDIS_HOST:$REDIS_PORT (external, /etc/gisila/.env)"
 echo
 echo "  Panel superuser:  \$SUPERUSER_EMAIL (see /etc/gisila/.env)"
-echo "  Studio/admin:    \$STUDIO_USERNAME (see /etc/gisila/.env)"
+if studio_on; then echo "  Studio/admin:    \$STUDIO_USERNAME (see /etc/gisila/.env)"; fi
 echo
 if [[ -z "$PANEL_DOMAIN" ]]; then
   echo "  To set a domain (or re-run with PANEL_DOMAIN=… ISSUE_TLS=1):"

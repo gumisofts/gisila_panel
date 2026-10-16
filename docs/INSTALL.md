@@ -144,7 +144,8 @@ Or afterwards:
 | `PORT` | API HTTP port (default 8000). |
 | `JWT_SECRET` | HMAC secret. Rotate by editing + `systemctl restart gisila-panel`. |
 | `JWT_EXPIRE_DAYS` | JWT lifetime. |
-| `STUDIO_USERNAME` / `STUDIO_PASSWORD` | Credentials for `/admin`. |
+| `STUDIO_ENABLED` | `1` mounts GisilaStudio (raw DB admin) at `/admin`; anything else (the default) leaves it off. Set at install with `ENABLE_STUDIO=1`, or edit + `systemctl restart gisila-panel`. |
+| `STUDIO_USERNAME` / `STUDIO_PASSWORD` | Credentials for `/admin` when the studio is enabled. |
 | `REDIS_HOST` / `REDIS_PORT` | Redis connection (from `REDIS_URL` or discrete vars at install). |
 | `REDIS_PASSWORD` | Redis auth password, if the instance requires one. |
 | `PANEL_DOMAIN` | Hostname for the panel nginx vhost (set at install via `PANEL_DOMAIN`). |

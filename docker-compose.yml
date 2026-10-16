@@ -38,6 +38,7 @@ x-dart-base: &dart-base
     REDIS_PORT: "6379"
     JWT_SECRET: dev-only-change-me
     JWT_EXPIRE_DAYS: "14"
+    STUDIO_ENABLED: "1"
     STUDIO_USERNAME: admin
     STUDIO_PASSWORD: admin
     # Initial superuser (created automatically on first boot if no superuser exists).

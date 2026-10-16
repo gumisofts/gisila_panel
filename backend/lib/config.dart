@@ -114,6 +114,15 @@ Future<Command> connectRedis() async {
   return cmd;
 }
 
+/// Whether GisilaStudio (the raw database admin UI) is mounted at `/admin`.
+///
+/// Off unless `STUDIO_ENABLED` is truthy. The studio reads and edits every
+/// table — env var values and SSH private keys included — behind its own
+/// username/password rather than panel auth, so it is something an operator
+/// opts into rather than a default part of every deployment.
+bool get studioEnabled => const {'1', 'true', 'yes', 'on'}
+    .contains(env['STUDIO_ENABLED']?.trim().toLowerCase());
+
 /// Host paths and runtime knobs that the worker / agent need.
 class HostConfig {
   HostConfig({

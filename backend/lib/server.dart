@@ -138,7 +138,10 @@ Future<Handler> application() async {
       NotificationsApi().attachToApp(app, router, spec, prefix: prefix);
       SystemApi().attachToApp(app, router, spec, prefix: prefix);
 
-      router.mount('/admin', adminHandler());
+      if (studioEnabled) {
+        router.mount('/admin', adminHandler());
+        logger.i('GisilaStudio enabled at /admin (STUDIO_ENABLED)');
+      }
       router.mount('/docs', docsHandler(spec));
       router.mount('/', _panelUiHandler());
     },
