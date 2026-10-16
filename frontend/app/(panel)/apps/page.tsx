@@ -82,7 +82,7 @@ export default function AppsPage() {
         }
       />
 
-      {(projects.data?.results.length ?? 0) > 1 && (
+      {(projects.data?.results.length ?? 0) > 0 && (
         <div className="gisila-apps__filters">
           <Select
             id="apps-project-filter"
