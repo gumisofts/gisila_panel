@@ -135,7 +135,7 @@ even a compromised build step can only touch the app's own work-dir.
 
 ## Network exposure modes
 
-`App.exposeMode` (`web` | `tcp` | `internal`, set at creation, immutable
+`App.exposeMode` (`web` | `tcp` | `internal` | `process`, set at creation, immutable
 afterward) determines which network-facing step runs during a deployment
 instead of `apply-vhost`:
 
@@ -163,8 +163,17 @@ instead of `apply-vhost`:
 - **`internal`** — no nginx, no domain, no firewall rule ever opened. The app
   is reachable only via `127.0.0.1:<internalPort>` from other local
   processes (e.g. a sidecar/worker fronted by a `web` app on the same host).
+- **`process`** — no port at all (`internalPort` is null), no nginx, no
+  domain, no firewall rule. For any long-running command — a bot, a queue
+  consumer, a scheduler, a scraper — on any runtime except `static` and
+  `celery` (which already runs portless workers). `apply-unit
+  --expose-mode process` takes no `--port`, writes no `PORT=` into the unit,
+  and requires a start command for python/node/bun/rust (compiled runtimes
+  default to `<workDir>/current/app`). The unit keeps `Restart=always`, so
+  the process is kept alive; `app-health` gets no port and passes once the
+  unit is active and has not restarted for the settle window.
 
-`DomainsService.add` rejects attaching a Domain to a `tcp`/`internal` app
+`DomainsService.add` rejects attaching a Domain to a non-`web` app
 (422) since there is no vhost for a hostname to point at. Teardown
 (`_destroyApp`) always runs `unexpose-port` first for a `tcp` app so the
 firewall hole never outlives the app.
@@ -180,8 +189,8 @@ cleanly and then answer the wrong thing on the wire. Rust has no usable
 default at all, since cargo leaves its binary at a crate-specific
 `target/release/<name>` rather than the conventional `<workDir>/current/app`.
 
-So a `tcp` app on `python`, `node`, `bun` or `rust` must supply a start
-command. It's enforced in three places, closest-to-the-user first:
+So a `tcp` (or `process`) app on `python`, `node`, `bun` or `rust` must
+supply a start command. It's enforced in three places, closest-to-the-user first:
 
 | Where | What it does |
 |---|---|

@@ -476,18 +476,20 @@ Future<void> _applyUnit(List<String> args) async {
     p.addFlag('celery-beat', defaultsTo: false);
     // Node.js / Bun runtime bin dir for PATH injection
     p.addOption('runtime-bin-dir');
-    // web (default) | tcp | internal — see App.exposeMode. Only affects the
-    // unit's LimitNOFILE: tcp/internal apps bind their port and terminate
-    // every client socket themselves (no nginx multiplexing in front), so
-    // they get a much higher fd ceiling than a proxied web app.
+    // web (default) | tcp | internal | process — see App.exposeMode.
+    // tcp/internal apps bind their port and terminate every client socket
+    // themselves (no nginx multiplexing in front), so they get a much higher
+    // fd ceiling than a proxied web app. A process app has no port at all: it
+    // is a long-running command (bot, consumer, scheduler) and nothing else.
     p.addOption('expose-mode', defaultsTo: 'web');
   });
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
   final runtime = r['runtime'] as String;
-  final exposeMode = r['expose-mode'] as String; // web | tcp | internal
-  final directSocket = exposeMode != 'web';
+  final exposeMode = r['expose-mode'] as String; // web|tcp|internal|process
+  final directSocket = exposeMode == 'tcp' || exposeMode == 'internal';
+  final isProcess = exposeMode == 'process';
 
   // ── Static: no process unit, no port needed ──────────────────────────────
   if (runtime == 'static') {
@@ -495,8 +497,10 @@ Future<void> _applyUnit(List<String> args) async {
     return;
   }
 
-  // Every remaining (service) runtime listens on a port.
-  final port = AgentValidators.requirePort(r['port'] as String?);
+  // Every remaining service runtime listens on a port — except a background
+  // process, which by definition does not.
+  final int? port =
+      isProcess ? null : AgentValidators.requirePort(r['port'] as String?);
 
   final envJson = r['env-json'] as String;
   final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
@@ -511,6 +515,9 @@ Future<void> _applyUnit(List<String> args) async {
 
   // ── Celery: creates a target + worker/beat/flower services ────────────────
   if (runtime == 'celery') {
+    if (port == null) {
+      throw ArgumentError('Celery apps need a port for Flower.');
+    }
     final celeryApp = r['celery-app'] as String?;
     if (celeryApp == null || celeryApp.isEmpty) {
       throw ArgumentError('--celery-app is required for runtime=celery');
@@ -573,6 +580,16 @@ Future<void> _applyUnit(List<String> args) async {
     // Node/Bun — historically these ran from $workDir/current, which holds no
     // package.json, so `npm start` crashed with ENOENT.
     if (isJit) unitWritableSource = true;
+  } else if (isProcess && (isPython || isJit || runtime == 'rust')) {
+    // A background process has no default: every derivation below starts an
+    // HTTP server on a port, and a process app has neither. Rust has no fixed
+    // artifact path to fall back to either. The panel requires a start command
+    // for these at creation; this catches apps changed via the API.
+    throw ArgumentError(
+      'No start command set for this background-process $runtime app. Set the '
+      'command to run in the panel (App → Settings → Start command), e.g. '
+      '"python worker.py" or "node bot.js".',
+    );
   } else if (exposeMode == 'tcp' && (isPython || isJit)) {
     // Both remaining derivations below produce an HTTP server (gunicorn for
     // python, the detected web framework for node/bun). That is the right
@@ -601,7 +618,7 @@ Future<void> _applyUnit(List<String> args) async {
     // like "0.0.0.0:$PORT" are passed through literally, so gunicorn would
     // receive the string "$PORT" rather than the actual port number.
     final bind =
-        (bindRaw != null && bindRaw.isNotEmpty) ? bindRaw : '0.0.0.0:$port';
+        (bindRaw != null && bindRaw.isNotEmpty) ? bindRaw : '0.0.0.0:${port!}';
     final extraArgs = r['gunicorn-extra-args'] as String?;
     final venv = '$workDir/current/.venv';
     final logs = '$workDir/logs';
@@ -642,7 +659,9 @@ Future<void> _applyUnit(List<String> args) async {
   } else if (isJit) {
     // Node / Bun with no explicit start command: detect the framework from the
     // built source tree and generate the right command + working directory.
-    final plan = NodeFramework.plan(src: src, port: port, runtime: runtime);
+    // Only web/tcp/internal apps get here (a process app without a start
+    // command was rejected above), and those always have a port.
+    final plan = NodeFramework.plan(src: src, port: port!, runtime: runtime);
     if (plan.isStaticSpa) {
       throw ArgumentError(
         'This app looks like a static ${plan.label} build (output in '

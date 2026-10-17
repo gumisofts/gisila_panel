@@ -74,6 +74,7 @@ function statusTagType(status: string): TagType {
 /// from the internet iff `publiclyReachable`); `internal` apps never leave
 /// the box.
 function bindAddressLabel(app: App): string {
+  if (app.exposeMode === "process") return "no port (background process)";
   if (!app.internalPort) return "no port";
   if (app.exposeMode === "tcp") {
     return `0.0.0.0:${app.internalPort} (${

@@ -343,7 +343,7 @@ class SystemdUnit {
     required this.linuxUser,
     required this.workDir,
     required this.startCommand,
-    required this.port,
+    this.port,
     this.memoryMb = 256,
     this.cpuQuotaPercent = 50,
     this.tasksMax = 100,
@@ -363,7 +363,11 @@ class SystemdUnit {
   final String linuxUser;
   final String workDir;
   final String startCommand;
-  final int port;
+
+  /// Null for a background process (`expose_mode = process`), which listens
+  /// on nothing — the unit then exports no PORT at all rather than a made-up
+  /// one the app might try to bind.
+  final int? port;
   final int memoryMb;
   final int cpuQuotaPercent;
   final int tasksMax;
@@ -588,8 +592,7 @@ KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
 
-Environment=PORT=$port
-Environment=GISILA_APP_ID=$appId
+${port != null ? 'Environment=PORT=$port\n' : ''}Environment=GISILA_APP_ID=$appId
 ${pathLine}${corepkLines}${homeLines}${pnpmLines}${unitEnvLines}$envFileLine
 
 # ── Sandboxing ─────────────────────────────────────────────────

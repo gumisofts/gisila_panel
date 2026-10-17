@@ -15,6 +15,7 @@ import "../_app-detail.scss";
 /// `../page.tsx`. Duplicated rather than imported to keep this a pure
 /// presentational component with no dependency on the page module.
 function bindAddress(app: App): string {
+  if (app.exposeMode === "process") return "no port (background process)";
   if (!app.internalPort) return "—";
   if (app.exposeMode === "tcp") {
     return `0.0.0.0:${app.internalPort} (${

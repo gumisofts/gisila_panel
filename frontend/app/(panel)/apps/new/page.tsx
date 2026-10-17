@@ -131,13 +131,18 @@ export default function NewAppPage() {
   // (Gunicorn's WSGI/ASGI wiring) belongs to the nginx-fronted `web` mode and
   // is hidden here rather than asking for answers that would be ignored.
   const isTcp = !isStatic && form.exposeMode === "tcp";
+  // A long-running process with no port at all (bot, queue consumer,
+  // scheduler, …). Celery already is that, so it never offers the mode.
+  const isProcess = !isStatic && !isCelery && form.exposeMode === "process";
+  // Both run their own command rather than a derived HTTP server.
+  const ownsCommand = isTcp || isProcess;
   // These runtimes' start commands are only derivable by assuming HTTP
   // (gunicorn for Python, the detected web framework for Node/Bun) or aren't
   // derivable at all (Rust builds no fixed artifact path), so a tcp app on one
   // of them has to say what to run. Compiled runtimes keep their protocol-
   // agnostic default of the built binary at <workDir>/current/app.
   const needsExplicitStart =
-    isTcp && (isPython || isNode || isBun || isRust);
+    ownsCommand && (isPython || isNode || isBun || isRust);
   // The agent resolves the command's program against the runtime's own tooling
   // (virtualenv, node_modules/.bin, cargo's target dir) before systemd sees it,
   // so say so rather than letting people hardcode absolute build paths.
@@ -151,8 +156,10 @@ export default function NewAppPage() {
   const startCommandHelp =
     [
       needsExplicitStart
-        ? "A TCP service has no default we can infer — the usual one would start an HTTP server, which isn't what you're deploying."
-        : isTcp
+        ? isProcess
+          ? "This is exactly what runs — systemd keeps it alive and restarts it if it exits."
+          : "A TCP service has no default we can infer — the usual one would start an HTTP server, which isn't what you're deploying."
+        : ownsCommand
           ? "Exactly what systemd runs. Leave blank to run the compiled binary at current/app."
           : "",
       needsExplicitStart
@@ -223,7 +230,11 @@ export default function NewAppPage() {
         deploymentMode: form.deploymentMode || undefined,
         sourceType: form.sourceType,
         // Static sites are served directly by Nginx and have no listening port.
-        ...(isStatic ? {} : { internalPort: Number(form.internalPort) }),
+        // Static sites (served by Nginx) and background processes listen on
+        // no port.
+        ...(isStatic || isProcess
+          ? {}
+          : { internalPort: Number(form.internalPort) }),
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
         sourceSubdir: form.sourceSubdir || undefined,
@@ -231,16 +242,21 @@ export default function NewAppPage() {
         startCommand: form.startCommand || undefined,
         // Static sites are always web-exposed (Nginx serves the files
         // directly) — exposeMode only applies to process-backed runtimes.
-        exposeMode: isStatic ? "web" : form.exposeMode,
+        exposeMode: isStatic
+          ? "web"
+          : isCelery && form.exposeMode === "process"
+            ? "web"
+            : form.exposeMode,
         ...(!isStatic && form.exposeMode === "tcp"
           ? { publiclyReachable: form.publiclyReachable }
           : {}),
       };
       if (isPython) {
         payload.pythonVersion = form.pythonVersion;
-        // Gunicorn wiring is hidden for a tcp app (it starts its own
-        // process), so don't send defaults the user never saw.
-        if (!isTcp) {
+        // Gunicorn wiring is hidden for tcp apps and background processes
+        // (they start their own command), so don't send defaults the user
+        // never saw.
+        if (!ownsCommand) {
           payload.pythonMode    = form.pythonMode;
           payload.wsgiApp       = form.wsgiApp || undefined;
           payload.gunicornWorkers = form.gunicornWorkers ? Number(form.gunicornWorkers) : undefined;
@@ -401,8 +417,9 @@ export default function NewAppPage() {
               </div>
             )}
 
-            {/* Port — static sites are served directly by Nginx, no port. */}
-            {!isStatic && (
+            {/* Port — static sites are served directly by Nginx, and a
+                background process listens on nothing. */}
+            {!isStatic && !isProcess && (
               <NumberInput
                 id="internalPort"
                 label="Internal port"
@@ -422,7 +439,7 @@ export default function NewAppPage() {
             {/* Exposure — how the app reaches the network. Static sites are
                 always Nginx-served, so the picker doesn't apply to them. */}
             {!isStatic && (
-              <div className="gisila-tile-grid gisila-tile-grid--3">
+              <div className="gisila-tile-grid gisila-tile-grid--2">
                 <TileGroup
                   name="exposeMode"
                   legend="Exposure"
@@ -431,7 +448,11 @@ export default function NewAppPage() {
                     set("exposeMode", selection as ExposeMode)
                   }
                 >
-                  {(["web", "tcp", "internal"] as ExposeMode[]).map((m) => (
+                  {(
+                    (isCelery
+                      ? ["web", "tcp", "internal"]
+                      : ["web", "tcp", "internal", "process"]) as ExposeMode[]
+                  ).map((m) => (
                     <RadioTile key={m} id={`expose-mode-${m}`} value={m}>
                       <span className="gisila-app-form__tile-title">
                         {EXPOSE_MODE_LABEL[m]}
@@ -441,7 +462,9 @@ export default function NewAppPage() {
                           ? "Nginx reverse proxy + a domain, TLS included."
                           : m === "tcp"
                             ? "Direct TCP port, no Nginx/domain — for custom protocols (game servers, MQTT, gRPC, …)."
-                            : "No public exposure — background workers, sidecars reachable only from localhost."}
+                            : m === "internal"
+                              ? "Listens on a port reachable only from localhost — sidecars, internal APIs."
+                              : "No port at all — any long-running command: bots, queue consumers, schedulers, scrapers."}
                       </span>
                     </RadioTile>
                   ))}
@@ -486,10 +509,10 @@ export default function NewAppPage() {
                 <Stack gap={5}>
                   <div className="gisila-app-form__banner">
                     <Tag type="blue" size="sm">
-                      {isTcp ? "Python" : "Python / WSGI·ASGI"}
+                      {ownsCommand ? "Python" : "Python / WSGI·ASGI"}
                     </Tag>
                     <span className="gisila-app-form__hint">
-                      {isTcp
+                      {ownsCommand
                         ? "Runs your own command in a pyenv-managed virtualenv"
                         : "Served by Gunicorn via pyenv-managed virtualenv"}
                     </span>
@@ -516,7 +539,7 @@ export default function NewAppPage() {
                       speaks HTTP behind nginx. A tcp app serves its own
                       protocol from its own start command, so asking for a
                       WSGI target or worker class would be noise. */}
-                  {!isTcp && (
+                  {!ownsCommand && (
                     <>
                       {/* Server mode */}
                       <div className="gisila-tile-grid gisila-tile-grid--2">
@@ -1011,7 +1034,15 @@ export default function NewAppPage() {
                   )}
                   required={needsExplicitStart}
                   placeholder={
-                    isTcp
+                    isProcess
+                      ? isPython
+                        ? "python worker.py"
+                        : isNode || isBun
+                          ? "node bot.js"
+                          : isRust
+                            ? "my-worker"
+                            : "./current/app"
+                      : isTcp
                       ? isPython
                         ? "python manage.py run_tcp_server"
                         : isNode || isBun

@@ -172,7 +172,7 @@ class SupervisorConf {
     required this.linuxUser,
     required this.workDir,
     required this.startCommand,
-    required this.port,
+    this.port,
     this.runtimeBinDir,
     this.workingDir,
     this.envVars = const {},
@@ -182,7 +182,9 @@ class SupervisorConf {
   final String linuxUser;
   final String workDir;
   final String startCommand;
-  final int port;
+
+  /// Null for a background process, which gets no PORT (see SystemdUnit.port).
+  final int? port;
 
   /// Explicit working directory. When null, defaults to `<workDir>/current`.
   /// Node/Bun apps run from the published release (`<workDir>/current/src`).
@@ -198,7 +200,8 @@ class SupervisorConf {
   String render() {
     // supervisord environment= format: KEY="VALUE",KEY2="VALUE2"
     // Embedded double-quotes in values must be escaped as \".
-    final pairs = StringBuffer('PORT="$port",GISILA_APP_ID="$appId"');
+    final pairs = StringBuffer(
+        '${port != null ? 'PORT="$port",' : ''}GISILA_APP_ID="$appId"');
     if (runtimeBinDir != null) {
       pairs.write(',PATH="$runtimeBinDir:/usr/local/bin:/usr/bin:/bin"');
     }

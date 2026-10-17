@@ -321,12 +321,13 @@ export const DEPLOY_MODE_LABEL: Record<DeployMode, string> = {
   static_publish: "Static Publish",
 };
 
-export type ExposeMode = "web" | "tcp" | "internal";
+export type ExposeMode = "web" | "tcp" | "internal" | "process";
 
 export const EXPOSE_MODE_LABEL: Record<ExposeMode, string> = {
   web: "Web",
   tcp: "TCP service",
   internal: "Internal only",
+  process: "Background process",
 };
 
 // ── Managed services ─────────────────────────────────────────────────────────

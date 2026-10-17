@@ -13,7 +13,13 @@ import 'package:gisila_panel/utils/slugs.dart';
 
 /// Network exposure modes an [App] can pick at creation time. See the
 /// `expose_mode` column doc in `schema.gisila.yaml` for the full rationale.
-const kExposeModes = <String>{'web', 'tcp', 'internal'};
+const kExposeModes = <String>{'web', 'tcp', 'internal', 'process'};
+
+/// Exposure modes where the app runs its own command rather than one the agent
+/// derives. Every derivation for [kTcpRuntimesNeedingStartCommand] assumes an
+/// HTTP server, which neither a raw TCP service nor a portless background
+/// process is.
+const kOwnCommandExposeModes = <String>{'tcp', 'process'};
 
 /// Runtimes where a `tcp` app must supply its own start command.
 ///
@@ -190,9 +196,10 @@ class AppsService extends Service {
     }
     deploymentMode ??= application.defaultDeployMode;
 
-    // Static apps carry no port; every service runtime needs a unique one.
+    // Static apps and background processes carry no port; every other service
+    // runtime needs a unique one.
     final isStatic = runtime == 'static';
-    if (isStatic) {
+    if (isStatic || exposeMode == 'process') {
       port = null;
     } else {
       if (port == null) {
@@ -213,14 +220,20 @@ class AppsService extends Service {
     if (isStatic && exposeMode != null && exposeMode != 'web') {
       throw BadRequest('Static sites only support exposeMode "web".');
     }
-    if (resolvedExposeMode == 'tcp' &&
+    // Celery already runs its workers as portless processes of its own, and
+    // the port it is given is Flower's.
+    if (runtime == 'celery' && resolvedExposeMode == 'process') {
+      throw BadRequest(
+          'Celery apps already run as background workers; use exposeMode "web".');
+    }
+    if (kOwnCommandExposeModes.contains(resolvedExposeMode) &&
         kTcpRuntimesNeedingStartCommand.contains(runtime) &&
         (startCommand == null || startCommand.trim().isEmpty)) {
       throw BadRequest(
-        'A start command is required for a "tcp" app on runtime "$runtime". '
-        'Without one the deploy would fall back to starting an HTTP server '
-        '(gunicorn / the detected web framework), which is not what a raw TCP '
-        'service runs.',
+        'A start command is required for a "$resolvedExposeMode" app on '
+        'runtime "$runtime". Without one the deploy would fall back to '
+        'starting an HTTP server (gunicorn / the detected web framework), '
+        'which is not what this app runs.',
       );
     }
 
@@ -308,17 +321,20 @@ class AppsService extends Service {
       throw BadRequest('exposeMode cannot be changed after creation.');
     }
     if (patch.containsKey('internalPort') && patch['internalPort'] != null) {
+      if (app.exposeMode == 'process') {
+        throw BadRequest('Background processes do not listen on a port.');
+      }
       await _validatePort(patch['internalPort'] as int, excludeAppId: app.id);
     }
     // Same reasoning as at creation: clearing the start command of a tcp app
-    // on one of these runtimes would silently hand the next deploy back to an
-    // HTTP default that doesn't fit it.
+    // or background process on one of these runtimes would silently hand the
+    // next deploy back to an HTTP default that doesn't fit it.
     if (patch.containsKey('startCommand') &&
-        app.exposeMode == 'tcp' &&
+        kOwnCommandExposeModes.contains(app.exposeMode) &&
         kTcpRuntimesNeedingStartCommand.contains(app.runtime) &&
         (patch['startCommand'] as String? ?? '').trim().isEmpty) {
       throw BadRequest(
-        'A start command is required for a "tcp" app on runtime '
+        'A start command is required for a "${app.exposeMode}" app on runtime '
         '"${app.runtime}" — it has no HTTP-free default to fall back to.',
       );
     }

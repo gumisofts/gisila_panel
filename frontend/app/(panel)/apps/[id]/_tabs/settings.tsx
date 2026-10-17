@@ -117,6 +117,13 @@ function NetworkExposureCard({
             attach a hostname and TLS certificate.
           </p>
         )}
+        {exposeMode === "process" && (
+          <p className="gisila-app__hint">
+            A long-running process with no port, domain or firewall rule. systemd
+            runs the start command and restarts it if it exits; deploys pass the
+            health check once it stays up.
+          </p>
+        )}
         {exposeMode === "internal" && (
           <p className="gisila-app__hint">
             Not publicly exposed. Reachable only from other local processes on
@@ -297,15 +304,21 @@ export function SettingsTab({
   // A tcp app serves its own protocol, so Gunicorn's WSGI/ASGI wiring doesn't
   // apply — and its start command is the only thing that says what to run.
   const isTcp = app.exposeMode === "tcp";
+  // A background process has no port at all — just its own command.
+  const isProcess = app.exposeMode === "process";
+  // Both run their own command instead of a derived HTTP server.
+  const ownsCommand = isTcp || isProcess;
   const needsExplicitStart =
-    isTcp && (isPython || isNode || isBun || isRust);
+    ownsCommand && (isPython || isNode || isBun || isRust);
   // The agent resolves the command's program against the runtime's own tooling
   // (virtualenv, node_modules/.bin, cargo's target dir) before systemd sees it,
   // so say so rather than letting people hardcode absolute build paths.
   const startCommandHelp =
     [
       needsExplicitStart
-        ? "A TCP service has no default we can infer — the usual one would start an HTTP server."
+        ? isProcess
+          ? "A background process has no default — this is exactly what runs, kept alive by systemd."
+          : "A TCP service has no default we can infer — the usual one would start an HTTP server."
         : "",
       isPython
         ? "Write it as if the virtualenv were active: python, manage.py and installed scripts like gunicorn resolve to this app's virtualenv."
@@ -347,7 +360,7 @@ export function SettingsTab({
         patch.pythonVersion = form.pythonVersion;
         // The Gunicorn fields are hidden for a tcp app, so don't send back
         // values the user was never shown a chance to set.
-        if (!isTcp) {
+        if (!ownsCommand) {
           patch.pythonMode = form.pythonMode;
           patch.wsgiApp = form.wsgiApp || undefined;
           patch.gunicornWorkers = form.gunicornWorkers
@@ -444,17 +457,19 @@ export function SettingsTab({
                 />
               ))}
             </Select>
-            <TextInput
-              id="s-port"
-              labelText="Internal port"
-              type="number"
-              min={1024}
-              max={65535}
-              value={form.internalPort}
-              onChange={(e) => set("internalPort", e.target.value)}
-              placeholder="e.g. 8080"
-              helperText="The port your app listens on. Changing this requires a redeploy."
-            />
+            {app.exposeMode !== "process" && (
+              <TextInput
+                id="s-port"
+                labelText="Internal port"
+                type="number"
+                min={1024}
+                max={65535}
+                value={form.internalPort}
+                onChange={(e) => set("internalPort", e.target.value)}
+                placeholder="e.g. 8080"
+                helperText="The port your app listens on. Changing this requires a redeploy."
+              />
+            )}
           </Stack>
         </Tile>
 
@@ -546,7 +561,13 @@ export function SettingsTab({
                         : "Start command (optional)"
                     }
                     placeholder={
-                      isTcp
+                      isProcess
+                        ? isPython
+                          ? "python worker.py"
+                          : isNode || isBun
+                            ? "node bot.js"
+                            : "./current/app"
+                        : isTcp
                         ? isPython
                           ? "python manage.py run_tcp_server"
                           : isNode || isBun
@@ -584,7 +605,7 @@ export function SettingsTab({
         {isPython && (
           <Tile>
             <h3 className="gisila-app__tile-title">
-              {isTcp ? "Python" : "Python / WSGI · ASGI"}
+              {ownsCommand ? "Python" : "Python / WSGI · ASGI"}
             </h3>
             <Stack gap={6}>
               <VersionSelect
@@ -596,9 +617,9 @@ export function SettingsTab({
                 {versionItems("python", form.pythonVersion, appsList, catalogList)}
               </VersionSelect>
 
-              {/* Gunicorn only makes sense for an HTTP app behind nginx; a tcp
-                  app runs whatever its start command says. */}
-              {!isTcp && (
+              {/* Gunicorn only makes sense for an HTTP app behind nginx; tcp
+                  apps and background processes run their own start command. */}
+              {!ownsCommand && (
                 <>
                   <TileGroup
                     name="s-python-mode"

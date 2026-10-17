@@ -129,7 +129,12 @@ export default function AppsPage() {
                       {projectName.get(String(app.projectId)) && (
                         <>{projectName.get(String(app.projectId))} · </>
                       )}
-                      {app.linuxUser} → 127.0.0.1:{app.internalPort}
+                      {app.linuxUser}
+                      {app.internalPort
+                        ? ` → 127.0.0.1:${app.internalPort}`
+                        : app.exposeMode === "process"
+                          ? " · background process"
+                          : ""}
                     </p>
                   </div>
                   <Tag type={STATUS_TAG[app.status] ?? "gray"} size="sm">

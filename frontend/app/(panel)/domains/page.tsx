@@ -45,7 +45,8 @@ export default function DomainsPage() {
                 <div>
                   <p className="gisila-card__title">{app.name}</p>
                   <p className="gisila-card__meta">
-                    {app.runtime} · port {app.internalPort}
+                    {app.runtime}
+                    {app.internalPort ? ` · port ${app.internalPort}` : ""}
                   </p>
                 </div>
               </div>
