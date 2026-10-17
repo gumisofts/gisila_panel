@@ -25,6 +25,7 @@ import {
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import type { User } from "@/lib/types";
+import { VersionFooter } from "@/components/version-info";
 
 // Flat links rather than Carbon's collapsible SideNavMenu groups: the panel has
 // sixteen destinations that are switched between constantly, and SideNavMenu
@@ -133,6 +134,10 @@ export function PanelSideNav({
             ))}
           </Fragment>
         ))}
+        <SideNavDivider />
+        <li className="gisila-side-nav__version">
+          <VersionFooter />
+        </li>
       </SideNavItems>
     </SideNav>
   );

@@ -4,20 +4,63 @@ import 'dart:io';
 
 import 'package:gisila_doc/gisila_doc.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/version.dart';
 
 part 'system.g.dart';
 
 @Controller('/system', ['System'])
 @RequireAuth()
 class SystemApi {
-  @Get('/info', summary: 'Addresses of the server the panel runs on')
+  @Get('/info', summary: 'Server addresses and the running Gisila version')
   Future<Map<String, Object?>> info(RequestContext ctx) async {
     return <String, Object?>{
       'hostname': Platform.localHostname,
       'publicIp': await _publicIp(),
       'privateIps': await _privateIps(),
+      'version': <String, Object?>{
+        'panel': <String, Object?>{
+          'version': gisilaVersion,
+          'commit': gisilaCommit,
+          'builtAt': gisilaBuiltAt,
+        },
+        'agent': await _agentVersion(),
+      },
     };
   }
+}
+
+Map<String, Object?>? _agentInfo;
+DateTime? _agentAt;
+
+/// The installed gisila-agent's build stamp, or null when it can't be asked.
+///
+/// The agent is a separate binary that is often updated on its own, and a
+/// panel newer than its agent passes flags the agent doesn't know — so the
+/// two are reported side by side. `version` needs no root, so this runs the
+/// binary directly (the API itself can never sudo). Cached briefly: an agent
+/// swap needs no panel restart, so it must show up without one.
+Future<Map<String, Object?>?> _agentVersion() async {
+  final at = _agentAt;
+  if (at != null && DateTime.now().difference(at) < const Duration(minutes: 2)) {
+    return _agentInfo;
+  }
+  Map<String, Object?>? info;
+  try {
+    final cmd = buildAgentCmdNoSudo(['version']);
+    final res = await Process.run(cmd.first, cmd.skip(1).toList())
+        .timeout(const Duration(seconds: 5));
+    for (final line in (res.stdout as String).split('\n').reversed) {
+      if (!line.trim().startsWith('{') || !line.contains('"version"')) continue;
+      final decoded = jsonDecode(line.trim());
+      if (decoded is Map<String, Object?>) info = decoded;
+      break;
+    }
+  } catch (_) {
+    // Missing binary, or an agent too old to have `version` — report unknown.
+  }
+  _agentInfo = info;
+  _agentAt = DateTime.now();
+  return info;
 }
 
 String? _cachedIp;

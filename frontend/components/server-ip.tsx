@@ -5,14 +5,27 @@ import { Copy } from "@carbon/icons-react";
 import { fetcher } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
+export interface BuildStamp {
+  version: string;
+  commit: string;
+  builtAt: string;
+}
+
 export interface ServerInfo {
   hostname: string;
   publicIp: string | null;
   privateIps: string[];
+  // Absent from panels older than the version display.
+  version?: {
+    panel: BuildStamp;
+    // Null when the agent can't be asked (missing, or too old to say).
+    agent: BuildStamp | null;
+  };
 }
 
-/// Addresses of the host the panel runs on. They practically never change, so
-/// fetch once per session rather than on every focus.
+/// Addresses and build versions of the host the panel runs on. They
+/// practically never change, so fetch once per session rather than on every
+/// focus.
 export function useServerInfo() {
   return useSWR<ServerInfo>("/system/info", fetcher, {
     revalidateOnFocus: false,

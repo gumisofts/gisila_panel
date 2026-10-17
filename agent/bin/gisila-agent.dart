@@ -15,6 +15,7 @@ import 'package:gisila_agent/runtime/priv.dart';
 import 'package:gisila_agent/runtime/runtime_plugin.dart';
 import 'package:gisila_agent/runtime/runtime_registry.dart';
 import 'package:gisila_agent/runtime/validators.dart';
+import 'package:gisila_agent/version.dart';
 import 'package:gisila_agent/services/handler.dart';
 
 /// gisila-agent — the privileged host-side CLI invoked by the worker.
@@ -48,6 +49,14 @@ Future<void> main(List<String> args) async {
       case 'activate-release':
         await _activateRelease(rest);
         break;
+      case 'version':
+        // Read by the panel's /system/info (unprivileged, no sudo needed).
+        stdout.writeln(jsonEncode({
+          'version': gisilaVersion,
+          'commit': gisilaCommit,
+          'builtAt': gisilaBuiltAt,
+        }));
+        return;
       case 'expose-port':
         await _exposePort(rest, allow: true);
         break;
@@ -5094,6 +5103,7 @@ Subcommands:
                    multiplexing in front, so the app holds one fd per
                    client connection itself)
   apply-vhost   --app-id ID --port N [--hostname host …]
+  version       (prints {"version","commit","builtAt"} as JSON)
   activate-release --work-dir PATH --user app_xxx --runtime RT --release-id ID
                   (rollback: re-point the app at an already-built release
                    and restore its executable/toolchain/venv — no rebuild)

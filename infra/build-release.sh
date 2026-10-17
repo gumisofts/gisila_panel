@@ -48,22 +48,25 @@ done
 
 echo "==> Building Gisila Panel release $VERSION (linux-$ARCH)"
 
+# Version stamp shown in the panel (System → About) and /system/info.
+BUILD_DEFINES="$(VERSION="$VERSION" bash "$REPO_DIR/infra/build-defines.sh")"
+
 # ── Backend binaries ──────────────────────────────────────────────────────────
 echo "==> Compiling backend binaries (server, worker, migrate)"
 cd "$REPO_DIR/backend"
 dart pub get
 dart run build_runner build --delete-conflicting-outputs
 mkdir -p "$REPO_DIR/backend/build"
-dart compile exe bin/server.dart  -o "$REPO_DIR/backend/build/gisila-panel"
-dart compile exe bin/worker.dart  -o "$REPO_DIR/backend/build/gisila-worker"
-dart compile exe bin/migrate.dart -o "$REPO_DIR/backend/build/gisila-migrate"
+dart compile exe $BUILD_DEFINES bin/server.dart  -o "$REPO_DIR/backend/build/gisila-panel"
+dart compile exe $BUILD_DEFINES bin/worker.dart  -o "$REPO_DIR/backend/build/gisila-worker"
+dart compile exe $BUILD_DEFINES bin/migrate.dart -o "$REPO_DIR/backend/build/gisila-migrate"
 
 # ── Agent binary ────────────────────────────────────────────────────────────
 echo "==> Compiling gisila-agent"
 cd "$REPO_DIR/agent"
 dart pub get
 mkdir -p "$REPO_DIR/agent/build"
-dart compile exe bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
+dart compile exe $BUILD_DEFINES bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
 if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then

@@ -165,6 +165,9 @@ if ! timeout 5 bash -c "exec 3<>/dev/tcp/$REDIS_HOST/$REDIS_PORT" 2>/dev/null; t
 fi
 echo "    connected."
 
+# Version stamp shown in the panel (System → About) and /system/info.
+BUILD_DEFINES="$(bash "$REPO_DIR/infra/build-defines.sh")"
+
 # ── 4. Build & install binaries (all as root) ─────────────────────────────────
 echo "==> dart pub get — backend"
 cd "$REPO_DIR/backend"
@@ -175,11 +178,11 @@ dart run build_runner build --delete-conflicting-outputs
 
 echo "==> compiling gisila-panel (API server)"
 mkdir -p "$REPO_DIR/backend/build"
-dart compile exe bin/server.dart -o "$REPO_DIR/backend/build/gisila-panel"
+dart compile exe $BUILD_DEFINES bin/server.dart -o "$REPO_DIR/backend/build/gisila-panel"
 install -m 0755 "$REPO_DIR/backend/build/gisila-panel" /usr/local/bin/gisila-panel
 
 echo "==> compiling gisila-worker"
-dart compile exe bin/worker.dart -o "$REPO_DIR/backend/build/gisila-worker"
+dart compile exe $BUILD_DEFINES bin/worker.dart -o "$REPO_DIR/backend/build/gisila-worker"
 install -m 0755 "$REPO_DIR/backend/build/gisila-worker" /usr/local/bin/gisila-worker
 
 echo "==> dart pub get — agent"
@@ -188,7 +191,7 @@ dart pub get
 
 echo "==> compiling gisila-agent"
 mkdir -p "$REPO_DIR/agent/build"
-dart compile exe bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
+dart compile exe $BUILD_DEFINES bin/gisila-agent.dart -o "$REPO_DIR/agent/build/gisila-agent"
 install -m 0755 "$REPO_DIR/agent/build/gisila-agent" /usr/local/bin/gisila-agent
 
 # ── 5. Frontend — deploy prebuilt assets (optionally rebuild) ────────────────

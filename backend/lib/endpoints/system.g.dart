@@ -52,7 +52,7 @@ extension SystemApiGisilaDoc on SystemApi {
           openApiPath,
           'get',
           Operation(
-            summary: 'Addresses of the server the panel runs on',
+            summary: 'Server addresses and the running Gisila version',
             tags: <String>['System'],
             parameters: <Parameter>[],
             responses: <String, ResponseSpec>{

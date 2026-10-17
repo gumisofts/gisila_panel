@@ -113,6 +113,31 @@ body,
   inline-size: 12rem;
 }
 
+// Version line at the foot of the side nav (links to Settings → About).
+.gisila-side-nav__version {
+  padding-block: spacing.$spacing-03 spacing.$spacing-05;
+  padding-inline: spacing.$spacing-05;
+}
+
+.gisila-version-footer {
+  @include type.type-style('label-01');
+
+  display: inline-flex;
+  align-items: center;
+  gap: spacing.$spacing-02;
+  color: theme.$text-secondary;
+  text-decoration: none;
+
+  &:hover {
+    color: theme.$text-primary;
+    text-decoration: underline;
+  }
+
+  svg {
+    fill: theme.$support-warning;
+  }
+}
+
 // ── Server IP chip ───────────────────────────────────────────────────────────
 // Plain button in the global bar showing the host's public IP (click copies).
 // Hidden on narrow screens, where the bar only has room for its icon actions.

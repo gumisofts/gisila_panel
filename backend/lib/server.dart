@@ -8,6 +8,7 @@ import 'package:gisila_panel/admin.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/version.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
 import 'package:gisila_panel/endpoints/applications.dart';
 import 'package:gisila_panel/endpoints/audit.dart';
@@ -54,7 +55,7 @@ Future<Handler> application() async {
   final spec = OpenApiSpec(
     info: const ApiInfo(
       title: 'Gisila Panel API',
-      version: '0.1.0',
+      version: gisilaVersion,
       description: 'Open-source lightweight PaaS control plane. Manage teams, '
           'projects, apps, deployments, domains, env vars, logs and metrics.',
     ),
@@ -69,7 +70,7 @@ Future<Handler> application() async {
       cors: const CorsConfig(),
       requestTimeout: const Duration(seconds: 30),
       maxRequestBodyBytes: 50 * 1024 * 1024, // 50 MB (artifact uploads)
-      serverHeader: 'gisila-panel/0.1.0',
+      serverHeader: 'gisila-panel/$gisilaVersion',
       poweredByHeader: false,
       authenticator: JwtAuthenticator(database: database),
       database: GisilaOrmDatabaseProvider(database),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
 import { Add, TrashCan } from "@carbon/icons-react";
@@ -24,6 +24,7 @@ import {
   Tile,
 } from "@carbon/react";
 import { Page, PageHeader, PageSection } from "@/components/page";
+import { AboutVersions } from "@/components/version-info";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, SshKey, User } from "@/lib/types";
@@ -32,6 +33,14 @@ import "./_settings.scss";
 export default function SettingsPage() {
   const me = useSWR<User>("/auth/me", fetcher);
   const keys = useSWR<ListResponse<SshKey>>("/me/security/ssh-keys", fetcher);
+
+  // The side nav's version line links to #about; the router doesn't scroll
+  // to hashes on its own.
+  useEffect(() => {
+    if (window.location.hash === "#about") {
+      document.getElementById("about")?.scrollIntoView();
+    }
+  }, []);
 
   const [keyName, setKeyName] = useState("");
   const [publicKey, setPublicKey] = useState("");
@@ -66,7 +75,7 @@ export default function SettingsPage() {
     <Page>
       <PageHeader
         title="Settings"
-        description="Profile, security and SSH keys."
+        description="Profile, security, SSH keys and version."
       />
 
       <PageSection title="Profile">
@@ -160,6 +169,15 @@ export default function SettingsPage() {
           )}
         </Stack>
       </PageSection>
+
+      <section id="about">
+        <PageSection
+          title="About"
+          description="What is running on this server. The panel, the agent and the web UI are deployed separately."
+        >
+          <AboutVersions />
+        </PageSection>
+      </section>
     </Page>
   );
 }

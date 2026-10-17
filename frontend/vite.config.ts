@@ -1,9 +1,26 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/// Build stamp for the UI bundle, matching infra/build-defines.sh for the
+/// Dart binaries. The UI is often deployed from the prebuilt backend/web/, so
+/// it can lag the backend — the About panel compares the two.
+function git(args: string): string {
+  try {
+    return execSync(`git ${args}`, { cwd: __dirname, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
+}
+const UI_VERSION =
+  process.env.VERSION || git("describe --tags --always --dirty") || "dev";
+const UI_COMMIT = process.env.COMMIT || git("rev-parse --short=12 HEAD");
 
 // Top-level API prefixes served by the Dart backend. Listed explicitly rather
 // than proxying "/" so the dev server keeps serving its own routes (/@vite,
@@ -22,10 +39,16 @@ const API_PREFIXES = [
   "mail",
   "notifications",
   "audit",
+  "system",
 ];
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __GISILA_UI_VERSION__: JSON.stringify(UI_VERSION),
+    __GISILA_UI_COMMIT__: JSON.stringify(UI_COMMIT),
+    __GISILA_UI_BUILT_AT__: JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
