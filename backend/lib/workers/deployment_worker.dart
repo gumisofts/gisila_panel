@@ -990,7 +990,8 @@ class DeploymentWorker {
     ];
     try {
       final cmd = buildAgentCmd(args);
-      final result = await Process.run(cmd.first, cmd.skip(1).toList());
+      final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+          environment: agentEnvironment, includeParentEnvironment: false);
       final report = _findJsonWith(result.stdout as String? ?? '', 'healthy');
       if (report == null) {
         return _HealthVerdict(
@@ -1097,7 +1098,8 @@ class DeploymentWorker {
 
     final cmd = buildAgentCmd(args);
     logger.i('worker: agent ${cmd.join(' ')}');
-    final process = await Process.start(cmd.first, cmd.skip(1).toList());
+    final process = await Process.start(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
 
     // Collect lines and persist them concurrently, but wait for every insert
     // to finish before treating the agent run as done — otherwise leaving the

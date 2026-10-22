@@ -47,7 +47,8 @@ Future<Map<String, Object?>?> _agentVersion() async {
   Map<String, Object?>? info;
   try {
     final cmd = buildAgentCmdNoSudo(['version']);
-    final res = await Process.run(cmd.first, cmd.skip(1).toList())
+    final res = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false)
         .timeout(const Duration(seconds: 5));
     for (final line in (res.stdout as String).split('\n').reversed) {
       if (!line.trim().startsWith('{') || !line.contains('"version"')) continue;

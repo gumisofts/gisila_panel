@@ -257,7 +257,8 @@ class ServiceWorker {
 
     // Blocking path when there is no live consumer.
     if (serviceId == null) {
-      final result = await Process.run(cmd.first, cmd.skip(1).toList());
+      final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+          environment: agentEnvironment, includeParentEnvironment: false);
       if (result.exitCode != 0) {
         throw Exception(
           'Agent exited ${result.exitCode}: ${result.stderr}'.trim(),
@@ -267,7 +268,8 @@ class ServiceWorker {
     }
 
     // Streaming path: pipe each line to Redis as it arrives.
-    final process = await Process.start(cmd.first, cmd.skip(1).toList());
+    final process = await Process.start(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     final outputs = await Future.wait([
       process.stdout
           .transform(utf8.decoder)

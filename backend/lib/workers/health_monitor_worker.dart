@@ -269,7 +269,8 @@ class HealthMonitorWorker {
     if (hostConfig.agentMode == 'dev') return null;
     try {
       final cmd = buildAgentCmd(args);
-      final result = await Process.run(cmd.first, cmd.skip(1).toList());
+      final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+          environment: agentEnvironment, includeParentEnvironment: false);
       if (result.exitCode != 0) {
         logger.w('health_monitor: probe ${args.join(' ')} exited ${result.exitCode}: '
             '${result.stderr}');

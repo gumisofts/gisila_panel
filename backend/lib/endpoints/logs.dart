@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:gisila_doc/gisila_doc.dart' show Forbidden;
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/jwt.dart';
 import 'package:redis/redis.dart' show PubSub;
@@ -28,6 +30,10 @@ import 'package:gisila_panel/config.dart';
 ///   { "token": "<jwt>", "appId": 1 }
 ///   { "token": "<jwt>", "appId": 1, "deploymentId": 7 }
 ///   { "token": "<jwt>", "serviceId": 3 }
+///
+/// Authorization mirrors the REST routes: an app's sockets need at least the
+/// viewer role in the app's team, a build-log socket's deployment must belong
+/// to that app, and service logs (node-global infra) are superuser-only.
 Router logsRouter({required Database database}) {
   final router = Router();
 
@@ -219,6 +225,26 @@ Future<_Auth?> _authenticate(
         .where(AppTable.id.eq(appId))
         .first(database.context());
     if (app == null) return fail('app_not_found');
+    final project = await Query<Project>(ProjectTable.metadata)
+        .where(ProjectTable.id.eq(app.projectId))
+        .first(database.context());
+    // A non-member gets the same answer as a missing app, as on the REST side.
+    if (project == null) return fail('app_not_found');
+    try {
+      await requireTeamRole(database, user, project.teamId, TeamRole.viewer);
+    } on Forbidden {
+      return fail('app_not_found');
+    }
+    if (deploymentId != null) {
+      final deployment = await Query<Deployment>(DeploymentTable.metadata)
+          .where(DeploymentTable.id.eq(deploymentId))
+          .where(DeploymentTable.appId.eq(app.id!))
+          .first(database.context());
+      if (deployment == null) return fail('deployment_not_found');
+    }
+  } else if (user.isSuperuser != true) {
+    // The only app-less socket is service logs, and services are superuser-only.
+    return fail('forbidden');
   }
 
   return _Auth(
@@ -284,7 +310,8 @@ Future<void> _streamRuntimeLogs(
 
   Process process;
   try {
-    process = await Process.start(cmd.first, cmd.skip(1).toList());
+    process = await Process.start(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
   } catch (e) {
     _sendLine(webSocket, 'system', 'Failed to start log stream: $e');
     await webSocket.sink.close();

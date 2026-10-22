@@ -56,6 +56,30 @@ able to reach the panel's database / Redis directly.
 10. **Secrets** — passwords are salted SHA-256 (Argon2 upgrade on the
     roadmap). API tokens are stored as SHA-256 hex + a 12-char prefix
     used as a lookup index. JWTs are signed with `JWT_SECRET` (HMAC).
+11. **Panel secrets stay out of tenant processes** — the panel and worker
+    run the agent with an allowlisted environment, and the agent starts builds
+    and Console commands from a minimal one, so nothing from
+    `/etc/gisila/.env` (JWT secret, database passwords) reaches an app user's
+    shell. When root runs `runuser` for a build, it does so by absolute path
+    and without the loader variables glibc strips for setuid programs
+    (`LD_PRELOAD`, `GLIBC_TUNABLES`, …). The shared pnpm install never sees
+    the app's env vars.
+12. **Generated config files** — every agent option that is rendered into a
+    systemd unit, supervisor conf or env file rejects control characters, so
+    a newline can't add directives (`ExecStartPre=+…` runs as root). Env var
+    names must be plain identifiers.
+
+## Authorization
+
+- Node-global infrastructure — services, Postgres/Mongo instances and
+  databases, object storage, mail — is superuser-only, in the API and in the
+  UI. Linking a storage bucket to an app is too, since it puts the bucket's
+  keys in an env any developer can read.
+- App resources need a role in the app's team; the log WebSockets apply the
+  same rule as the REST routes (and a build-log socket's deployment must
+  belong to that app).
+- An app can only be pointed at an SSH deploy key its actor owns.
+- Backups are served only under the database and instance they belong to.
 
 ## Authentication
 

@@ -186,7 +186,8 @@ class ApplicationWorker {
 
     final cmd = buildAgentCmd(args);
     logger.i('application_worker: ${cmd.join(' ')}');
-    final result = await Process.run(cmd.first, cmd.skip(1).toList());
+    final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     if (result.exitCode != 0) {
       throw Exception(
         'Agent exited ${result.exitCode}: ${result.stderr}'.trim(),

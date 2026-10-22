@@ -16,6 +16,7 @@ import {
 import { Add, Link, ObjectStorage, TrashCan } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { PageSection } from "@/components/page";
 import type {
   AppStorageLink,
@@ -28,8 +29,10 @@ import "../_app-detail.scss";
 export function StorageTab({ appId }: { appId: number }) {
   const linksKey = `/storage/apps/${appId}/links`;
   const { data, isLoading } = useSWR<ListResponse<AppStorageLink>>(linksKey, fetcher);
+  // Buckets are node-global, so listing and linking them is superuser-only.
+  const { isSuperuser } = usePermissions();
   const providers = useSWR<ListResponse<StorageProvider>>(
-    "/storage/providers",
+    isSuperuser ? "/storage/providers" : null,
     fetcher,
   );
 
@@ -88,11 +91,17 @@ export function StorageTab({ appId }: { appId: number }) {
     <div className="gisila-app__narrow">
       <PageSection
         title="Object storage buckets"
-        description="Linking a bucket injects its S3 credentials into this app's environment (live on the next deploy)."
+        description={
+          isSuperuser
+            ? "Linking a bucket injects its S3 credentials into this app's environment (live on the next deploy)."
+            : "A superuser can link a bucket to this app; its S3 credentials are then injected into the environment."
+        }
         actions={
-          <Button size="sm" renderIcon={Add} onClick={() => setOpen(true)}>
-            Link bucket
-          </Button>
+          isSuperuser ? (
+            <Button size="sm" renderIcon={Add} onClick={() => setOpen(true)}>
+              Link bucket
+            </Button>
+          ) : undefined
         }
       >
         {isLoading ? (

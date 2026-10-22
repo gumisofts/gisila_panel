@@ -227,7 +227,8 @@ class MailWorker {
     }
     final cmd = buildAgentCmd(args);
     logger.i('mail_worker: ${cmd.take(2).join(' ')} …');
-    final result = await Process.run(cmd.first, cmd.skip(1).toList());
+    final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     return (
       stdout: result.stdout as String? ?? '',
       exitCode: result.exitCode,

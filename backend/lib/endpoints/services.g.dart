@@ -93,7 +93,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
             handler: (RequestContext ctx) async {
               try {
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.list(svc);
+                final result = await this.list(svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -183,7 +183,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<ManagedServiceService>();
-                final result = await this.retrieve(id, svc);
+                final result = await this.retrieve(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -444,7 +444,7 @@ extension ServicesApiGisilaDoc on ServicesApi {
                 final request = ctx.request;
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
-                final result = await this.health(id);
+                final result = await this.health(id, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

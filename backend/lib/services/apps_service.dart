@@ -171,6 +171,7 @@ class AppsService extends Service {
     final project = await projectsSvc.findForUser(actor, projectId);
     // Creating an app is a developer-level action.
     await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
+    if (deployKeyId != null) await _authorizeDeployKey(actor, deployKeyId);
 
     // Resolve the Application: prefer the explicit applicationId, falling
     // back to the deprecated free-text `runtime` alias so older API clients
@@ -342,12 +343,34 @@ class AppsService extends Service {
         when targetId != app.projectId) {
       await _authorizeMove(actor, app, targetId);
     }
+    // Only a newly chosen key is checked, so a teammate can still edit an app
+    // whose existing key belongs to someone else.
+    if (patch['deployKeyId'] case final int keyId when keyId != app.deployKeyId) {
+      await _authorizeDeployKey(actor, keyId);
+    }
     patch['updatedAt'] = DateTime.now().toUtc().toIso8601String();
     final rows = await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(app.id!))
         .update(patch)
         .run(_db.context());
     return rows.first;
+  }
+
+  /// Gate pointing an app at SSH key [keyId] for git clones.
+  ///
+  /// The deploy worker clones with whatever key the app points at, so an app may
+  /// only be pointed at a key the actor owns — otherwise any developer could
+  /// borrow another user's key to clone that user's private repositories.
+  /// The same 404 is returned for a missing key and someone else's key, so key
+  /// ids are not enumerable.
+  Future<void> _authorizeDeployKey(User actor, int keyId) async {
+    final key = await Query<SshKey>(SshKeyTable.metadata)
+        .where(SshKeyTable.id.eq(keyId))
+        .first(_db.context());
+    if (key == null ||
+        (key.userId != actor.id && actor.isSuperuser != true)) {
+      throw NotFound('SSH key #$keyId not found.');
+    }
   }
 
   /// Gate moving [app] into project [targetId].

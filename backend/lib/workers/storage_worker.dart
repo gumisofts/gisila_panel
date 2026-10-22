@@ -246,7 +246,8 @@ class StorageWorker {
     }
     final cmd = buildAgentCmd(args);
     logger.i('storage_worker: agent ${cmd.join(' ')}');
-    final result = await Process.run(cmd.first, cmd.skip(1).toList());
+    final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     if (result.exitCode != 0) {
       throw Exception(
           'Agent exited ${result.exitCode}: ${result.stderr}'.trim());

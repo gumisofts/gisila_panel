@@ -27,7 +27,9 @@ class ServicesApi {
   @Get('/', summary: 'List installed services')
   Future<Map<String, Object?>> list(
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final services = await svc.listInstalled();
     return <String, Object?>{
       'results': services.map(_serialize).toList(),
@@ -53,7 +55,9 @@ class ServicesApi {
   Future<Map<String, Object?>> retrieve(
     int id,
     ManagedServiceService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final service = await svc.findById(id);
     return _serialize(service, includeDef: true);
   }
@@ -107,7 +111,8 @@ class ServicesApi {
   }
 
   @Get('/{id}/health', summary: 'Cached live health of a service')
-  Future<Map<String, Object?>> health(int id) async {
+  Future<Map<String, Object?>> health(int id, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final cached = await readCachedHealth(serviceHealthRedisKey(id));
     return cached ?? {'healthy': null, 'checkedAt': null};
   }

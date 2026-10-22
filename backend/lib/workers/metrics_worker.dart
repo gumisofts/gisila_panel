@@ -190,7 +190,8 @@ class MetricsCollector {
   /// Run `gisila-agent stat …` and parse the JSON line it prints.
   Future<Map<String, Object?>?> _agentStat(List<String> args) async {
     final cmd = buildAgentCmd(args);
-    final result = await Process.run(cmd.first, cmd.skip(1).toList());
+    final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     if (result.exitCode != 0) return null;
     // The agent may print info lines before the JSON; scan from the end for the
     // line carrying the metrics object.

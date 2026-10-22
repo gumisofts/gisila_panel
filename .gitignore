@@ -10,6 +10,8 @@ dist/
 public/
 src/
 test/
+# ...but the Dart packages' test suites are source, not output.
+!agent/test/
 types/
 utils/
 *.env

@@ -82,7 +82,7 @@ extension StorageApiGisilaDoc on StorageApi {
             handler: (RequestContext ctx) async {
               try {
                 final svc = ctx.service<StorageService>();
-                final result = await this.listProviders(svc);
+                final result = await this.listProviders(svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -219,7 +219,7 @@ extension StorageApiGisilaDoc on StorageApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<StorageService>();
-                final result = await this.getProvider(id, svc);
+                final result = await this.getProvider(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -480,7 +480,7 @@ extension StorageApiGisilaDoc on StorageApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<StorageService>();
-                final result = await this.listBuckets(id, svc);
+                final result = await this.listBuckets(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -590,7 +590,7 @@ extension StorageApiGisilaDoc on StorageApi {
                 final bid =
                     coerce<int>(request.params['bid'], 'bid', required: true);
                 final svc = ctx.service<StorageService>();
-                final result = await this.getBucket(id, bid, svc);
+                final result = await this.getBucket(id, bid, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
