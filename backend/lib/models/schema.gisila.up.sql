@@ -14,8 +14,20 @@ CREATE TABLE "users" (
   "is_superuser" BOOLEAN DEFAULT FALSE,
   "is_email_verified" BOOLEAN DEFAULT FALSE,
   "avatar_url" VARCHAR(255),
+  "sessions_valid_after" TIMESTAMP WITH TIME ZONE,
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
   "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
+CREATE TABLE "user_totps" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "user_id" BIGINT NOT NULL UNIQUE,
+  "secret" VARCHAR(255) NOT NULL,
+  "confirmed_at" TIMESTAMP WITH TIME ZONE,
+  "last_used_step" INTEGER,
+  "recovery_codes" TEXT,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 
@@ -530,6 +542,8 @@ CREATE TABLE "audit_logs" (
   "created_at" TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
+
+ALTER TABLE "user_totps" ADD CONSTRAINT "user_totps_user_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "teams" ADD CONSTRAINT "teams_owner_fkey" FOREIGN KEY ("owner_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

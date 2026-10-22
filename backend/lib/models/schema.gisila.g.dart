@@ -16,6 +16,7 @@ class User with Preloadable {
   final bool? isSuperuser;
   final bool? isEmailVerified;
   final String? avatarUrl;
+  final DateTime? sessionsValidAfter;
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -30,6 +31,7 @@ class User with Preloadable {
     this.isSuperuser,
     this.isEmailVerified,
     this.avatarUrl,
+    this.sessionsValidAfter,
     required this.createdAt,
     this.updatedAt,
   });
@@ -45,6 +47,11 @@ class User with Preloadable {
     isSuperuser: row['is_superuser'] as bool?,
     isEmailVerified: row['is_email_verified'] as bool?,
     avatarUrl: row['avatar_url'] as String?,
+    sessionsValidAfter: row['sessions_valid_after'] == null
+        ? null
+        : (row['sessions_valid_after'] is DateTime
+              ? row['sessions_valid_after'] as DateTime
+              : DateTime.parse(row['sessions_valid_after'].toString())),
     createdAt: row['created_at'] is DateTime
         ? row['created_at'] as DateTime
         : DateTime.parse(row['created_at'].toString()),
@@ -66,6 +73,7 @@ class User with Preloadable {
     'is_superuser': isSuperuser,
     'is_email_verified': isEmailVerified,
     'avatar_url': avatarUrl,
+    'sessions_valid_after': sessionsValidAfter,
     'created_at': createdAt,
     'updated_at': updatedAt,
   };
@@ -93,6 +101,7 @@ class User with Preloadable {
     bool? isSuperuser,
     bool? isEmailVerified,
     String? avatarUrl,
+    DateTime? sessionsValidAfter,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => User(
@@ -106,6 +115,7 @@ class User with Preloadable {
     isSuperuser: isSuperuser ?? this.isSuperuser,
     isEmailVerified: isEmailVerified ?? this.isEmailVerified,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    sessionsValidAfter: sessionsValidAfter ?? this.sessionsValidAfter,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -118,6 +128,14 @@ class User with Preloadable {
     final errors = <String>[];
     return errors;
   }
+
+  static final Relation<User, UserTotp> totp = HasOneRelation<User, UserTotp>(
+    parentTable: 'users',
+    childTable: 'user_totps',
+    name: 'totp',
+    childForeignKey: 'user_id',
+    childMeta: UserTotpTable.metadata,
+  );
 
   static final Relation<User, Team> ownedTeams = HasManyRelation<User, Team>(
     parentTable: 'users',
@@ -198,6 +216,9 @@ class User with Preloadable {
         childMeta: AuditLogTable.metadata,
       );
 
+  /// Preloaded totp; null when not preloaded or absent.
+  UserTotp? get totpLoaded => preloaded<UserTotp>('totp');
+
   /// Preloaded ownedTeams; empty list when not preloaded.
   List<Team> get ownedTeamsList =>
       preloaded<List<Team>>('ownedTeams') ?? const [];
@@ -277,6 +298,10 @@ class UserTable {
     table: 'users',
     column: 'avatar_url',
   );
+  static const ColumnRef<DateTime?> sessionsValidAfter = ColumnRef<DateTime?>(
+    table: 'users',
+    column: 'sessions_valid_after',
+  );
   static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
     table: 'users',
     column: 'created_at',
@@ -300,6 +325,7 @@ class UserTable {
       'is_superuser',
       'is_email_verified',
       'avatar_url',
+      'sessions_valid_after',
       'created_at',
       'updated_at',
     ],
@@ -308,6 +334,153 @@ class UserTable {
 }
 
 Query<User> users() => Query<User>(UserTable.metadata);
+
+class UserTotp with Preloadable {
+  final int? id;
+  final int userId;
+  final String secret;
+  final DateTime? confirmedAt;
+  final int? lastUsedStep;
+  final String? recoveryCodes;
+  final DateTime createdAt;
+
+  UserTotp({
+    this.id,
+    required this.userId,
+    required this.secret,
+    this.confirmedAt,
+    this.lastUsedStep,
+    this.recoveryCodes,
+    required this.createdAt,
+  });
+
+  factory UserTotp.fromRow(Map<String, dynamic> row) => UserTotp(
+    id: row['id'] as int?,
+    userId: row['user_id'] as int,
+    secret: row['secret'] as String,
+    confirmedAt: row['confirmed_at'] == null
+        ? null
+        : (row['confirmed_at'] is DateTime
+              ? row['confirmed_at'] as DateTime
+              : DateTime.parse(row['confirmed_at'].toString())),
+    lastUsedStep: row['last_used_step'] as int?,
+    recoveryCodes: row['recovery_codes'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'user_id': userId,
+    'secret': secret,
+    'confirmed_at': confirmedAt,
+    'last_used_step': lastUsedStep,
+    'recovery_codes': recoveryCodes,
+    'created_at': createdAt,
+  };
+
+  factory UserTotp.fromJson(Map<String, dynamic> json) =>
+      UserTotp.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = toRow();
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  UserTotp copyWith({
+    int? id,
+    int? userId,
+    String? secret,
+    DateTime? confirmedAt,
+    int? lastUsedStep,
+    String? recoveryCodes,
+    DateTime? createdAt,
+  }) => UserTotp(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    secret: secret ?? this.secret,
+    confirmedAt: confirmedAt ?? this.confirmedAt,
+    lastUsedStep: lastUsedStep ?? this.lastUsedStep,
+    recoveryCodes: recoveryCodes ?? this.recoveryCodes,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<UserTotp, User> user =
+      BelongsToRelation<UserTotp, User>(
+        parentTable: 'user_totps',
+        childTable: 'users',
+        name: 'user',
+        parentForeignKey: 'user_id',
+        childMeta: UserTable.metadata,
+      );
+
+  /// Preloaded user; null when not preloaded or absent.
+  User? get userLoaded => preloaded<User>('user');
+}
+
+class UserTotpTable {
+  UserTotpTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'user_totps',
+    column: 'id',
+  );
+  static const ColumnRef<int> userId = ColumnRef<int>(
+    table: 'user_totps',
+    column: 'user_id',
+  );
+  static const ColumnRef<String> secret = ColumnRef<String>(
+    table: 'user_totps',
+    column: 'secret',
+  );
+  static const ColumnRef<DateTime?> confirmedAt = ColumnRef<DateTime?>(
+    table: 'user_totps',
+    column: 'confirmed_at',
+  );
+  static const ColumnRef<int?> lastUsedStep = ColumnRef<int?>(
+    table: 'user_totps',
+    column: 'last_used_step',
+  );
+  static const ColumnRef<String?> recoveryCodes = ColumnRef<String?>(
+    table: 'user_totps',
+    column: 'recovery_codes',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'user_totps',
+    column: 'created_at',
+  );
+
+  static const TableMeta<UserTotp> metadata = TableMeta<UserTotp>(
+    tableName: 'user_totps',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'user_id',
+      'secret',
+      'confirmed_at',
+      'last_used_step',
+      'recovery_codes',
+      'created_at',
+    ],
+    fromRow: UserTotp.fromRow,
+  );
+}
+
+Query<UserTotp> userTotps() => Query<UserTotp>(UserTotpTable.metadata);
 
 class Team with Preloadable {
   final int? id;

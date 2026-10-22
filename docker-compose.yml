@@ -40,7 +40,7 @@ x-dart-base: &dart-base
     JWT_EXPIRE_DAYS: "14"
     STUDIO_ENABLED: "1"
     STUDIO_USERNAME: admin
-    STUDIO_PASSWORD: admin
+    STUDIO_PASSWORD: dev-studio-password
     # Initial superuser (created automatically on first boot if no superuser exists).
     SUPERUSER_EMAIL: admin@example.com
     SUPERUSER_PASSWORD: changeme

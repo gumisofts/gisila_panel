@@ -53,10 +53,21 @@ able to reach the panel's database / Redis directly.
    `--build-command` and `--start-command` are passed verbatim but must
    not contain shell-metacharacters (`|`, `&`, `;`, ` `` `, `$`, `<`,
    `>`).
-10. **Secrets** — passwords are salted SHA-256 (Argon2 upgrade on the
-    roadmap). API tokens are stored as SHA-256 hex + a 12-char prefix
-    used as a lookup index. JWTs are signed with `JWT_SECRET` (HMAC).
-11. **Panel secrets stay out of tenant processes** — the panel and worker
+10. **Secrets** — passwords are hashed with Argon2id (19 MiB, t=2, p=1 —
+    OWASP's baseline; pointycastle's pure-Dart implementation, checked against
+    the reference test vector). Hashes from before Argon2 (salted SHA-256)
+    still verify and are re-hashed on the user's next login. API tokens are
+    stored as SHA-256 hex + a 12-char prefix used as a lookup index. JWTs are
+    signed with `JWT_SECRET` (HS256 only); the panel refuses to start when it
+    is unset or a known placeholder. GisilaStudio signs its own sessions with
+    a key derived from it, so the two kinds of token can't be swapped, and is
+    only mounted with a `STUDIO_PASSWORD` that is set and not a default.
+11. **Client addresses** — proxy headers are trusted only on connections from
+    loopback (the host's nginx, which sets `X-Real-IP`). An outermost
+    middleware rewrites `X-Forwarded-For` to that one trusted address, so rate
+    limits, the login throttle and the audit log can't be fed a forged one.
+
+12. **Panel secrets stay out of tenant processes** — the panel and worker
     run the agent with an allowlisted environment, and the agent starts builds
     and Console commands from a minimal one, so nothing from
     `/etc/gisila/.env` (JWT secret, database passwords) reaches an app user's
@@ -64,7 +75,7 @@ able to reach the panel's database / Redis directly.
     and without the loader variables glibc strips for setuid programs
     (`LD_PRELOAD`, `GLIBC_TUNABLES`, …). The shared pnpm install never sees
     the app's env vars.
-12. **Generated config files** — every agent option that is rendered into a
+13. **Generated config files** — every agent option that is rendered into a
     systemd unit, supervisor conf or env file rejects control characters, so
     a newline can't add directives (`ExecStartPre=+…` runs as root). Env var
     names must be plain identifiers.
@@ -85,28 +96,56 @@ able to reach the panel's database / Redis directly.
 
 | Bearer | Where |
 |---|---|
-| JWT (`HS256`, 14d default) | UI sessions, default for `/auth/login`. |
+| JWT (`HS256`, 14d default) | UI sessions, from `/auth/login`. |
 | Personal API token (`gsl_…`) | CLI / CI. Issued once, hashed at rest, revocable. |
 
 The panel uses **same-origin cookies free** auth: tokens live in
 `localStorage` and are sent as `Authorization: Bearer`. CORS is
 permissive by default (override in `AppConfig.cors`).
 
+**Revocation.** Session JWTs carry their issue time to the millisecond.
+`users.sessions_valid_after` rejects every token issued before it; it is set
+by a password change, turning 2FA on, a superuser's 2FA reset, deactivation,
+and "Sign out other sessions". Each of those hands the caller a fresh token
+where it should stay signed in. API tokens are revoked separately.
+
+**Two-factor authentication.** Optional per user: TOTP (RFC 6238, SHA-1,
+6 digits, 30 s, ±1 step) plus ten single-use recovery codes stored as SHA-256
+digests. A correct password for such an account returns a 5-minute MFA
+challenge token instead of a session; it is rejected as a Bearer credential
+and is exchanged at `/auth/login/mfa` with a code. Accepted codes can't be
+replayed (the last used time step is stored, and both it and recovery codes
+are consumed with compare-and-swap updates). Turning 2FA off needs the
+password and a code. The TOTP secret lives in `user_totps`, apart from
+`users`, so no user serialization can include it; it is stored unencrypted,
+like the rest of the database.
+
+**Brute force.** Failed sign-ins are counted in Redis, shared by every API
+isolate: 10 per account per address, 50 per account and 100 per address in
+15 minutes, after which sign-in answers `429` for the rest of the window.
+Second-factor codes are throttled the same way, per account. Unknown emails
+cost the same Argon2 time as known ones, so response time doesn't reveal
+which accounts exist. If Redis is unreachable the throttle fails open and
+logs a warning. The framework's per-route rate limits (60/min for login) are
+in-memory and counted per isolate.
+
 ## Audit & traceability
 
 - `app_events` records every state-changing user action on an app
   (`deploy`, `restart`, `stop`, `env_set`, `domain_add`, `rollback`).
 - `audit_logs` records cross-cutting events (`team.invite`,
-  `token.issue`, …).
+  `token.issue`, …) and sign-in security events: `auth.login`,
+  `auth.password_change`, `auth.sessions_revoke`, `auth.totp_enable`,
+  `auth.totp_disable`, `auth.totp_reset`, `auth.recovery_codes_regenerate`.
 - `gisila-agent` always writes a JSON status line on success / failure
   so the worker can correlate output with deployments.
 
 ## What we still need to harden (roadmap)
 
-- Argon2id password hashing (depends on a pure-Dart implementation we
-  trust).
-- Refresh tokens + revocation list.
-- TOTP / WebAuthn 2FA.
+- WebAuthn / passkeys as a second factor.
+- Shorter-lived access tokens with refresh tokens (revocation exists, but a
+  stolen token stays usable until revoked or expired).
+- Encrypting TOTP secrets at rest.
 - Outbound network policy per app (right now apps share the host's
   egress namespace; future work: per-app netfilter rules).
 - Optional Linux user namespaces / Firejail-style sandboxes.

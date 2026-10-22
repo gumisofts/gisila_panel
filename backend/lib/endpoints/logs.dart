@@ -6,7 +6,7 @@ import 'package:gisila_doc/gisila_doc.dart' show Forbidden;
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/models/models.dart';
-import 'package:gisila_panel/utils/jwt.dart';
+import 'package:gisila_panel/infra/jwt_authenticator.dart';
 import 'package:redis/redis.dart' show PubSub;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
@@ -209,14 +209,9 @@ Future<_Auth?> _authenticate(
   }
 
   if (token == null) return fail('auth_required');
-  final payload = JWTAuth.decodeAndVerify(token);
-  final userId = payload?['id'] as int?;
-  if (userId == null) return fail('invalid_token');
-
-  final user = await Query<User>(UserTable.metadata)
-      .where(UserTable.id.eq(userId))
-      .first(database.context());
-  if (user == null) return fail('invalid_user');
+  // Same rules as JwtAuthenticator: expired, revoked, deactivated → rejected.
+  final user = await userForSessionJwt(database, token);
+  if (user == null) return fail('invalid_token');
 
   App? app;
   if (requireApp) {

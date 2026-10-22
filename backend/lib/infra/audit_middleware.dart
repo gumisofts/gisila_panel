@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/infra/client_ip.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/api_tokens.dart';
 import 'package:gisila_panel/utils/jwt.dart';
@@ -60,7 +60,7 @@ Future<void> _record(
       'action': described.action,
       'targetType': described.targetType,
       'targetId': described.targetId,
-      'ipAddress': _clientIp(request),
+      'ipAddress': clientIp(request),
       'userAgent': request.headers['user-agent'],
       'data': jsonEncode(<String, Object?>{
         'method': request.method.toUpperCase(),
@@ -87,7 +87,7 @@ Future<int?> _resolveActorId(Database database, Request request) async {
     return apiToken?.userId;
   }
 
-  final payload = JWTAuth.decodeAndVerify(token);
+  final payload = JWTAuth.decodeSession(token);
   return payload?['id'] as int?;
 }
 
@@ -102,14 +102,6 @@ String? _extractToken(Request request) {
   final apiHeader = request.headers['x-api-token'];
   if (apiHeader != null && apiHeader.isNotEmpty) return apiHeader;
   return null;
-}
-
-String? _clientIp(Request request) {
-  final fwd = request.headers['x-forwarded-for'];
-  if (fwd != null && fwd.isNotEmpty) return fwd.split(',').first.trim();
-  final info =
-      request.context['shelf.io.connection_info'] as HttpConnectionInfo?;
-  return info?.remoteAddress.address;
 }
 
 /// Turn a request method + path into a stable, human-readable action plus the

@@ -11,6 +11,18 @@ export interface User {
   avatarUrl?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+  /** Only on the superuser's user list (`GET /auth/users`). */
+  totpEnabled?: boolean;
+}
+
+/** `POST /auth/login`: a session, or a second-factor challenge. */
+export type LoginResponse =
+  | { access: string; user: User; mfaRequired?: undefined }
+  | { mfaRequired: true; challenge: string };
+
+export interface TotpStatus {
+  enabled: boolean;
+  recoveryCodesRemaining: number;
 }
 
 export type Role = "viewer" | "developer" | "admin" | "owner";

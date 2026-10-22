@@ -95,6 +95,39 @@
   gap: spacing.$spacing-02;
 }
 
+// Section-level buttons, which sit under their content rather than at the end
+// of a table row.
+.gisila-settings__row-actions--start {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+// One-time recovery codes: two columns of code face, easy to copy by hand.
+.gisila-settings__codes {
+  @include type.type-style('code-02');
+
+  margin: 0;
+  padding: spacing.$spacing-05;
+  background: theme.$layer-02;
+  color: theme.$text-primary;
+  columns: 2;
+  column-gap: spacing.$spacing-07;
+}
+
+// The authenticator QR code. It stays black-on-white in every theme: scanners
+// need that contrast, and the quiet zone is part of the generated image.
+.gisila-settings__qr {
+  inline-size: 12rem;
+  max-inline-size: 100%;
+  background: #fff;
+
+  svg {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+  }
+}
+
 // Icon, message and optional call to action inside a .gisila-empty tile.
 .gisila-settings__empty {
   display: flex;

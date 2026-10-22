@@ -99,3 +99,36 @@ class UpdateUserForm extends Form {
         isSuperuser,
       ];
 }
+
+/// Second step of a login for an account with 2FA.
+class MfaLoginForm extends Form {
+  final challenge = StringField(name: 'challenge', required: true);
+  final code = StringField(name: 'code', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() =>
+      <FormField<Object?>>[challenge, code];
+}
+
+class PasswordConfirmForm extends Form {
+  final password = StringField(name: 'password', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[password];
+}
+
+class TotpCodeForm extends Form {
+  final code = StringField(name: 'code', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[code];
+}
+
+class TotpDisableForm extends Form {
+  final password = StringField(name: 'password', required: true);
+  final code = StringField(name: 'code', required: true);
+
+  @override
+  List<FormField<Object?>> collectFields() =>
+      <FormField<Object?>>[password, code];
+}

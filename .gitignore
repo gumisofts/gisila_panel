@@ -12,6 +12,8 @@ src/
 test/
 # ...but the Dart packages' test suites are source, not output.
 !agent/test/
-types/
+!backend/test/
 utils/
+!backend/lib/utils/
+types/
 *.env

@@ -28,6 +28,7 @@ import { AboutVersions } from "@/components/version-info";
 import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ListResponse, SshKey, User } from "@/lib/types";
+import { SecuritySections } from "./_security";
 import "./_settings.scss";
 
 export default function SettingsPage() {
@@ -98,6 +99,8 @@ export default function SettingsPage() {
           </StructuredListBody>
         </StructuredListWrapper>
       </PageSection>
+
+      <SecuritySections />
 
       <PageSection title="SSH keys">
         <Stack gap={6}>

@@ -1,6 +1,7 @@
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_studio/gisila_studio.dart';
 import 'package:shelf/shelf.dart';
 
@@ -21,8 +22,10 @@ Future<GisilaStudio> _buildStudio() async {
     title: 'Gisila Panel',
     auth: JwtStudioAuth(
       username: env.getOrElse('STUDIO_USERNAME', () => 'admin'),
-      password: env.getOrElse('STUDIO_PASSWORD', () => 'admin'),
-      secret: env.getOrElse('JWT_SECRET', () => 'secret'),
+      password: studioPassword!,
+      // Not JWT_SECRET itself: a studio session and a panel session must not
+      // be valid as each other.
+      secret: JWTAuth.derivedSecret('studio'),
     ),
   );
 

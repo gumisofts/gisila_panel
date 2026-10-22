@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart' show HijackException;
 import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/version.dart';
@@ -29,6 +30,7 @@ import 'package:gisila_panel/endpoints/storage.dart';
 import 'package:gisila_panel/endpoints/system.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
 import 'package:gisila_panel/infra/audit_middleware.dart';
+import 'package:gisila_panel/infra/client_ip.dart';
 import 'package:gisila_panel/infra/database_provider.dart';
 import 'package:gisila_panel/infra/jwt_authenticator.dart';
 import 'package:gisila_panel/infra/postgres_error_mapper.dart';
@@ -60,6 +62,10 @@ Future<Handler> application() async {
           'projects, apps, deployments, domains, env vars, logs and metrics.',
     ),
   );
+
+  // Refuse to serve with a missing or placeholder signing secret rather than
+  // accept tokens anyone could forge.
+  JWTAuth.ensureConfigured();
 
   final database = await Database.connect(databaseConfig);
   await _seedSuperuser(database);
@@ -139,7 +145,11 @@ Future<Handler> application() async {
       NotificationsApi().attachToApp(app, router, spec, prefix: prefix);
       SystemApi().attachToApp(app, router, spec, prefix: prefix);
 
-      if (studioEnabled) {
+      if (studioEnabled && studioPassword == null) {
+        logger.e('STUDIO_ENABLED is set but STUDIO_PASSWORD is missing or a '
+            'default value; GisilaStudio is NOT mounted. Set a strong '
+            'STUDIO_PASSWORD in /etc/gisila/.env.');
+      } else if (studioEnabled) {
         router.mount('/admin', adminHandler());
         logger.i('GisilaStudio enabled at /admin (STUDIO_ENABLED)');
       }
@@ -164,12 +174,12 @@ Future<Handler> application() async {
   // and serve index.html so React Router can take over; real `fetch`/XHR API
   // calls (which send `Accept: */*` and the Bearer token) fall straight
   // through to the controllers untouched.
-  return _spaNavigationFallback((Request req) {
+  return trustedForwardedFor()(_spaNavigationFallback((Request req) {
     final first =
         req.url.pathSegments.isEmpty ? '' : req.url.pathSegments.first;
     if (first == 'ws') return wsRouter.call(req);
     return apiHandler(req);
-  });
+  }));
 }
 
 /// Wrap [inner] so browser navigations (GET requests that ask for `text/html`)
@@ -245,15 +255,22 @@ Future<void> _seedSuperuser(Database database) async {
 
   logger.i('Seeding initial superuser: $email');
   final now = DateTime.now().toUtc();
-  final user = await Query<User>(UserTable.metadata).insert(<String, Object?>{
-    'email': email,
-    'password': PasswordHasher.hash(password),
-    'isActive': true,
-    'isStaff': true,
-    'isSuperuser': true,
-    'isEmailVerified': true,
-    'createdAt': now.toIso8601String(),
-  }).one(database.context());
+  final User user;
+  try {
+    user = await Query<User>(UserTable.metadata).insert(<String, Object?>{
+      'email': email,
+      'password': await PasswordHasher.hashAsync(password),
+      'isActive': true,
+      'isStaff': true,
+      'isSuperuser': true,
+      'isEmailVerified': true,
+      'createdAt': now.toIso8601String(),
+    }).one(database.context());
+  } on PostgresUniqueViolationException {
+    // The production server seeds from every isolate at once; on a first boot
+    // all but one of them lose this race, and the winner seeds the rest.
+    return;
+  }
 
   final teamSlug = 'admin-${user.id}-team';
   final team = await Query<Team>(TeamTable.metadata).insert(<String, Object?>{

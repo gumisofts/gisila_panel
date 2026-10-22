@@ -47,6 +47,7 @@ ALTER TABLE "api_tokens" DROP CONSTRAINT IF EXISTS "api_tokens_user_fkey";
 ALTER TABLE "team_members" DROP CONSTRAINT IF EXISTS "team_members_team_fkey";
 ALTER TABLE "team_members" DROP CONSTRAINT IF EXISTS "team_members_user_fkey";
 ALTER TABLE "teams" DROP CONSTRAINT IF EXISTS "teams_owner_fkey";
+ALTER TABLE "user_totps" DROP CONSTRAINT IF EXISTS "user_totps_user_fkey";
 DROP TABLE IF EXISTS "audit_logs" CASCADE;
 DROP TABLE IF EXISTS "notifications" CASCADE;
 DROP TABLE IF EXISTS "alert_events" CASCADE;
@@ -80,6 +81,7 @@ DROP TABLE IF EXISTS "ssh_keys" CASCADE;
 DROP TABLE IF EXISTS "api_tokens" CASCADE;
 DROP TABLE IF EXISTS "team_members" CASCADE;
 DROP TABLE IF EXISTS "teams" CASCADE;
+DROP TABLE IF EXISTS "user_totps" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
 
 COMMIT;

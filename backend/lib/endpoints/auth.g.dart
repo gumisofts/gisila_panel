@@ -32,11 +32,37 @@ extension AuthApiGisilaDoc on AuthApi {
         'password': <String, Object?>{'type': 'string'}
       }
     });
+    spec.putSchema('MfaLoginForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'challenge': <String, Object?>{'type': 'string'},
+        'code': <String, Object?>{'type': 'string'}
+      }
+    });
     spec.putSchema('ChangePasswordForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
         'oldPassword': <String, Object?>{'type': 'string'},
         'newPassword': <String, Object?>{'type': 'string'}
+      }
+    });
+    spec.putSchema('PasswordConfirmForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'password': <String, Object?>{'type': 'string'}
+      }
+    });
+    spec.putSchema('TotpCodeForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'code': <String, Object?>{'type': 'string'}
+      }
+    });
+    spec.putSchema('TotpDisableForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'password': <String, Object?>{'type': 'string'},
+        'code': <String, Object?>{'type': 'string'}
       }
     });
     spec.putSchema('CreateUserForm', <String, Object?>{
@@ -76,7 +102,7 @@ extension AuthApiGisilaDoc on AuthApi {
                 final request = ctx.request;
                 final form = await bindForm(request, LoginForm.new);
                 final auth = ctx.service<AuthService>();
-                final result = await this.login(form, auth);
+                final result = await this.login(form, auth, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -96,6 +122,55 @@ extension AuthApiGisilaDoc on AuthApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/LoginForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/login/mfa';
+      final openApiPath = '$prefix/auth/login/mfa';
+      final RouteConfig __cfg = RouteConfig.empty
+          .merge(const RouteConfig(isPublic: true))
+          .merge(const RouteConfig(
+              rateLimit: const RateLimitConfig(requestsPerMinute: 30)));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, MfaLoginForm.new);
+                final auth = ctx.service<AuthService>();
+                final result = await this.loginMfa(form, auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Complete a sign-in with a TOTP or recovery code',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/MfaLoginForm'
               })
             }),
             responses: <String, ResponseSpec>{
@@ -176,12 +251,291 @@ extension AuthApiGisilaDoc on AuthApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Change password',
+            summary: 'Change password (signs out other sessions)',
             tags: <String>['Auth'],
             parameters: <Parameter>[],
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/ChangePasswordForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/sessions/revoke';
+      final openApiPath = '$prefix/auth/sessions/revoke';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final auth = ctx.service<AuthService>();
+                final result = await this.revokeSessions(auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary:
+                'Sign out every other session; returns a new token for this one',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/totp';
+      final openApiPath = '$prefix/auth/totp';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final auth = ctx.service<AuthService>();
+                final result = await this.totpStatus(auth, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'Two-factor authentication status',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/totp/setup';
+      final openApiPath = '$prefix/auth/totp/setup';
+      final RouteConfig __cfg = RouteConfig.empty
+          .merge(const RouteConfig(requireAuth: true))
+          .merge(const RouteConfig(
+              rateLimit: const RateLimitConfig(requestsPerMinute: 10)));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, PasswordConfirmForm.new);
+                final auth = ctx.service<AuthService>();
+                final result = await this.totpSetup(form, auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary:
+                'Start two-factor setup; returns the secret and otpauth URI',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/PasswordConfirmForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/totp/enable';
+      final openApiPath = '$prefix/auth/totp/enable';
+      final RouteConfig __cfg = RouteConfig.empty
+          .merge(const RouteConfig(requireAuth: true))
+          .merge(const RouteConfig(
+              rateLimit: const RateLimitConfig(requestsPerMinute: 10)));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, TotpCodeForm.new);
+                final auth = ctx.service<AuthService>();
+                final result = await this.totpEnable(form, auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary:
+                'Confirm two-factor setup with a first code; returns recovery codes',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/TotpCodeForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/totp/disable';
+      final openApiPath = '$prefix/auth/totp/disable';
+      final RouteConfig __cfg = RouteConfig.empty
+          .merge(const RouteConfig(requireAuth: true))
+          .merge(const RouteConfig(
+              rateLimit: const RateLimitConfig(requestsPerMinute: 10)));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, TotpDisableForm.new);
+                final auth = ctx.service<AuthService>();
+                final result = await this.totpDisable(form, auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Turn two-factor authentication off',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/TotpDisableForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/totp/recovery-codes';
+      final openApiPath = '$prefix/auth/totp/recovery-codes';
+      final RouteConfig __cfg = RouteConfig.empty
+          .merge(const RouteConfig(requireAuth: true))
+          .merge(const RouteConfig(
+              rateLimit: const RateLimitConfig(requestsPerMinute: 10)));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final form = await bindForm(request, TotpCodeForm.new);
+                final auth = ctx.service<AuthService>();
+                final result = await this.totpRecoveryCodes(form, auth, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Replace the recovery codes',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/TotpCodeForm'
               })
             }),
             responses: <String, ResponseSpec>{
@@ -330,6 +684,58 @@ extension AuthApiGisilaDoc on AuthApi {
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/auth/users/<id>/totp';
+      final openApiPath = '$prefix/auth/users/{id}/totp';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.delete(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final auth = ctx.service<AuthService>();
+                final result = await this.resetUserTotp(id, auth, ctx);
+                return jsonResponse(body: result, statusCode: 204);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'delete',
+          Operation(
+            summary:
+                'Reset a user\'s two-factor authentication (superuser only)',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '204': ResponseSpec(description: 'No Content', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
