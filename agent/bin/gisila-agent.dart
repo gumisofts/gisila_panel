@@ -118,6 +118,9 @@ Future<void> main(List<String> args) async {
   }
 }
 
+/// The only value `build` ever writes to `$workDir/.pnpm-bin`; see _applyUnit.
+final _pnpmBinDirRe = RegExp(r'^/opt/pnpm-versions/[0-9][0-9A-Za-z.\-]*/bin$');
+
 ArgResults _parse(List<String> args, void Function(ArgParser) build) {
   final parser = ArgParser();
   build(parser);
@@ -492,6 +495,14 @@ Future<void> _applyUnit(List<String> args) async {
     // is a long-running command (bot, consumer, scheduler) and nothing else.
     p.addOption('expose-mode', defaultsTo: 'web');
   });
+  // Every option below can end up inside a generated unit or conf file, so none
+  // may carry a control character. env-json is exempt: JSON escapes them, and
+  // its names are checked after decoding.
+  for (final option in r.options) {
+    if (option == 'env-json') continue;
+    final value = r[option];
+    if (value is String) AgentValidators.rejectControlChars(option, value);
+  }
   final appId = int.parse(r['app-id'] as String);
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
@@ -512,8 +523,9 @@ Future<void> _applyUnit(List<String> args) async {
       isProcess ? null : AgentValidators.requirePort(r['port'] as String?);
 
   final envJson = r['env-json'] as String;
-  final envVars = (jsonDecode(envJson) as Map<String, dynamic>)
-      .map((k, v) => MapEntry(k, (v as String?) ?? ''));
+  final envVars = AgentValidators.requireEnvVars(
+      (jsonDecode(envJson) as Map<String, dynamic>)
+          .map((k, v) => MapEntry(k, (v as String?) ?? '')));
 
   // Write the app's env vars to <workDir>/.env, which every unit below
   // references via EnvironmentFile=. This is the single source of the runtime
@@ -731,10 +743,17 @@ Future<void> _applyUnit(List<String> args) async {
     // step in $workDir/.pnpm-bin) so `pnpm start` invokes the exact pinned
     // pnpm by path — corepack never runs at runtime. Kept first so it wins
     // over any node-version bin dir and the system corepack shims in /usr/bin.
+    //
+    // The marker sits in the app's own workdir, which its build command and
+    // Console can rewrite, so trust only the one shape `build` writes — a store
+    // bin dir — and never follow a symlink (it could point at /etc/shadow,
+    // whose contents would then land in a world-readable unit file).
     final marker = File('$workDir/.pnpm-bin');
-    if (marker.existsSync()) {
+    if (marker.existsSync() &&
+        !FileSystemEntity.isLinkSync(marker.path) &&
+        FileSystemEntity.isFileSync(marker.path)) {
       final pnpmBinDir = marker.readAsStringSync().trim();
-      if (pnpmBinDir.isNotEmpty) {
+      if (_pnpmBinDirRe.hasMatch(pnpmBinDir)) {
         extraBinDirs.add(pnpmBinDir);
         runtimeBinDir = (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
             ? '$pnpmBinDir:$runtimeBinDir'
@@ -1425,8 +1444,19 @@ Future<void> _exec(List<String> args) async {
       ? ['runuser', '-u', user, '--', 'bash', '-lc', script]
       : ['sudo', '-u', user, 'bash', '-lc', script];
 
-  final proc =
-      await Process.start(invocation.first, invocation.skip(1).toList());
+  // Start from a minimal environment rather than the agent's own: whatever the
+  // agent was launched with (in some setups the panel's .env — JWT_SECRET, DB
+  // passwords) must never reach a tenant's shell, where `env` would print it.
+  // The app's own vars come from its .env via [loadEnv] above.
+  final proc = await Process.start(
+    invocation.first,
+    invocation.skip(1).toList(),
+    environment: {
+      for (final key in const ['PATH', 'LANG', 'LC_ALL', 'TERM', 'TZ'])
+        if (Platform.environment[key] case final value?) key: value,
+    },
+    includeParentEnvironment: false,
+  );
 
   final outSub = proc.stdout
       .transform(utf8.decoder)

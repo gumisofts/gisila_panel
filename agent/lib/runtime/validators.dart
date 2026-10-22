@@ -12,7 +12,12 @@ class AgentValidators {
   static final _sourceTypeRe = RegExp(r'^(binary|git|zip)$');
   static final _hostnameRe =
       RegExp(r'^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$');
-  static final _commandRe = RegExp(r'^[^|&;`$<>]+$');
+  // No control characters either: commands are rendered into a single
+  // `ExecStart=` line, and a newline would let the value add unit directives of
+  // its own (`ExecStartPre=+…` runs as root).
+  static final _commandRe = RegExp(r'^[^|&;`$<>\x00-\x1f\x7f]+$');
+  static final _controlCharRe = RegExp(r'[\x00-\x1f\x7f]');
+  static final _envNameRe = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
   static final _pathSegmentRe = RegExp(r'^[a-zA-Z0-9_.\-]+$');
   // Deployment ids, optionally suffixed `-<ms>` by a retried publish. No dots
   // or slashes: the value names a directory under releases/ that root deletes.
@@ -90,6 +95,29 @@ class AgentValidators {
       throw ArgumentError('Refusing potentially unsafe command: $raw');
     }
     return raw;
+  }
+
+  /// Reject a [value] holding any control character. Every option of a command
+  /// that renders config files (systemd units, supervisor confs, the env file)
+  /// goes through this: those formats are line-based, so a newline in any
+  /// interpolated value — a celery queue list, gunicorn args, a bin dir — would
+  /// add lines of its own.
+  static void rejectControlChars(String option, String? value) {
+    if (value != null && _controlCharRe.hasMatch(value)) {
+      throw ArgumentError('Invalid --$option: contains a control character');
+    }
+  }
+
+  /// Validate env var names. Values may be anything (they are quoted and
+  /// escaped where rendered), but a name is written bare — `NAME="value"` —
+  /// so it must be a plain shell identifier.
+  static Map<String, String> requireEnvVars(Map<String, String> vars) {
+    for (final name in vars.keys) {
+      if (!_envNameRe.hasMatch(name)) {
+        throw ArgumentError('Invalid env var name: $name');
+      }
+    }
+    return vars;
   }
 
   /// Validate a monorepo subdirectory (relative path under the repo root

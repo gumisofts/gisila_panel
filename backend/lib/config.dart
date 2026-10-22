@@ -9,10 +9,24 @@ import 'package:redis/redis.dart';
 final env = DotEnv(includePlatformEnvironment: true, quiet: true)..load();
 
 /// Application-wide structured logger.
+///
+/// The filter must be explicit: the package default (DevelopmentFilter) logs
+/// only when asserts are on, i.e. never in the `dart compile exe` binaries
+/// that run in production. `LOG_LEVEL` (trace/debug/info/warning/error)
+/// picks the threshold.
 final logger = Logger(
+  filter: ProductionFilter(),
+  level: Level.values.firstWhere(
+    (l) => l.name == env['LOG_LEVEL']?.trim().toLowerCase(),
+    orElse: () => Level.info,
+  ),
   printer: PrettyPrinter(
     methodCount: 0,
     dateTimeFormat: (dt) => dt.toIso8601String(),
+    // journald stores escape codes verbatim and splits boxes into four lines:
+    // decorate only a real terminal.
+    colors: stdout.hasTerminal && stdout.supportsAnsiEscapes,
+    noBoxingByDefault: !stdout.hasTerminal,
   ),
 );
 
@@ -123,6 +137,17 @@ Future<Command> connectRedis() async {
 bool get studioEnabled => const {'1', 'true', 'yes', 'on'}
     .contains(env['STUDIO_ENABLED']?.trim().toLowerCase());
 
+/// The studio's login password, or null when it isn't safe to mount: unset,
+/// or a well-known default. There is deliberately no fallback — the studio
+/// can read every secret the panel holds.
+String? get studioPassword {
+  final value = env['STUDIO_PASSWORD']?.trim() ?? '';
+  if (value.isEmpty || const {'admin', 'password', 'changeme'}.contains(value)) {
+    return null;
+  }
+  return value;
+}
+
 /// Host paths and runtime knobs that the worker / agent need.
 class HostConfig {
   HostConfig({
@@ -187,6 +212,44 @@ class HostConfig {
 
 /// Singleton host config.
 final hostConfig = HostConfig.fromEnv();
+
+/// The environment every agent invocation runs with — pass it together with
+/// `includeParentEnvironment: false`.
+///
+/// The panel and worker load `/etc/gisila/.env` (JWT_SECRET, SUPERUSER_PASSWORD,
+/// database and Redis credentials) into their own environment, and the root
+/// agent hands its environment on to the processes it starts as app users —
+/// builds and Console commands. Inheriting it would put the panel's secrets in
+/// front of every tenant (`env` in the Console prints them), so the agent only
+/// gets this allowlist: what it reads itself plus what the tools it drives
+/// (git, apt, certbot, toolchains) need from a normal root shell.
+final Map<String, String> agentEnvironment = {
+  for (final key in const [
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'LANG',
+    'LANGUAGE',
+    'LC_ALL',
+    'TZ',
+    'TERM',
+    'SUPERVISOR_CONF_DIR',
+    'RUSTUP_HOME',
+    'CARGO_HOME',
+    'PUB_CACHE',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+  ])
+    if (Platform.environment[key] case final value?) key: value,
+  if (hostConfig.dockerDeploy) 'DOCKER_DEPLOY': 'true',
+};
 
 /// Build the OS command used by every worker to invoke the agent.
 ///

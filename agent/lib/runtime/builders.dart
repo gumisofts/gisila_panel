@@ -915,7 +915,10 @@ class Builders {
     if (pkgMgr == 'pnpm') {
       final pnpmVersion = _resolvePnpmVersion(src, resolvedNode);
       stdout.writeln('[agent] pnpm $pnpmVersion (corepack-free, shared store)');
-      final pnpmBinDir = await _ensurePnpm(pnpmVersion, installEnv);
+      // The pnpm install runs as ROOT into the shared store, so it gets the
+      // agent's own toolchain env — never installEnv, which carries the app's
+      // env vars (NODE_OPTIONS, npm_config_*, PATH, … would run code as root).
+      final pnpmBinDir = await _ensurePnpm(pnpmVersion, env);
       // Put the real pnpm first on PATH for the install + build steps below.
       final basePath = installEnv['PATH'] ?? '/usr/local/bin:/usr/bin:/bin';
       installEnv['PATH'] = '$pnpmBinDir:$basePath';
@@ -2450,14 +2453,67 @@ class Builders {
       }
       exports.add("export $key='$value'");
     }
+    // `runuser` itself runs as ROOT with this environment, and [env] carries
+    // the app's own env vars. The dynamic loader honours LD_PRELOAD & co. for a
+    // root process like any other, so a tenant setting LD_PRELOAD to a library
+    // in its workdir would run code as root. Keep glibc's privilege-sensitive
+    // variables away from runuser and re-export them inside the user's shell,
+    // where they only affect the app's own build.
+    final rootEnv = <String, String>{};
+    for (final entry in env.entries) {
+      if (_rootUnsafeEnv.contains(entry.key)) {
+        exports.add('export ${entry.key}=${Priv.shq(entry.value)}');
+      } else {
+        rootEnv[entry.key] = entry.value;
+      }
+    }
     final wrapped =
         exports.isEmpty ? command : '${exports.join('; ')}; $command';
     return ShellExec.run(
-      'runuser',
+      // By absolute path: Process.start resolves a bare name against the
+      // CHILD's PATH, which here is the app's — so `runuser` could otherwise be
+      // a binary the tenant planted and root would execute it.
+      _runuserPath,
       ['-u', user, '--', 'bash', '-lc', wrapped],
       cwd: cwd,
-      env: env,
+      env: rootEnv,
       requireSuccess: requireSuccess,
     );
   }
+
+  static final String _runuserPath = const [
+    '/usr/sbin/runuser',
+    '/sbin/runuser',
+    '/usr/bin/runuser',
+  ].firstWhere((p) => File(p).existsSync(), orElse: () => '/usr/sbin/runuser');
+
+  /// Variables glibc strips for setuid programs (its `UNSECURE_ENVVARS`),
+  /// because they make the loader or libc load attacker-chosen code or files.
+  /// [_runAsUserWithEnv] keeps them away from the root `runuser` process.
+  static const _rootUnsafeEnv = {
+    'GCONV_PATH',
+    'GETCONF_DIR',
+    'GLIBC_TUNABLES',
+    'HOSTALIASES',
+    'LD_AUDIT',
+    'LD_DEBUG',
+    'LD_DEBUG_OUTPUT',
+    'LD_DYNAMIC_WEAK',
+    'LD_HWCAP_MASK',
+    'LD_LIBRARY_PATH',
+    'LD_ORIGIN_PATH',
+    'LD_PRELOAD',
+    'LD_PROFILE',
+    'LD_SHOW_AUXV',
+    'LD_USE_LOAD_BIAS',
+    'LOCALDOMAIN',
+    'LOCPATH',
+    'MALLOC_TRACE',
+    'NIS_PATH',
+    'NLSPATH',
+    'RESOLV_HOST_CONF',
+    'RES_OPTIONS',
+    'TMPDIR',
+    'TZDIR',
+  };
 }
