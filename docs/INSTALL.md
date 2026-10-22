@@ -17,14 +17,34 @@ If you don't already have Postgres/Redis, the quickest same-host setup is:
 ```bash
 sudo apt-get install -y postgresql redis-server
 sudo systemctl enable --now postgresql redis-server
-sudo -u postgres psql -c "CREATE ROLE gisila LOGIN PASSWORD 'gisila';"
+DB_PW="$(openssl rand -hex 16)"; REDIS_PW="$(openssl rand -hex 24)"
+sudo -u postgres psql -c "CREATE ROLE gisila LOGIN PASSWORD '$DB_PW';"
 sudo -u postgres createdb --owner=gisila gisila_panel
+echo "requirepass $REDIS_PW" | sudo tee -a /etc/redis/redis.conf >/dev/null
+sudo systemctl restart redis-server
+echo "DATABASE_URL='postgresql://gisila:$DB_PW@localhost:5432/gisila_panel'"
+echo "REDIS_URL='redis://:$REDIS_PW@127.0.0.1:6379'"
 ```
 
-The installers' defaults (`DB_HOST=localhost`, `DB_USER=gisila`,
-`DB_PASSWORD=gisila`, `DB_NAME=gisila_panel`, `REDIS_HOST=127.0.0.1`,
-`REDIS_PORT=6379`) match this setup exactly, so no extra env vars are needed
-in that case.
+Pass the two printed URLs to the installer (see below).
+
+### Connection security
+
+Postgres and Redis can be on this host, on your LAN or with a managed
+provider. The installer only refuses setups that would leave them open. Apps
+hosted by the panel run on the same machine, so `127.0.0.1` is reachable by
+every one of them and is not treated as private.
+
+| Refused | Why |
+|---|---|
+| Redis with no password, or one under 16 characters | Any hosted app could read and inject panel jobs. |
+| A well-known Postgres password (`gisila`, `postgres`, …) or one under 12 characters | Any hosted app could log in as the panel. |
+| Postgres or Redis on a public address without TLS | Credentials and data cross the internet in plain text. Use `?sslmode=require` / `rediss://`. |
+
+Postgres or Redis on a private network without TLS, and a local Postgres or
+Redis listening on a public interface, are allowed with a warning.
+`GISILA_ALLOW_INSECURE=1` turns the refusals into warnings for throwaway test
+machines; never use it on a host that runs other people's apps.
 
 ## Option A: prebuilt install (recommended)
 
@@ -52,8 +72,8 @@ sudo RELEASE_FILE=/tmp/gisila-release-linux-arm64.tar.gz \
 # Preferred: URLs + domain (pass env to bash, not to curl)
 curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/install-prebuilt.sh \
   | sudo env \
-      DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
-      REDIS_URL='redis://:secret@10.0.0.5:6379' \
+      DATABASE_URL='postgresql://gisila:<db-password>@10.0.0.5:5432/gisila_panel' \
+      REDIS_URL='rediss://:<redis-password>@10.0.0.5:6379' \
       PANEL_DOMAIN=panel.example.com \
       ISSUE_TLS=1 \
       bash
@@ -85,8 +105,8 @@ sudo bash infra/install.sh
 Same URL / domain knobs apply:
 
 ```bash
-sudo DATABASE_URL='postgresql://gisila:secret@10.0.0.5:5432/gisila_panel' \
-     REDIS_URL='redis://:secret@10.0.0.5:6379' \
+sudo DATABASE_URL='postgresql://gisila:<db-password>@10.0.0.5:5432/gisila_panel' \
+     REDIS_URL='redis://:<redis-password>@10.0.0.5:6379' \
      PANEL_DOMAIN=panel.example.com \
      bash infra/install.sh
 ```
@@ -148,7 +168,9 @@ Or afterwards:
 | `STUDIO_USERNAME` / `STUDIO_PASSWORD` | Credentials for `/admin` when the studio is enabled. It stays unmounted if the password is empty or a default such as `admin`. |
 | `LOG_LEVEL` | `trace`/`debug`/`info` (default)/`warning`/`error`. |
 | `REDIS_HOST` / `REDIS_PORT` | Redis connection (from `REDIS_URL` or discrete vars at install). |
-| `REDIS_PASSWORD` | Redis auth password, if the instance requires one. |
+| `REDIS_PASSWORD` | Redis auth password. Required by the installer (see Connection security). |
+| `REDIS_USERNAME` | Redis ACL user, for managed providers. Empty authenticates as `default`. |
+| `REDIS_TLS` | `true` connects over TLS; set automatically from a `rediss://` URL. |
 | `PANEL_DOMAIN` | Hostname for the panel nginx vhost (set at install via `PANEL_DOMAIN`). |
 | `APPS_ROOT` | Where per-app filesystems live (default `/srv/apps`). |
 | `APP_PORT_RANGE_MIN/MAX` | Internal port pool for new apps. |
@@ -167,7 +189,7 @@ deliberately *not* rewritten (it holds secrets and operator edits), so the
 Redis keys are refreshed only when you actually pass Redis details on that run:
 
 ```bash
-sudo env REDIS_URL='redis://:SECRET@10.0.0.9:6379' bash infra/install.sh
+sudo env REDIS_URL='redis://:<redis-password>@10.0.0.9:6379' bash infra/install.sh
 ```
 
 Without a `REDIS_URL`/`REDIS_*` on the command line, the existing `REDIS_HOST`

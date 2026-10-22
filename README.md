@@ -199,13 +199,18 @@ See [`docker/ubuntu-host/README.md`](docker/ubuntu-host/README.md). Panel after 
 ```bash
 sudo apt-get install -y postgresql redis-server
 sudo systemctl enable --now postgresql redis-server
-sudo -u postgres psql -c "CREATE ROLE gisila LOGIN PASSWORD 'gisila';"
+DB_PW="$(openssl rand -hex 16)"; REDIS_PW="$(openssl rand -hex 24)"
+sudo -u postgres psql -c "CREATE ROLE gisila LOGIN PASSWORD '$DB_PW';"
 sudo -u postgres createdb --owner=gisila gisila_panel
+echo "requirepass $REDIS_PW" | sudo tee -a /etc/redis/redis.conf >/dev/null
+sudo systemctl restart redis-server
+echo "DATABASE_URL='postgresql://gisila:$DB_PW@localhost:5432/gisila_panel'"
+echo "REDIS_URL='redis://:$REDIS_PW@127.0.0.1:6379'"
 ```
 
-The installer's defaults (`DB_HOST=localhost`, `DB_USER=gisila`,
-`DB_PASSWORD=gisila`, `DB_NAME=gisila_panel`, `REDIS_HOST=127.0.0.1`,
-`REDIS_PORT=6379`) match this setup, so no extra env vars are needed.
+Pass the two printed URLs to the installer. It refuses weak or missing
+passwords and unencrypted connections over the internet; see
+[Connection security](docs/INSTALL.md#connection-security).
 
 </details>
 

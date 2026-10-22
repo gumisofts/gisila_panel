@@ -89,6 +89,42 @@ class AgentValidators {
     };
   }
 
+  // Remote transports only. `file://`, bare local paths and `ext::` would let
+  // a tenant clone another app's tree from /srv/apps.
+  static final _gitUrlRe = RegExp(
+      r'^(?:(?:https?|ssh|git)://[A-Za-z0-9\[][A-Za-z0-9._~%!$&()*+,;=:@\[\]-]*'
+      r'(?:/\S*)?'
+      r'|[A-Za-z0-9._-]+@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s-]\S*)$');
+  // A conservative subset of `git check-ref-format`.
+  static final _gitRefRe = RegExp(r'^[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*$');
+
+  /// A git remote URL: http(s)/ssh/git scheme or scp-style `user@host:path`.
+  static String requireGitUrl(String? raw) {
+    if (raw == null ||
+        raw.length > 2048 ||
+        raw.startsWith('-') ||
+        _controlCharRe.hasMatch(raw) ||
+        !_gitUrlRe.hasMatch(raw)) {
+      throw ArgumentError(
+          'Invalid --git-url: use an https://, ssh:// or user@host:path URL');
+    }
+    return raw;
+  }
+
+  /// A branch or tag name; null for the remote's default branch.
+  static String? optionalGitRef(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.length > 255 ||
+        raw.startsWith('-') ||
+        raw.contains('..') ||
+        raw.contains('@{') ||
+        raw.endsWith('.lock') ||
+        !_gitRefRe.hasMatch(raw)) {
+      throw ArgumentError('Invalid --git-branch: $raw');
+    }
+    return raw;
+  }
+
   static String? optionalCommand(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     if (!_commandRe.hasMatch(raw)) {

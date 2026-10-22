@@ -268,13 +268,12 @@ Future<void> _build(List<String> args) async {
       _printBuildResult(release: published.split('/').last);
       return;
     case 'git':
-      final url = r['git-url'] as String?;
-      if (url == null) throw ArgumentError('Missing --git-url');
+      final url = AgentValidators.requireGitUrl(r['git-url'] as String?);
       commit = await Builders.fromGit(
         workDir: workDir,
         user: user,
         url: url,
-        branch: r['git-branch'] as String?,
+        branch: AgentValidators.optionalGitRef(r['git-branch'] as String?),
         deployKeyPath: r['deploy-key-path'] as String?,
         noCache: noCache,
       );
