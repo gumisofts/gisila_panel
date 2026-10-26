@@ -89,7 +89,8 @@ class ExecWorker {
 
     final cmd = buildAgentCmd(args);
     logger.i('exec_worker: ${cmd.join(' ')}');
-    final process = await Process.start(cmd.first, cmd.skip(1).toList());
+    final process = await Process.start(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
 
     await Future.wait([
       process.stdout

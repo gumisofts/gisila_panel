@@ -204,7 +204,13 @@ class DeploymentsService extends Service {
       {int limit = 2000}) async {
     final appsSvc = AppsService()..attach(ctx);
     final app = await appsSvc.findForUser(actor, appId);
-    assert(app.id != null);
+    // Access was checked on the app, so the deployment must be one of its own —
+    // otherwise any app the caller can see would expose every other app's logs.
+    final deployment = await Query<Deployment>(DeploymentTable.metadata)
+        .where(DeploymentTable.id.eq(deploymentId))
+        .where(DeploymentTable.appId.eq(app.id!))
+        .first(_db.context());
+    if (deployment == null) throw NotFound('Deployment not found.');
     // Newest-first then reverse so callers see chronological order but we keep
     // the *tail* of long builds (a plain ASC + LIMIT would drop the end).
     final newestFirst = await Query<BuildLog>(BuildLogTable.metadata)

@@ -418,6 +418,11 @@ class Builders {
 
   /// Returns the commit the tree was checked out at (null if git cannot say),
   /// so the panel can record what each deployment actually ran.
+  ///
+  /// Every git command runs as the app user. The checkout lives in the app's
+  /// own work dir, so its `.git/config` and hooks are tenant-writable; running
+  /// git there as root (with `safe.directory` overriding git's ownership
+  /// check) would execute that config with root's privileges.
   static Future<String?> fromGit({
     required String workDir,
     required String user,
@@ -429,48 +434,106 @@ class Builders {
     await _ensureHostTools(['git', 'ca-certificates']);
     final src = '$workDir/releases/current_build';
 
-    // Build the environment; if a deploy key is provided, configure an ssh
-    // wrapper so `git` authenticates with that key (for both clone and fetch).
-    final Map<String, String> env;
+    // The worker writes the deploy key root-only; hand the app user its own
+    // copy for the duration of the fetch. It is the app's own key, so the
+    // app's uid seeing it crosses no boundary. The copy goes in a fresh
+    // root-owned directory that is only handed to the user once the key is
+    // inside, so nothing the tenant planted can redirect root's write.
+    Directory? keyDir;
+    final env = _appUserEnv(workDir);
     if (deployKeyPath != null && File(deployKeyPath).existsSync()) {
-      env = {
-        ...Platform.environment,
-        'GIT_SSH_COMMAND':
-            'ssh -i $deployKeyPath -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
-      };
-    } else {
-      env = Platform.environment;
+      keyDir = Directory.systemTemp.createTempSync('gisila_dk_');
+      final userKey = '${keyDir.path}/id';
+      await ShellExec.run('install',
+          ['-o', user, '-g', user, '-m', '0600', deployKeyPath, userKey]);
+      await ShellExec.run('chown', ['$user:$user', keyDir.path]);
+      env['GIT_SSH_COMMAND'] = 'ssh -i ${Priv.shq(userKey)} -o IdentitiesOnly=yes '
+          '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
     }
 
-    // Prefer an in-place incremental update of an existing checkout of the SAME
-    // remote: `fetch` + `reset --hard` re-points the tree at the new commit
-    // while leaving gitignored artifacts (node_modules, .venv, .next/cache, …)
-    // untouched, so the install/build steps can reuse them. Any mismatch or git
-    // error falls back to a clean shallow clone, which is always correct. A
-    // force-rebuild skips the incremental path entirely so the clone wipes
-    // every preserved artifact.
-    final updated = noCache
-        ? false
-        : await _tryGitUpdate(src: src, url: url, branch: branch, env: env);
-    if (!updated) {
-      await ShellExec.run('rm', ['-rf', src]);
-      await ShellExec.run(
-          'git',
+    try {
+      // Prefer an in-place incremental update of an existing checkout of the
+      // SAME remote: `fetch` + `reset --hard` re-points the tree at the new
+      // commit while leaving gitignored artifacts (node_modules, .venv,
+      // .next/cache, …) untouched, so the install/build steps can reuse them.
+      // Any mismatch or git error falls back to a clean shallow clone, which is
+      // always correct. A force-rebuild skips the incremental path entirely so
+      // the clone wipes every preserved artifact.
+      final updated = noCache
+          ? false
+          : await _tryGitUpdate(
+              user: user, src: src, url: url, branch: branch, env: env);
+      if (!updated) {
+        await ShellExec.run('rm', ['-rf', src]);
+        await ShellExec.run('install', ['-d', '-o', user, '-g', user, src]);
+        await _gitAsUser(
+          user,
           [
             'clone',
             '--depth',
             '1',
             if (branch != null) ...['--branch', branch],
+            '--',
             url,
             src,
           ],
-          env: env);
+          env: env,
+        );
+      }
+      final head =
+          await _gitAsUserOutput(user, ['-C', src, 'rev-parse', 'HEAD'], env);
+      return head;
+    } finally {
+      if (keyDir != null) {
+        await ShellExec.run('rm', ['-rf', keyDir.path], requireSuccess: false);
+      }
     }
-    await ShellExec.run('chown', ['-R', '$user:$user', src]);
-    final head = await Process.run('git',
-        ['-c', 'safe.directory=$src', '-C', src, 'rev-parse', 'HEAD']);
-    final sha = (head.stdout as String).trim();
-    return head.exitCode == 0 && sha.isNotEmpty ? sha : null;
+  }
+
+  /// Transports a tenant's git URL may use. Blocks `file://` and local paths,
+  /// which would let one app clone another app's tree, and `ext::`.
+  static const _gitProtocolConfig = [
+    '-c',
+    'protocol.allow=never',
+    '-c',
+    'protocol.https.allow=always',
+    '-c',
+    'protocol.http.allow=always',
+    '-c',
+    'protocol.ssh.allow=always',
+    '-c',
+    'protocol.git.allow=always',
+  ];
+
+  /// Run git as [user] (no shell, so arguments are never re-parsed). Returns
+  /// the exit code; throws on failure when [requireSuccess].
+  static Future<int> _gitAsUser(
+    String user,
+    List<String> args, {
+    required Map<String, String> env,
+    bool requireSuccess = true,
+  }) =>
+      ShellExec.run(
+        _runuserPath,
+        ['-u', user, '--', 'git', ..._gitProtocolConfig, ...args],
+        env: env,
+        requireSuccess: requireSuccess,
+        logPrefix: 'git ${args.join(' ')}',
+      );
+
+  /// Run git as [user] and return its trimmed stdout, or null on failure.
+  static Future<String?> _gitAsUserOutput(
+    String user,
+    List<String> args,
+    Map<String, String> env,
+  ) async {
+    final r = await Process.run(
+      _runuserPath,
+      ['-u', user, '--', 'git', ..._gitProtocolConfig, ...args],
+      environment: env,
+    );
+    final out = (r.stdout as String).trim();
+    return r.exitCode == 0 && out.isNotEmpty ? out : null;
   }
 
   /// Attempt an in-place shallow update of an existing git checkout at [src].
@@ -478,6 +541,7 @@ class Builders {
   /// build artifacts preserved; false (a signal to fall back to a clean clone)
   /// on a missing repo, a different remote, or any git failure.
   static Future<bool> _tryGitUpdate({
+    required String user,
     required String src,
     required String url,
     String? branch,
@@ -485,36 +549,28 @@ class Builders {
   }) async {
     if (!Directory('$src/.git').existsSync()) return false;
     try {
-      // git refuses to operate on a repo owned by another uid ("dubious
-      // ownership"); the tree is owned by the app user while the agent runs as
-      // root, so scope an explicit safe.directory to every invocation.
-      final safe = ['-c', 'safe.directory=$src'];
-
       // Bail out (→ clean clone) when the remote changed: the preserved
       // artifacts would no longer match the new project.
-      final remote = await Process.run(
-          'git', [...safe, '-C', src, 'remote', 'get-url', 'origin']);
-      if (remote.exitCode != 0 ||
-          (remote.stdout as String).trim() != url) {
-        return false;
-      }
+      final remote = await _gitAsUserOutput(
+          user, ['-C', src, 'remote', 'get-url', 'origin'], env);
+      if (remote != url) return false;
 
       final ref = (branch != null && branch.isNotEmpty) ? branch : 'HEAD';
-      final fetch = await ShellExec.run(
-          'git', [...safe, '-C', src, 'fetch', '--depth', '1', 'origin', ref],
+      final fetch = await _gitAsUser(
+          user, ['-C', src, 'fetch', '--depth', '1', 'origin', '--', ref],
           env: env, requireSuccess: false);
       if (fetch != 0) return false;
 
-      final reset = await ShellExec.run(
-          'git', [...safe, '-C', src, 'reset', '--hard', 'FETCH_HEAD'],
-          requireSuccess: false);
+      final reset = await _gitAsUser(
+          user, ['-C', src, 'reset', '--hard', 'FETCH_HEAD'],
+          env: env, requireSuccess: false);
       if (reset != 0) return false;
 
       // Remove stray tracked-type files left over from the previous commit, but
       // NOT ignored files (no `-x`): node_modules / .venv / framework build
       // caches are all gitignored, so this keeps them for the cache layer.
-      await ShellExec.run('git', [...safe, '-C', src, 'clean', '-fd'],
-          requireSuccess: false);
+      await _gitAsUser(user, ['-C', src, 'clean', '-fd'],
+          env: env, requireSuccess: false);
 
       stdout.writeln(
           '[agent] git: incremental update — preserved build artifacts');
@@ -915,7 +971,10 @@ class Builders {
     if (pkgMgr == 'pnpm') {
       final pnpmVersion = _resolvePnpmVersion(src, resolvedNode);
       stdout.writeln('[agent] pnpm $pnpmVersion (corepack-free, shared store)');
-      final pnpmBinDir = await _ensurePnpm(pnpmVersion, installEnv);
+      // The pnpm install runs as ROOT into the shared store, so it gets the
+      // agent's own toolchain env — never installEnv, which carries the app's
+      // env vars (NODE_OPTIONS, npm_config_*, PATH, … would run code as root).
+      final pnpmBinDir = await _ensurePnpm(pnpmVersion, env);
       // Put the real pnpm first on PATH for the install + build steps below.
       final basePath = installEnv['PATH'] ?? '/usr/local/bin:/usr/bin:/bin';
       installEnv['PATH'] = '$pnpmBinDir:$basePath';
@@ -2450,14 +2509,67 @@ class Builders {
       }
       exports.add("export $key='$value'");
     }
+    // `runuser` itself runs as ROOT with this environment, and [env] carries
+    // the app's own env vars. The dynamic loader honours LD_PRELOAD & co. for a
+    // root process like any other, so a tenant setting LD_PRELOAD to a library
+    // in its workdir would run code as root. Keep glibc's privilege-sensitive
+    // variables away from runuser and re-export them inside the user's shell,
+    // where they only affect the app's own build.
+    final rootEnv = <String, String>{};
+    for (final entry in env.entries) {
+      if (_rootUnsafeEnv.contains(entry.key)) {
+        exports.add('export ${entry.key}=${Priv.shq(entry.value)}');
+      } else {
+        rootEnv[entry.key] = entry.value;
+      }
+    }
     final wrapped =
         exports.isEmpty ? command : '${exports.join('; ')}; $command';
     return ShellExec.run(
-      'runuser',
+      // By absolute path: Process.start resolves a bare name against the
+      // CHILD's PATH, which here is the app's — so `runuser` could otherwise be
+      // a binary the tenant planted and root would execute it.
+      _runuserPath,
       ['-u', user, '--', 'bash', '-lc', wrapped],
       cwd: cwd,
-      env: env,
+      env: rootEnv,
       requireSuccess: requireSuccess,
     );
   }
+
+  static final String _runuserPath = const [
+    '/usr/sbin/runuser',
+    '/sbin/runuser',
+    '/usr/bin/runuser',
+  ].firstWhere((p) => File(p).existsSync(), orElse: () => '/usr/sbin/runuser');
+
+  /// Variables glibc strips for setuid programs (its `UNSECURE_ENVVARS`),
+  /// because they make the loader or libc load attacker-chosen code or files.
+  /// [_runAsUserWithEnv] keeps them away from the root `runuser` process.
+  static const _rootUnsafeEnv = {
+    'GCONV_PATH',
+    'GETCONF_DIR',
+    'GLIBC_TUNABLES',
+    'HOSTALIASES',
+    'LD_AUDIT',
+    'LD_DEBUG',
+    'LD_DEBUG_OUTPUT',
+    'LD_DYNAMIC_WEAK',
+    'LD_HWCAP_MASK',
+    'LD_LIBRARY_PATH',
+    'LD_ORIGIN_PATH',
+    'LD_PRELOAD',
+    'LD_PROFILE',
+    'LD_SHOW_AUXV',
+    'LD_USE_LOAD_BIAS',
+    'LOCALDOMAIN',
+    'LOCPATH',
+    'MALLOC_TRACE',
+    'NIS_PATH',
+    'NLSPATH',
+    'RESOLV_HOST_CONF',
+    'RES_OPTIONS',
+    'TMPDIR',
+    'TZDIR',
+  };
 }

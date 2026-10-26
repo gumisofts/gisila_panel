@@ -54,15 +54,7 @@ class JwtAuthenticator extends Authenticator {
     return null;
   }
 
-  Future<User?> _userForJwt(String token) async {
-    final payload = JWTAuth.decodeAndVerify(token);
-    if (payload == null) return null;
-    final userId = payload['id'] as int?;
-    if (userId == null) return null;
-    return Query<User>(UserTable.metadata)
-        .where(UserTable.id.eq(userId))
-        .first(database.context());
-  }
+  Future<User?> _userForJwt(String token) => userForSessionJwt(database, token);
 
   Future<User?> _userForApiToken(String token) async {
     final hash = ApiTokenCodec.hash(token);
@@ -85,4 +77,22 @@ class JwtAuthenticator extends Authenticator {
         .where(UserTable.id.eq(apiToken.userId))
         .first(database.context());
   }
+}
+
+/// The active [User] a session JWT belongs to, or null when the token is
+/// invalid, expired, an MFA challenge, revoked by the user's
+/// `sessionsValidAfter`, or the account is gone or deactivated.
+///
+/// Shared by the REST authenticator and the log WebSockets so both accept
+/// exactly the same tokens.
+Future<User?> userForSessionJwt(Database database, String token) async {
+  final payload = JWTAuth.decodeSession(token);
+  final userId = payload?['id'];
+  if (payload == null || userId is! int) return null;
+  final user = await Query<User>(UserTable.metadata)
+      .where(UserTable.id.eq(userId))
+      .first(database.context());
+  if (user == null || user.isActive == false) return null;
+  if (JWTAuth.isRevoked(payload, user)) return null;
+  return user;
 }

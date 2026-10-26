@@ -13,7 +13,8 @@ class MailApi {
   // ── Tooling installation ─────────────────────────────────────────────────────
 
   @Get('/status', summary: 'Whether the mail tooling is installed')
-  Future<Map<String, Object?>> status(MailService svc) async {
+  Future<Map<String, Object?>> status(MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     return {'installed': await svc.isStackInstalled()};
   }
 
@@ -27,7 +28,8 @@ class MailApi {
   // ── Health ────────────────────────────────────────────────────────────────
 
   @Get('/health', summary: 'Cached live health of the mail stack')
-  Future<Map<String, Object?>> health() async {
+  Future<Map<String, Object?>> health(RequestContext ctx) async {
+    requireSuperuser(ctx);
     final cached = await readCachedHealth(mailHealthRedisKey);
     return cached ?? {'healthy': null, 'checkedAt': null};
   }
@@ -42,7 +44,8 @@ class MailApi {
   // ── Domains ────────────────────────────────────────────────────────────────
 
   @Get('/domains', summary: 'List mail domains')
-  Future<Map<String, Object?>> listDomains(MailService svc) async {
+  Future<Map<String, Object?>> listDomains(MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final domains = await svc.listDomains();
     return {'results': domains.map(_serializeDomain).toList()};
   }
@@ -86,7 +89,8 @@ class MailApi {
   }
 
   @Get('/domains/{id}/dns', summary: 'DNS records to publish for a domain')
-  Future<Map<String, Object?>> domainDns(int id, MailService svc) async {
+  Future<Map<String, Object?>> domainDns(int id, MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final domain = await svc.findDomain(id);
     return {
       'domain': domain.domain,
@@ -112,7 +116,8 @@ class MailApi {
   // ── Mailboxes ──────────────────────────────────────────────────────────────
 
   @Get('/domains/{id}/accounts', summary: 'List mailboxes in a domain')
-  Future<Map<String, Object?>> listAccounts(int id, MailService svc) async {
+  Future<Map<String, Object?>> listAccounts(int id, MailService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final domain = await svc.findDomain(id);
     final accounts = await svc.listAccounts(id);
     return {

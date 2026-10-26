@@ -604,7 +604,8 @@ class MongoWorker {
 
     final cmd = buildAgentCmd(args);
     logger.i('mongo_worker: ${cmd.join(' ')}');
-    final result = await Process.run(cmd.first, cmd.skip(1).toList());
+    final result = await Process.run(cmd.first, cmd.skip(1).toList(),
+        environment: agentEnvironment, includeParentEnvironment: false);
     if (result.exitCode != 0) {
       throw Exception(
         'Agent exited ${result.exitCode}: ${result.stderr}'.trim(),

@@ -85,6 +85,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
 
 gisila_apply_install_env
+gisila_check_connection_security
 
 if ! command -v dart >/dev/null 2>&1; then
   echo "==> Installing Dart SDK"
@@ -277,6 +278,8 @@ SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
 REDIS_HOST=$REDIS_HOST
 REDIS_PORT=$REDIS_PORT
 REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_USERNAME=$REDIS_USERNAME
+REDIS_TLS=$REDIS_TLS
 PANEL_DOMAIN=$PANEL_DOMAIN
 APPS_ROOT=$APPS_ROOT
 NGINX_SITES_DIR=/etc/nginx/sites-enabled

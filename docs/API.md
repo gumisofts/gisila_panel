@@ -6,20 +6,35 @@ follows is a high-level map.
 
 All endpoints accept either:
 
-- `Authorization: Bearer <jwt>` — issued by `POST /auth/login` or
-  `POST /auth/register`, or
+- `Authorization: Bearer <jwt>` — a session token from `POST /auth/login`
+  (or `POST /auth/login/mfa` for an account with two-factor auth), or
 - `Authorization: Bearer gsl_<…>` — a personal API token from
   `POST /me/security/tokens`, or
 - `X-API-Token: gsl_<…>` — same as above, useful for CLI clients.
+
+Accounts are created by a superuser (`POST /auth/users`); there is no public
+sign-up.
 
 ## Auth
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| `POST` | `/auth/register` | `{email, password, firstName?, lastName?}` | Public. Creates user + default team + JWT. |
-| `POST` | `/auth/login` | `{email, password}` | Public. Returns JWT. |
+| `POST` | `/auth/login` | `{email, password}` | Public. Returns `{user, access}`, or `{mfaRequired: true, challenge}` when the account has 2FA on. |
+| `POST` | `/auth/login/mfa` | `{challenge, code}` | Public. `code` is a TOTP code or a recovery code. Returns `{user, access}`. The challenge is valid for 5 minutes. |
 | `GET`  | `/auth/me` | — | Auth required. |
-| `POST` | `/auth/change-password` | `{oldPassword, newPassword}` | Auth required. |
+| `POST` | `/auth/change-password` | `{oldPassword, newPassword}` | Signs out every other session; returns a new `access` token for this one. |
+| `POST` | `/auth/sessions/revoke` | — | Signs out every other session; returns a new `access` token. API tokens are not affected. |
+| `GET`  | `/auth/totp` | — | `{enabled, recoveryCodesRemaining}`. |
+| `POST` | `/auth/totp/setup` | `{password}` | Starts setup. Returns `{secret, otpauthUri}`. |
+| `POST` | `/auth/totp/enable` | `{code}` | Confirms setup. Returns `{recoveryCodes, access}` and signs out other sessions. |
+| `POST` | `/auth/totp/disable` | `{password, code}` | `code` may be a recovery code. |
+| `POST` | `/auth/totp/recovery-codes` | `{code}` | Replaces the recovery codes. Needs an authenticator code. |
+| `DELETE` | `/auth/users/{id}/totp` | — | Superuser only. Turns a user's 2FA off and signs them out. |
+
+Failed sign-ins are throttled in Redis: 10 per account per address, 50 per
+account and 100 per address in a 15-minute window, after which the endpoint
+answers `429` until the window ends. A second-factor code is throttled the same
+way.
 
 ## Teams & projects
 
@@ -103,7 +118,10 @@ Validation failures (`400`) include a `details` map of `field → message`.
 Defaults:
 
 - Global: **300 req/min** per IP.
-- `POST /auth/login`: **60 req/min**.
-- `POST /auth/register`: **20 req/min**.
+- `POST /auth/login`: **60 req/min**; `POST /auth/login/mfa`: **30 req/min**.
+- `/auth/totp/*` changes: **10 req/min**.
+
+These limits are counted per API isolate (one per CPU). The failed-login
+throttle above is shared across all of them.
 
 Override per-route via `RouteConfig.rateLimit`.

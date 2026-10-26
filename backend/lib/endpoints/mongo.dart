@@ -27,7 +27,9 @@ class MongoApi {
   @Get('/', summary: 'List installed MongoDB instances')
   Future<Map<String, Object?>> listInstances(
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instances = await svc.listInstances();
     return {'results': instances.map(_serializeInstance).toList()};
   }
@@ -51,7 +53,9 @@ class MongoApi {
   Future<Map<String, Object?>> getInstance(
     int id,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     return _serializeInstance(await svc.findInstance(id));
   }
 
@@ -125,12 +129,14 @@ class MongoApi {
   // ── Metrics & configuration ─────────────────────────────────────────────────
 
   @Get('/{id}/metrics', summary: 'Live metrics for an instance')
-  Future<Map<String, Object?>> metrics(int id, MongoService svc) async {
+  Future<Map<String, Object?>> metrics(int id, MongoService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     return svc.metrics(id);
   }
 
   @Get('/{id}/config', summary: 'Read tunable mongod settings')
-  Future<Map<String, Object?>> getConfig(int id, MongoService svc) async {
+  Future<Map<String, Object?>> getConfig(int id, MongoService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     return svc.getConfig(id);
   }
 
@@ -153,7 +159,9 @@ class MongoApi {
   Future<Map<String, Object?>> listDatabases(
     int id,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     final dbs = await svc.listDatabases(id);
     return {
@@ -209,7 +217,9 @@ class MongoApi {
     int id,
     int dbId,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     final db = await svc.findDatabase(dbId);
     return _serializeDatabase(db,
@@ -235,7 +245,9 @@ class MongoApi {
     int id,
     int dbId,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final backups = await svc.listBackups(dbId);
     return {'results': backups.map(_serializeBackup).toList()};
   }
@@ -261,8 +273,16 @@ class MongoApi {
     int dbId,
     int backupId,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
+    final db = await svc.findDatabase(dbId);
     final b = await svc.findBackup(backupId);
+    // The path ids are otherwise unused, so tie them together: a backup is only
+    // served under the database and instance it actually belongs to.
+    if (db.instanceId != id || b.databaseId != dbId) {
+      throw NotFound('Backup #$backupId not found.');
+    }
     final path = b.filePath;
     if (b.status != 'completed' || path == null || path.isEmpty) {
       return Response.notFound('Backup is not available.');
@@ -330,7 +350,9 @@ class MongoApi {
     int id,
     int dbId,
     MongoService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     return _serializeSchedule(await svc.getSchedule(dbId));
   }
 

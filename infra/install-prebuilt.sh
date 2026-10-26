@@ -103,6 +103,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 
 # Resolve DATABASE_URL / REDIS_URL / PANEL_DOMAIN after python3 is available.
 gisila_apply_install_env
+gisila_check_connection_security
 
 # ── 2. Fetch & unpack the prebuilt release ────────────────────────────────────
 STAGE="$(mktemp -d)"
@@ -253,6 +254,8 @@ SUPERUSER_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -d '/+=')
 REDIS_HOST=$REDIS_HOST
 REDIS_PORT=$REDIS_PORT
 REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_USERNAME=$REDIS_USERNAME
+REDIS_TLS=$REDIS_TLS
 PANEL_DOMAIN=$PANEL_DOMAIN
 APPS_ROOT=$APPS_ROOT
 NGINX_SITES_DIR=/etc/nginx/sites-enabled

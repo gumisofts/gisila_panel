@@ -52,10 +52,10 @@ const NAV_SECTIONS = [
     label: "Infrastructure",
     items: [
       { href: "/runtimes", label: "Runtimes", icon: Catalog },
-      { href: "/services", label: "Services", icon: Layers },
-      { href: "/databases", label: "Databases", icon: DataBase },
-      { href: "/storage", label: "Storage", icon: ObjectStorage },
-      { href: "/mail", label: "Mail", icon: Email },
+      { href: "/services", label: "Services", icon: Layers, superuser: true },
+      { href: "/databases", label: "Databases", icon: DataBase, superuser: true },
+      { href: "/storage", label: "Storage", icon: ObjectStorage, superuser: true },
+      { href: "/mail", label: "Mail", icon: Email, superuser: true },
     ],
   },
   {
@@ -104,7 +104,12 @@ export function PanelSideNav({
           ],
         },
       ]
-    : NAV_SECTIONS;
+    : // Node-global infra is superuser-only on the backend; hide it rather
+      // than link to pages that would only 403.
+      NAV_SECTIONS.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => !("superuser" in item)),
+      }));
 
   return (
     <SideNav

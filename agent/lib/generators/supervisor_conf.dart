@@ -33,8 +33,7 @@ class CeleryWorkerSupervisorConf {
     final buf =
         StringBuffer('PORT="$port",GISILA_APP_ID="$appId"');
     for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      final escaped = _quotedEnvValue(entry.value);
       buf.write(',${entry.key}="$escaped"');
     }
     for (final entry in extra.entries) {
@@ -217,8 +216,7 @@ class SupervisorConf {
         ',npm_config_confirm_modules_purge="false"'
         ',pnpm_config_confirm_modules_purge="false"');
     for (final entry in envVars.entries) {
-      final escaped =
-          entry.value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      final escaped = _quotedEnvValue(entry.value);
       pairs.write(',${entry.key}="$escaped"');
     }
     return '''
@@ -240,4 +238,17 @@ stderr_logfile_backups=3
 environment=$pairs
 ''';
   }
+}
+
+/// Escape [value] for a double-quoted entry on a supervisor `environment=` line.
+///
+/// That line holds every variable, so — unlike the multi-line-capable env file —
+/// a newline cannot be represented: it would end the line and let the value add
+/// supervisor directives of its own (`command=`, `user=root`). Refuse it.
+String _quotedEnvValue(String value) {
+  if (value.contains('\n') || value.contains('\r')) {
+    throw ArgumentError(
+        'Env var values cannot contain line breaks under supervisor.');
+  }
+  return value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 }

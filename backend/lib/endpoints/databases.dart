@@ -17,7 +17,9 @@ class DatabasesApi {
   @Get('/', summary: 'List installed Postgres instances')
   Future<Map<String, Object?>> listInstances(
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instances = await svc.listInstances();
     return {'results': instances.map(_serializeInstance).toList()};
   }
@@ -41,7 +43,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> getInstance(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     return _serializeInstance(instance);
   }
@@ -122,7 +126,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> metrics(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     return svc.metrics(id);
   }
 
@@ -130,7 +136,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> getConfig(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     return svc.getConfig(id);
   }
 
@@ -152,7 +160,9 @@ class DatabasesApi {
   Future<Map<String, Object?>> listDatabases(
     int id,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     final dbs = await svc.listDatabases(id);
     return {
@@ -214,7 +224,9 @@ class DatabasesApi {
     int id,
     int dbId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final instance = await svc.findInstance(id);
     final db = await svc.findDatabase(dbId);
     return _serializeDatabase(db,
@@ -240,7 +252,9 @@ class DatabasesApi {
     int id,
     int dbId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final backups = await svc.listBackups(dbId);
     return {'results': backups.map(_serializeBackup).toList()};
   }
@@ -266,8 +280,16 @@ class DatabasesApi {
     int dbId,
     int backupId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
+    final db = await svc.findDatabase(dbId);
     final b = await svc.findBackup(backupId);
+    // The path ids are otherwise unused, so tie them together: a backup is only
+    // served under the database and instance it actually belongs to.
+    if (db.instanceId != id || b.databaseId != dbId) {
+      throw NotFound('Backup #$backupId not found.');
+    }
     final path = b.filePath;
     if (b.status != 'completed' || path == null || path.isEmpty) {
       return Response.notFound('Backup is not available.');
@@ -335,7 +357,9 @@ class DatabasesApi {
     int id,
     int dbId,
     PostgresService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     return _serializeSchedule(await svc.getSchedule(dbId));
   }
 

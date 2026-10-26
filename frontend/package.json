@@ -13,6 +13,7 @@
     "@carbon/icons-react": "^11.85.0",
     "@carbon/react": "^1.113.0",
     "next-themes": "^0.4.6",
+    "qrcode-generator": "2.0.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.6.0",

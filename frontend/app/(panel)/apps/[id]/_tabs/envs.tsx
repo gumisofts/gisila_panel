@@ -25,8 +25,6 @@ import {
   Edit,
   TrashCan,
   Upload,
-  View,
-  ViewOff,
 } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
@@ -95,9 +93,6 @@ export function EnvsTab({ appId }: { appId: number }) {
   const [value, setValue]     = useState("");
   const [isSecret, setIsSecret] = useState(false);
   const [saving, setSaving]   = useState(false);
-
-  // Reveal state for existing secrets.
-  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
 
   // Paste-and-edit panel.
   const [showPaste, setShowPaste]     = useState(false);
@@ -368,10 +363,6 @@ export function EnvsTab({ appId }: { appId: number }) {
                   key={env.id}
                   env={env}
                   appId={appId}
-                  revealed={!!revealed[env.id]}
-                  onToggleReveal={() =>
-                    setRevealed((m) => ({ ...m, [env.id]: !m[env.id] }))
-                  }
                   onDelete={() => remove(env.id)}
                   onSaved={() => mutate()}
                 />
@@ -393,20 +384,19 @@ export function EnvsTab({ appId }: { appId: number }) {
 function EnvRow({
   env,
   appId,
-  revealed,
-  onToggleReveal,
   onDelete,
   onSaved,
 }: {
   env: EnvVar;
   appId: number;
-  revealed: boolean;
-  onToggleReveal: () => void;
   onDelete: () => void;
   onSaved: () => void;
 }) {
   const [editing, setEditing]   = useState(false);
-  const [draftVal, setDraftVal] = useState(env.value ?? "");
+  // The API never returns secret values, so a secret's draft starts empty
+  // and is only sent when the user types a replacement.
+  const keepSecret = env.isSecret === true;
+  const [draftVal, setDraftVal] = useState(keepSecret ? "" : env.value ?? "");
   const [draftSecret, setDraftSecret] = useState(env.isSecret ?? false);
   const [saving, setSaving]     = useState(false);
 
@@ -417,7 +407,7 @@ function EnvRow({
         method: "POST",
         body: JSON.stringify({
           name: env.name,
-          value: draftVal,
+          ...(keepSecret && draftVal === "" ? {} : { value: draftVal }),
           isSecret: draftSecret,
         }),
       });
@@ -446,7 +436,8 @@ function EnvRow({
                 labelText={`Value for ${env.name}`}
                 hideLabel
                 size="sm"
-                type={draftSecret && !revealed ? "password" : "text"}
+                type={draftSecret ? "password" : "text"}
+                placeholder={keepSecret ? "Leave blank to keep the current value" : undefined}
                 value={draftVal}
                 onChange={(e) => setDraftVal(e.target.value)}
                 autoFocus
@@ -476,7 +467,7 @@ function EnvRow({
               kind="ghost"
               onClick={() => {
                 setEditing(false);
-                setDraftVal(env.value ?? "");
+                setDraftVal(keepSecret ? "" : env.value ?? "");
                 setDraftSecret(env.isSecret ?? false);
               }}
             >
@@ -500,7 +491,7 @@ function EnvRow({
             className="gisila-app__mono gisila-app__env-value"
             onClick={() => !env.isSecret && setEditing(true)}
           >
-            {env.isSecret && !revealed
+            {env.isSecret
               ? "••••••••"
               : (env.value || <em>empty</em>)}
           </span>
@@ -513,16 +504,6 @@ function EnvRow({
       </TableCell>
       <TableCell>
         <div className="gisila-app__row-actions">
-          {env.isSecret && (
-            <Button
-              kind="ghost"
-              size="sm"
-              hasIconOnly
-              renderIcon={revealed ? ViewOff : View}
-              iconDescription={revealed ? "Hide value" : "Reveal value"}
-              onClick={onToggleReveal}
-            />
-          )}
           <Button
             kind="ghost"
             size="sm"
@@ -530,7 +511,7 @@ function EnvRow({
             renderIcon={Edit}
             iconDescription="Edit"
             onClick={() => {
-              setDraftVal(env.value ?? "");
+              setDraftVal(keepSecret ? "" : env.value ?? "");
               setDraftSecret(env.isSecret ?? false);
               setEditing(true);
             }}

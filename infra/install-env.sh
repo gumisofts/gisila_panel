@@ -145,6 +145,8 @@ if u.scheme not in ("redis", "rediss"):
 host = u.hostname or "127.0.0.1"
 port = str(u.port or 6379)
 password = unquote(u.password) if u.password is not None else ""
+username = unquote(u.username) if u.username else ""
+tls = "true" if u.scheme == "rediss" else "false"
 
 def assign(name, value):
     print(f'if [ -z "${{{name}+x}}" ]; then {name}={shlex.quote(value)}; fi')
@@ -152,6 +154,8 @@ def assign(name, value):
 assign("REDIS_HOST", host)
 assign("REDIS_PORT", port)
 assign("REDIS_PASSWORD", password)
+assign("REDIS_USERNAME", username)
+assign("REDIS_TLS", tls)
 PY
 )"
 }
@@ -163,7 +167,7 @@ gisila_apply_install_env() {
   # so without this an operator moving to an external Redis would re-run the
   # installer and silently stay pointed at the old one. Must be read before the
   # URL parsers and defaults below fill these in.
-  if [[ -n "${REDIS_URL:-}${REDIS_HOST:-}${REDIS_PORT:-}${REDIS_PASSWORD:-}" ]]; then
+  if [[ -n "${REDIS_URL:-}${REDIS_HOST:-}${REDIS_PORT:-}${REDIS_PASSWORD:-}${REDIS_USERNAME:-}${REDIS_TLS:-}" ]]; then
     GISILA_REDIS_EXPLICIT=1
   else
     GISILA_REDIS_EXPLICIT=0
@@ -183,18 +187,33 @@ gisila_apply_install_env() {
   : "${DB_PORT:=5432}"
   : "${DB_NAME:=gisila_panel}"
   : "${DB_USER:=gisila}"
-  : "${DB_PASSWORD:=gisila}"
+  # No default password: a well-known one is refused by
+  # gisila_check_connection_security, so the operator must supply their own.
+  : "${DB_PASSWORD:=}"
   : "${DB_SSL:=false}"
+
+  # Upgrades keep Redis settings in /etc/gisila/.env; check and connect with
+  # those rather than the localhost defaults below.
+  if [[ "$GISILA_REDIS_EXPLICIT" == "0" && -f /etc/gisila/.env ]]; then
+    local key
+    for key in REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_USERNAME REDIS_TLS; do
+      if grep -q "^${key}=" /etc/gisila/.env; then
+        printf -v "$key" '%s' "$(grep -m1 "^${key}=" /etc/gisila/.env | cut -d= -f2-)"
+      fi
+    done
+  fi
 
   : "${REDIS_HOST:=127.0.0.1}"
   : "${REDIS_PORT:=6379}"
   : "${REDIS_PASSWORD:=}"
+  : "${REDIS_USERNAME:=}"
+  : "${REDIS_TLS:=false}"
 
   : "${PANEL_DOMAIN:=}"
   : "${ISSUE_TLS:=0}"
 
   export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_SSL
-  export REDIS_HOST REDIS_PORT REDIS_PASSWORD
+  export REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_USERNAME REDIS_TLS
   export PANEL_DOMAIN ISSUE_TLS
 }
 
@@ -222,7 +241,94 @@ gisila_sync_redis_env() {
   gisila_set_env_var "$file" REDIS_HOST "$REDIS_HOST"
   gisila_set_env_var "$file" REDIS_PORT "$REDIS_PORT"
   gisila_set_env_var "$file" REDIS_PASSWORD "$REDIS_PASSWORD"
-  echo "    updated REDIS_HOST/REDIS_PORT/REDIS_PASSWORD → $REDIS_HOST:$REDIS_PORT"
+  gisila_set_env_var "$file" REDIS_USERNAME "$REDIS_USERNAME"
+  gisila_set_env_var "$file" REDIS_TLS "$REDIS_TLS"
+  echo "    updated REDIS_* → $REDIS_HOST:$REDIS_PORT (tls=$REDIS_TLS)"
+}
+
+# Classify where HOST lives: loopback | private | public. A name is private
+# only when every address it resolves to is (RFC 1918, ULA, link-local, CGNAT).
+gisila_host_scope() {
+  HOST_IN="$1" python3 - <<'PY'
+import ipaddress, os, socket
+host = os.environ["HOST_IN"]
+try:
+    addrs = {ai[4][0] for ai in socket.getaddrinfo(host, None)}
+except OSError:
+    addrs = set()
+ips = [ipaddress.ip_address(a.split("%")[0]) for a in addrs]
+if ips and all(ip.is_loopback for ip in ips):
+    print("loopback")
+elif ips and all(ip.is_loopback or ip.is_private or ip.is_link_local
+                 or ip in ipaddress.ip_network("100.64.0.0/10") for ip in ips):
+    print("private")
+else:
+    print("public")
+PY
+}
+
+# Whether something listens on PORT on a non-loopback address of this host.
+gisila_port_listens_publicly() {
+  command -v ss >/dev/null 2>&1 || return 1
+  ss -ltnH "sport = :$1" 2>/dev/null | awk '{print $4}' \
+    | grep -qvE '^(127\.[0-9.]+|\[::1\]|::1):'
+}
+
+# Refuse Postgres/Redis settings that would leave either open to the apps this
+# host runs or to the network. Both may live anywhere (this host, the LAN, a
+# managed provider); only the unsafe combinations are refused. Hosted apps
+# share this machine's loopback, so 127.0.0.1 is not private from them.
+# GISILA_ALLOW_INSECURE=1 downgrades refusals to warnings (test machines only).
+gisila_check_connection_security() {
+  local problems=() warnings=() scope weak
+  weak=' gisila postgres password admin root changeme secret redis 123456 12345678 '
+
+  # PostgreSQL
+  if [[ -z "$DB_PASSWORD" ]]; then
+    problems+=("PostgreSQL: no password set. Pass DATABASE_URL with the gisila role's password.")
+  elif [[ "$weak" == *" ${DB_PASSWORD,,} "* || ${#DB_PASSWORD} -lt 12 ]]; then
+    problems+=("PostgreSQL: the password for '$DB_USER' is a well-known value or shorter than 12 characters. Hosted apps share this machine and could log in with it. Set a strong one: ALTER ROLE $DB_USER PASSWORD '<new>';")
+  fi
+  scope="$(gisila_host_scope "$DB_HOST")"
+  if [[ "$scope" != "loopback" && "$DB_SSL" != "true" ]]; then
+    if [[ "$scope" == "public" ]]; then
+      problems+=("PostgreSQL at $DB_HOST is reached over the internet without TLS. Add ?sslmode=require to DATABASE_URL.")
+    else
+      warnings+=("PostgreSQL at $DB_HOST (private network) is reached without TLS; credentials cross the LAN in plain text.")
+    fi
+  fi
+  if [[ "$scope" == "loopback" ]] && gisila_port_listens_publicly "$DB_PORT"; then
+    warnings+=("PostgreSQL on this host listens on a public interface (port $DB_PORT). Bind it to 127.0.0.1 or firewall the port.")
+  fi
+
+  # Redis
+  if [[ -z "$REDIS_PASSWORD" ]]; then
+    problems+=("Redis: no password set. Every app on this host can reach 127.0.0.1, so an open Redis lets any of them read and inject panel jobs. Set requirepass and pass REDIS_URL='redis://:<password>@$REDIS_HOST:$REDIS_PORT'.")
+  elif [[ "$weak" == *" ${REDIS_PASSWORD,,} "* || ${#REDIS_PASSWORD} -lt 16 ]]; then
+    problems+=("Redis: the password is a well-known value or shorter than 16 characters. Use a long random one (openssl rand -hex 24).")
+  fi
+  scope="$(gisila_host_scope "$REDIS_HOST")"
+  if [[ "$scope" != "loopback" && "$REDIS_TLS" != "true" ]]; then
+    if [[ "$scope" == "public" ]]; then
+      problems+=("Redis at $REDIS_HOST is reached over the internet without TLS. Use a rediss:// URL.")
+    else
+      warnings+=("Redis at $REDIS_HOST (private network) is reached without TLS; the password crosses the LAN in plain text.")
+    fi
+  fi
+  if [[ "$scope" == "loopback" ]] && gisila_port_listens_publicly "$REDIS_PORT"; then
+    warnings+=("Redis on this host listens on a public interface (port $REDIS_PORT). Bind it to 127.0.0.1 or firewall the port.")
+  fi
+
+  local w p
+  for w in "${warnings[@]}"; do echo "WARNING: $w" >&2; done
+  ((${#problems[@]} == 0)) && return 0
+  for p in "${problems[@]}"; do echo "ERROR: $p" >&2; done
+  if [[ "${GISILA_ALLOW_INSECURE:-0}" == "1" ]]; then
+    echo "WARNING: GISILA_ALLOW_INSECURE=1 — continuing anyway. Never use this on a host that runs other people's apps." >&2
+    return 0
+  fi
+  echo "Refusing to install with an insecure database or Redis configuration (see above)." >&2
+  exit 1
 }
 
 # Write PANEL_DOMAIN into the panel nginx vhost (replaces panel.example.com).

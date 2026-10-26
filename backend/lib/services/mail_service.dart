@@ -223,7 +223,8 @@ class MailService extends Service {
     if (hostConfig.agentMode == 'dev') return true;
     try {
       final cmd = buildAgentCmdNoSudo(['mail', 'status']);
-      final res = await Process.run(cmd.first, cmd.skip(1).toList());
+      final res = await Process.run(cmd.first, cmd.skip(1).toList(),
+          environment: agentEnvironment, includeParentEnvironment: false);
       if (res.exitCode != 0) return false;
       final lines = (res.stdout as String? ?? '').trim().split('\n');
       for (var i = lines.length - 1; i >= 0; i--) {

@@ -46,12 +46,44 @@ User:
     avatar_url:
       type: varchar
       is_null: true
+    # Session JWTs issued before this instant are rejected. Bumped by a password
+    # change, deactivation, demotion and "sign out everywhere".
+    sessions_valid_after:
+      type: timestamp
+      is_null: true
     created_at:
       type: timestamp
       is_null: false
     updated_at:
       type: timestamp
       is_null: true
+
+# TOTP second factor (RFC 6238). Kept out of `users` so no User serialization
+# can ever carry the secret. A row with no confirmed_at is an unfinished setup.
+UserTotp:
+  columns:
+    user:
+      type: foreign_key
+      references: User
+      is_null: false
+      is_unique: true
+      reverse_name: totp
+      on_delete: cascade
+    secret:
+      type: varchar          # base32
+      is_null: false
+    confirmed_at:
+      type: timestamp
+      is_null: true
+    last_used_step:
+      type: integer          # newest accepted time step, so a code can't be replayed
+      is_null: true
+    recovery_codes:
+      type: text             # JSON list of SHA-256 hex digests of unused codes
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
 
 Team:
   columns:

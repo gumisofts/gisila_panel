@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { toast } from "@/lib/toast";
 import {
   Add,
+  Locked,
   Security,
   SecurityServices,
   TrashCan,
@@ -112,6 +113,26 @@ export default function UsersPage() {
     }
   }
 
+  async function resetTotp(user: User) {
+    if (
+      !confirm(
+        `Turn off two-factor authentication for ${user.email}? They will be signed out and can sign in with just their password until they set it up again.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(user.id);
+    try {
+      await api(`/auth/users/${user.id}/totp`, { method: "DELETE" });
+      toast.success("Two-factor authentication reset");
+      mutate();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDelete(user: User) {
     if (!confirm(`Delete ${user.email}? This cannot be undone.`)) return;
     setBusyId(user.id);
@@ -177,6 +198,11 @@ export default function UsersPage() {
                             Superuser
                           </Tag>
                         )}
+                        {user.totpEnabled && (
+                          <Tag type="green" size="sm" renderIcon={Locked}>
+                            2FA
+                          </Tag>
+                        )}
                         {!user.isActive && (
                           <Tag type="gray" size="sm">
                             Inactive
@@ -195,6 +221,16 @@ export default function UsersPage() {
                         {!isSelf && (
                           <>
                             {busy && <InlineLoading />}
+                            {user.totpEnabled && (
+                              <Button
+                                kind="ghost"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => resetTotp(user)}
+                              >
+                                Reset 2FA
+                              </Button>
+                            )}
                             <Button
                               kind="ghost"
                               size="sm"

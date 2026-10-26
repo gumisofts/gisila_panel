@@ -12,7 +12,8 @@ class StorageApi {
   // ── Providers ───────────────────────────────────────────────────────────────
 
   @Get('/providers', summary: 'List storage providers')
-  Future<Map<String, Object?>> listProviders(StorageService svc) async {
+  Future<Map<String, Object?>> listProviders(StorageService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final providers = await svc.listProviders();
     return {'results': providers.map(_serializeProvider).toList()};
   }
@@ -59,7 +60,8 @@ class StorageApi {
   }
 
   @Get('/providers/{id}', summary: 'Get a storage provider')
-  Future<Map<String, Object?>> getProvider(int id, StorageService svc) async {
+  Future<Map<String, Object?>> getProvider(int id, StorageService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     return _serializeProvider(await svc.findProvider(id));
   }
 
@@ -116,7 +118,8 @@ class StorageApi {
   // ── Buckets ─────────────────────────────────────────────────────────────────
 
   @Get('/providers/{id}/buckets', summary: 'List buckets in a provider')
-  Future<Map<String, Object?>> listBuckets(int id, StorageService svc) async {
+  Future<Map<String, Object?>> listBuckets(int id, StorageService svc, RequestContext ctx) async {
+    requireSuperuser(ctx);
     final provider = await svc.findProvider(id);
     final buckets = await svc.listBuckets(id);
     return {
@@ -149,7 +152,9 @@ class StorageApi {
     int id,
     int bid,
     StorageService svc,
+    RequestContext ctx,
   ) async {
+    requireSuperuser(ctx);
     final provider = await svc.findProvider(id);
     final bucket = await svc.findBucket(bid);
     return _serializeBucket(bucket, provider: provider, reveal: true);
@@ -204,6 +209,10 @@ class StorageApi {
     StorageService svc,
     RequestContext ctx,
   ) async {
+    // Buckets are node-global and have no owning team, and linking injects the
+    // bucket's keys into the app's env — where any developer can read them. So
+    // only a superuser may hand a bucket to an app.
+    requireSuperuser(ctx);
     final user = ctx.principal!.claims['user'] as User;
     final link = await svc.linkToApp(
       user,

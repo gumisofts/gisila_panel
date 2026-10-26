@@ -99,7 +99,7 @@ extension MongoApiGisilaDoc on MongoApi {
             handler: (RequestContext ctx) async {
               try {
                 final svc = ctx.service<MongoService>();
-                final result = await this.listInstances(svc);
+                final result = await this.listInstances(svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -190,7 +190,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.getInstance(id, svc);
+                final result = await this.getInstance(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -553,7 +553,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.metrics(id, svc);
+                final result = await this.metrics(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -604,7 +604,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.getConfig(id, svc);
+                final result = await this.getConfig(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -712,7 +712,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final id =
                     coerce<int>(request.params['id'], 'id', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.listDatabases(id, svc);
+                final result = await this.listDatabases(id, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -889,7 +889,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final dbId =
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.getDatabase(id, dbId, svc);
+                final result = await this.getDatabase(id, dbId, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1009,7 +1009,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final dbId =
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.listBackups(id, dbId, svc);
+                final result = await this.listBackups(id, dbId, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1142,7 +1142,7 @@ extension MongoApiGisilaDoc on MongoApi {
                     required: true);
                 final svc = ctx.service<MongoService>();
                 final response =
-                    await this.downloadBackup(id, dbId, backupId, svc);
+                    await this.downloadBackup(id, dbId, backupId, svc, ctx);
                 return response;
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -1402,7 +1402,7 @@ extension MongoApiGisilaDoc on MongoApi {
                 final dbId =
                     coerce<int>(request.params['dbId'], 'dbId', required: true);
                 final svc = ctx.service<MongoService>();
-                final result = await this.getSchedule(id, dbId, svc);
+                final result = await this.getSchedule(id, dbId, svc, ctx);
                 return jsonResponse(body: result, statusCode: 200);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');

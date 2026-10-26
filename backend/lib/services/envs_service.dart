@@ -44,7 +44,9 @@ class EnvsService extends Service {
     final rows = await Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.id.eq(existing.id!))
         .update(<String, Object?>{
-      'value': value,
+      // An omitted value keeps the stored one: secrets are never sent to
+      // clients, so an edit that only flips `isSecret` has no value to send.
+      if (value != null) 'value': value,
       'isSecret': isSecret,
       'updatedAt': now,
     }).run(_db.context());

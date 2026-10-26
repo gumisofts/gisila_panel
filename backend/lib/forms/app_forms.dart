@@ -17,6 +17,37 @@ class _ClearableStringField extends StringField {
   bool isAbsent(Object? raw) => raw == null;
 }
 
+// Mirrors the agent's AgentValidators.requireGitUrl / optionalGitRef so a
+// bad value is refused when the app is saved, not at deploy time. Remote
+// transports only: `file://` and local paths would let one app clone another
+// app's tree from /srv/apps.
+final _gitUrlRe = RegExp(
+    r'^(?:(?:https?|ssh|git)://[A-Za-z0-9\[][A-Za-z0-9._~%!$&()*+,;=:@\[\]-]*'
+    r'(?:/\S*)?'
+    r'|[A-Za-z0-9._-]+@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s-]\S*)$');
+final _gitRefRe = RegExp(r'^[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*$');
+
+String? _validGitUrl(String v) {
+  if (v.isEmpty) return null;
+  if (v.length > 2048 || v.startsWith('-') || !_gitUrlRe.hasMatch(v)) {
+    return 'Use an https://, ssh:// or user@host:path git URL.';
+  }
+  return null;
+}
+
+String? _validGitRef(String v) {
+  if (v.isEmpty) return null;
+  if (v.length > 255 ||
+      v.startsWith('-') ||
+      v.contains('..') ||
+      v.contains('@{') ||
+      v.endsWith('.lock') ||
+      !_gitRefRe.hasMatch(v)) {
+    return 'Not a valid branch or tag name.';
+  }
+  return null;
+}
+
 /// `POST /apps`
 class CreateAppForm extends Form {
   final projectId = IntField(name: 'projectId', required: true);
@@ -33,8 +64,9 @@ class CreateAppForm extends Form {
   // binary | git | zip
   final sourceType = StringField(name: 'sourceType', required: true);
 
-  final gitUrl = StringField(name: 'gitUrl');
-  final gitBranch = StringField(name: 'gitBranch');
+  final gitUrl = StringField(name: 'gitUrl', validators: [_validGitUrl]);
+  final gitBranch =
+      StringField(name: 'gitBranch', validators: [_validGitRef]);
   // Optional subdirectory within the repo to build/run from, so a single
   // monorepo can be deployed by pointing at just one of its projects.
   final sourceSubdir = StringField(name: 'sourceSubdir');
@@ -146,8 +178,9 @@ class UpdateAppForm extends Form {
   final name = StringField(name: 'name', maxLength: 60);
   // Moves the app to another project (see AppsService._authorizeMove).
   final projectId = IntField(name: 'projectId');
-  final gitUrl = StringField(name: 'gitUrl');
-  final gitBranch = StringField(name: 'gitBranch');
+  final gitUrl = StringField(name: 'gitUrl', validators: [_validGitUrl]);
+  final gitBranch =
+      StringField(name: 'gitBranch', validators: [_validGitRef]);
   // Sent as "" to go back to building/running from the repo root.
   final sourceSubdir = _ClearableStringField(name: 'sourceSubdir');
   final buildCommand = StringField(name: 'buildCommand');
