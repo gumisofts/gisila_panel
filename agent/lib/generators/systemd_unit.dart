@@ -1,5 +1,31 @@
 import 'package:gisila_agent/runtime/exec_resolver.dart';
 
+/// App env var that turns the system call filter off for that app: set
+/// `GISILA_SYSCALL_FILTER=off` in its environment and redeploy.
+const syscallFilterEnvVar = 'GISILA_SYSCALL_FILTER';
+
+/// Seccomp and capability lines shared by every per-app unit.
+///
+/// The services run as an unprivileged user, so the empty capability sets
+/// change nothing for a well-behaved app; they keep a compromised one from
+/// regaining capabilities. The filter allows systemd's `@system-service`
+/// set minus privileged, resource-control and mount calls. A blocked call
+/// fails with EPERM rather than killing the process, so runtimes that probe
+/// optional features (Node raising its fd limit, libuv trying io_uring)
+/// fall back as they would on a locked-down host.
+String syscallSandbox(Map<String, String> envVars) {
+  const caps = 'CapabilityBoundingSet=\n'
+      'AmbientCapabilities=\n';
+  if ((envVars[syscallFilterEnvVar] ?? '').trim().toLowerCase() == 'off') {
+    return '$caps'
+        '# System call filter off for this app ($syscallFilterEnvVar=off)\n';
+  }
+  return '$caps'
+      'SystemCallFilter=@system-service\n'
+      'SystemCallFilter=~@privileged @resources @mount\n'
+      'SystemCallErrorNumber=EPERM\n';
+}
+
 /// Systemd .target that groups all Celery services for one app.
 ///
 /// Lifecycle commands (`systemctl start gisila-<user>.target`) cascade to all
@@ -130,7 +156,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 # MemoryDenyWriteExecute disabled for CPython (bytecode compilation)
 SystemCallArchitectures=native
-
+${syscallSandbox(envVars)}
 # Filesystem
 ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
@@ -218,7 +244,7 @@ RestrictSUIDSGID=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
-
+${syscallSandbox(envVars)}
 ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
 
@@ -316,7 +342,7 @@ RestrictSUIDSGID=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 SystemCallArchitectures=native
-
+${syscallSandbox(envVars)}
 ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/current/src $workDir/venv
 ReadOnlyPaths=$workDir/current $workDir/releases
 
@@ -615,7 +641,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
 $mdwe
 SystemCallArchitectures=native
-
+${syscallSandbox(envVars)}
 # Filesystem
 ReadWritePaths=$workDir/shared $workDir/tmp $workDir/logs $workDir/.corepack$extraRW
 ReadOnlyPaths=$workDir/current $workDir/releases
