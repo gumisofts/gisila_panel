@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:gisila_agent/runtime/validators.dart';
 import 'package:test/test.dart';
 
@@ -112,6 +114,61 @@ void main() {
         expect(() => AgentValidators.optionalGitRef(ref), throwsArgumentError,
             reason: ref);
       }
+    });
+  });
+
+  group('requireArtifactPath', () {
+    late Directory root;
+    late String upload;
+    const id = '0123456789abcdef0123456789abcdef';
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('gisila_artifacts_');
+      Directory('${root.path}/apps/7').createSync(recursive: true);
+      upload = '${root.path}/apps/7/$id.zip';
+      File(upload).writeAsStringSync('PK');
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    String check(String? path, {String appId = '7', String type = 'zip'}) =>
+        AgentValidators.requireArtifactPath(path,
+            appId: appId, sourceType: type, root: root.path);
+
+    test("accepts this app's upload", () {
+      expect(check(upload), upload);
+    });
+
+    test('rejects paths outside the artifact root', () {
+      for (final p in [null, '', '/etc/shadow', '${root.path}/apps/7/../../x']) {
+        expect(() => check(p), throwsArgumentError, reason: p);
+      }
+    });
+
+    test("rejects another app's upload", () {
+      expect(() => check(upload, appId: '8'), throwsArgumentError);
+    });
+
+    test('rejects an extension that does not match the source type', () {
+      expect(() => check(upload, type: 'binary'), throwsArgumentError);
+    });
+
+    test('rejects a missing file', () {
+      expect(() => check('${root.path}/apps/7/${'f' * 32}.zip'),
+          throwsArgumentError);
+    });
+
+    test('rejects a symlink, even to a real file', () {
+      final link = '${root.path}/apps/7/${'a' * 32}.zip';
+      Link(link).createSync('/etc/hostname');
+      expect(() => check(link), throwsArgumentError);
+    });
+
+    test('rejects a symlinked app directory', () {
+      Directory('${root.path}/elsewhere').createSync();
+      File('${root.path}/elsewhere/$id.zip').writeAsStringSync('PK');
+      Link('${root.path}/apps/9').createSync('${root.path}/elsewhere');
+      expect(() => check('${root.path}/apps/9/$id.zip', appId: '9'),
+          throwsArgumentError);
     });
   });
 }

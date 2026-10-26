@@ -173,6 +173,8 @@ install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0751 "$APPS_ROOT"
 install -d -o root -g root -m 0755 /var/log/gisila
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups/uploads
+# Uploaded binaries/ZIPs for binary and zip apps (API writes, root agent reads).
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/artifacts
 
 # ── 4. Check external PostgreSQL & Redis connectivity ────────────────────────
 # Neither is provisioned by this script (see header comment) — the database,

@@ -73,7 +73,7 @@ export class ApiError extends Error {
 // whole panel is left stuck making calls that will never succeed again. Any
 // 401 returned for a request that *carried* a token means that token is no
 // longer valid — clear it and bounce to /login so the user can sign in again.
-// A 401 on a request made *without* a token (e.g. a bad login/register
+// A 401 on a request made *without* a token (e.g. a bad login
 // attempt) is a normal auth failure and must be left for the caller to handle.
 let loggedOut = false;
 
@@ -151,7 +151,10 @@ export async function downloadFile(
   URL.revokeObjectURL(url);
 }
 
-export async function uploadFile(path: string, file: File): Promise<void> {
+export async function uploadFile<T = unknown>(
+  path: string,
+  file: File,
+): Promise<T> {
   const headers = new Headers();
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -173,5 +176,11 @@ export async function uploadFile(path: string, file: File): Promise<void> {
       /* non-JSON error body */
     }
     throw new ApiError(res.status, undefined, msg);
+  }
+  const text = await res.text();
+  try {
+    return (text ? JSON.parse(text) : undefined) as T;
+  } catch {
+    throw new ApiError(res.status, undefined, "Unexpected response from the server");
   }
 }

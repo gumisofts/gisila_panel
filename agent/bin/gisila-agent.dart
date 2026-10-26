@@ -250,10 +250,10 @@ Future<void> _build(List<String> args) async {
   String? commit;
   switch (sourceType) {
     case 'binary':
-      final artifact = r['artifact-path'] as String?;
-      if (artifact == null || !File(artifact).existsSync()) {
-        throw ArgumentError('Missing or unreadable --artifact-path');
-      }
+      final artifact = AgentValidators.requireArtifactPath(
+          r['artifact-path'] as String?,
+          appId: '${r['app-id']}',
+          sourceType: sourceType);
       await Builders.binaryArtifact(
           workDir: workDir, user: user, artifactPath: artifact);
       // No source tree, but the installed executable is still worth keeping
@@ -279,10 +279,10 @@ Future<void> _build(List<String> args) async {
       );
       break;
     case 'zip':
-      final artifact = r['artifact-path'] as String?;
-      if (artifact == null || !File(artifact).existsSync()) {
-        throw ArgumentError('Missing or unreadable --artifact-path');
-      }
+      final artifact = AgentValidators.requireArtifactPath(
+          r['artifact-path'] as String?,
+          appId: '${r['app-id']}',
+          sourceType: sourceType);
       await Builders.fromZip(
           workDir: workDir, user: user, zipPath: artifact, noCache: noCache);
       break;

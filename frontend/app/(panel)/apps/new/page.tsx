@@ -1003,7 +1003,16 @@ export default function NewAppPage() {
                 lowContrast
                 hideCloseButton
                 title="Binary upload"
-                subtitle="Upload your pre-compiled binary via the app detail page after creating the app. No build command is needed — the binary runs directly inside a sandboxed systemd unit."
+                subtitle="After creating the app, use Deploy now on its page to upload your pre-compiled binary (up to 50 MB). No build command is needed — the binary runs directly inside a sandboxed systemd unit."
+              />
+            )}
+            {form.sourceType === "zip" && (
+              <InlineNotification
+                kind="info"
+                lowContrast
+                hideCloseButton
+                title="ZIP upload"
+                subtitle="After creating the app, use Deploy now on its page to upload a .zip of the source (up to 50 MB). It is unpacked and built like a git checkout."
               />
             )}
 
