@@ -6,7 +6,6 @@ import { CarbonTheme } from "@/components/carbon-theme";
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
 import LoginPage from "../app/(auth)/login/page";
-import RegisterPage from "../app/(auth)/register/page";
 import PanelLayout from "../app/(panel)/layout";
 import DashboardPage from "../app/(panel)/dashboard/page";
 import ProjectsPage from "../app/(panel)/projects/page";
@@ -58,7 +57,6 @@ export default function App() {
 
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
           </Route>
 
           <Route element={<PanelLayout />}>

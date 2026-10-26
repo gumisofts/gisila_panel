@@ -40,7 +40,7 @@ pnpm dev
 | Route | What it does |
 |-------|--------------|
 | `/` | Redirects to `/dashboard` or `/login` |
-| `/login`, `/register` | Auth |
+| `/login` | Auth (accounts are created by a superuser under Settings → Users) |
 | `/dashboard` | Overview cards & recent apps |
 | `/apps` | All apps |
 | `/apps/new` | Create app wizard |

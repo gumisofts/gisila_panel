@@ -597,8 +597,28 @@ class Builders {
     // skips the stash so the artifacts are wiped with the rest of the tree.
     if (!noCache) await _stashArtifacts(src, stash);
     await ShellExec.run('rm', ['-rf', src]);
-    Directory(src).createSync(recursive: true);
-    await ShellExec.run('unzip', ['-q', '-d', src, zipPath]);
+    await ShellExec.run('install', ['-d', '-o', user, '-g', user, src]);
+
+    // The archive is the tenant's, so extract it as the app user, like a git
+    // clone: a crafted entry (`../`, an absolute path, a write through a
+    // symlink it just created) then reaches nothing the app couldn't already
+    // write. Uploads aren't readable by app users, so root hands the user a
+    // copy in a fresh directory first (as with the deploy key in fromGit).
+    final copyDir = Directory.systemTemp.createTempSync('gisila_zip_');
+    try {
+      final copy = '${copyDir.path}/upload.zip';
+      await ShellExec.run(
+          'install', ['-o', user, '-g', user, '-m', '0400', zipPath, copy]);
+      await ShellExec.run('chown', ['$user:$user', copyDir.path]);
+      await ShellExec.run(
+        _runuserPath,
+        ['-u', user, '--', 'unzip', '-q', '-d', src, copy],
+        env: _appUserEnv(workDir),
+        logPrefix: 'unzip (as $user)',
+      );
+    } finally {
+      await ShellExec.run('rm', ['-rf', copyDir.path], requireSuccess: false);
+    }
     if (!noCache) await _restoreArtifacts(src, stash);
     await ShellExec.run('chown', ['-R', '$user:$user', src]);
   }

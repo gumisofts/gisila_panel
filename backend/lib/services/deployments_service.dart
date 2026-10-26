@@ -6,6 +6,7 @@ import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
+import 'package:gisila_panel/services/artifact_store.dart';
 
 class DeploymentsService extends Service {
   Database get _db => db<Database>();
@@ -21,11 +22,13 @@ class DeploymentsService extends Service {
 
   /// API shape of a deployment. `deployConfig` carries the env snapshot —
   /// secret values included — so it never leaves the server; callers get
-  /// whether a rollback is possible instead.
+  /// whether a rollback is possible instead. `artifactPath` is a server path.
   static Map<String, Object?> toPublicJson(Deployment d,
           {bool canRollback = false}) =>
+      // toJson() uses the column names, so these are the snake_case keys.
       d.toJson()
-        ..remove('deployConfig')
+        ..remove('deploy_config')
+        ..remove('artifact_path')
         ..['canRollback'] = canRollback;
 
   /// Ids of the deployments in [newestFirst] that can still be rolled back to:
@@ -52,17 +55,40 @@ class DeploymentsService extends Service {
   /// Create a deployment record, mark it as `queued`, then enqueue a job for
   /// the worker. The worker is responsible for actually building / shipping
   /// the artifact through `gisila-agent`.
+  ///
+  /// `binary` and `zip` apps deploy an upload: [artifactId] is the id
+  /// returned by the upload route, resolved here to the stored file so the
+  /// worker never builds from a client-supplied path.
   Future<Deployment> trigger(
     User actor,
     int appId, {
     required String sourceType,
     String? gitCommitSha,
-    String? artifactPath,
+    String? artifactId,
     bool forceRebuild = false,
   }) async {
     final appsSvc = AppsService()..attach(ctx);
     // Deploying is a developer-level action.
     final app = await appsSvc.requireAppRole(actor, appId, TeamRole.developer);
+
+    if (sourceType != app.sourceType) {
+      throw BadRequest(
+          'This app deploys from ${app.sourceType}, not $sourceType.');
+    }
+    String? artifactPath;
+    if (sourceType == 'binary' || sourceType == 'zip') {
+      if (artifactId == null || artifactId.isEmpty) {
+        throw BadRequest('Upload a ${sourceType == 'zip' ? 'ZIP' : 'binary'} '
+            'first, then deploy it by its artifactId.');
+      }
+      artifactPath = ArtifactStore().resolve(app.id!, artifactId, sourceType);
+      if (artifactPath == null) {
+        throw BadRequest(
+            'That upload was not found for this app. Upload the file again.');
+      }
+    } else if (artifactId != null && artifactId.isNotEmpty) {
+      throw BadRequest('artifactId only applies to binary and zip apps.');
+    }
 
     final now = DateTime.now().toUtc();
     final deployment = await Query<Deployment>(DeploymentTable.metadata)

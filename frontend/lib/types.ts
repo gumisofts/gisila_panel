@@ -162,7 +162,6 @@ export interface Deployment {
   triggeredById?: ID | null;
   sourceType: string;
   gitCommitSha?: string | null;
-  artifactPath?: string | null;
   status: DeploymentStatus;
   failureReason?: string | null;
   isActive: boolean;

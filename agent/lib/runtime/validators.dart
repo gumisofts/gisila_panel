@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:gisila_agent/runtime/runtime_registry.dart';
 
 /// Strict input validation for everything the agent shells out with.
@@ -87,6 +89,45 @@ class AgentValidators {
       for (final id in raw.split(','))
         if (id.trim().isNotEmpty) requireReleaseId(id.trim()),
     };
+  }
+
+  /// Where the panel stores uploaded build artifacts, as
+  /// `<root>/apps/<appId>/<32 hex chars>.bin|.zip`. The panel API writes
+  /// there; set GISILA_ARTIFACT_DIR for both if it lives elsewhere.
+  static String get artifactRoot =>
+      Platform.environment['GISILA_ARTIFACT_DIR'] ??
+      '/var/lib/gisila/artifacts';
+
+  static final _artifactRe = RegExp(r'^([0-9]+)/([0-9a-f]{32})\.(bin|zip)$');
+
+  /// The uploaded artifact a binary or zip build installs. Root reads it and
+  /// hands its contents to the app user, so it must be a regular file the
+  /// panel stored for this app: any other path (`/etc/shadow`, another
+  /// app's upload, a symlink to either) would be copied out for the tenant.
+  static String requireArtifactPath(
+    String? raw, {
+    required String appId,
+    required String sourceType,
+    String? root,
+  }) {
+    final ext = sourceType == 'zip' ? 'zip' : 'bin';
+    final base = '${root ?? artifactRoot}/apps/';
+    final m = raw == null || !raw.startsWith(base)
+        ? null
+        : _artifactRe.firstMatch(raw.substring(base.length));
+    if (m == null || m.group(1) != appId || m.group(3) != ext) {
+      throw ArgumentError('Invalid --artifact-path: $raw');
+    }
+    // A regular file, with no symlink anywhere below the artifact root.
+    final isFile = FileSystemEntity.typeSync(raw!, followLinks: false) ==
+        FileSystemEntityType.file;
+    if (!isFile ||
+        File(raw).resolveSymbolicLinksSync() !=
+            '${Directory(base).resolveSymbolicLinksSync()}/'
+                '${raw.substring(base.length)}') {
+      throw ArgumentError('--artifact-path is not an uploaded file: $raw');
+    }
+    return raw;
   }
 
   // Remote transports only. `file://`, bare local paths and `ext::` would let

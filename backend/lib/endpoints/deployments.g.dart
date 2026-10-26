@@ -146,6 +146,57 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
           ));
     }
     {
+      final basePath = '$prefix/apps/<appId>/deployments/artifacts';
+      final openApiPath = '$prefix/apps/{appId}/deployments/artifacts';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final appId = coerce<int>(request.params['appId'], 'appId',
+                    required: true);
+                final apps = ctx.service<AppsService>();
+                final result = await this.uploadArtifact(appId, apps, ctx);
+                return jsonResponse(body: result, statusCode: 201);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Upload a binary or ZIP to deploy',
+            tags: <String>['Deployments'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'appId',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
       final basePath = '$prefix/apps/<appId>/deployments/<id>/rollback';
       final openApiPath = '$prefix/apps/{appId}/deployments/{id}/rollback';
       final RouteConfig __cfg =

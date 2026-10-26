@@ -221,6 +221,14 @@ class DeploymentWorker {
         '--work-dir', app.workDir,
         '--runtime', app.runtime,
         '--source-type', app.sourceType,
+        // binary/zip apps build from the upload the deployment was triggered
+        // with. Read from the row (resolved server-side at trigger time), not
+        // the payload; the agent re-checks it is this app's upload.
+        if (existing.artifactPath != null &&
+            (app.sourceType == 'binary' || app.sourceType == 'zip')) ...[
+          '--artifact-path',
+          existing.artifactPath!,
+        ],
         // Names the directory this build publishes to (releases/<id>), which
         // current/src is then repointed at. Using the deployment id keeps the
         // releases on disk traceable back to a row in the deployments table.

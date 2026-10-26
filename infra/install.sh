@@ -136,6 +136,8 @@ install -d -o root -g root -m 0755 /var/log/gisila
 # stage uploaded dumps for restore; the root agent writes the dumps here too.
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups
 install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/backups/uploads
+# Uploaded binaries/ZIPs for binary and zip apps (API writes, root agent reads).
+install -d -o "$GISILA_USER" -g "$GISILA_USER" -m 0750 /var/lib/gisila/artifacts
 
 # ── 3. Check external PostgreSQL connectivity ────────────────────────────────
 # PostgreSQL itself is not provisioned by this script (see header comment) —

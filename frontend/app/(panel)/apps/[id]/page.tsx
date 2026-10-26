@@ -43,6 +43,7 @@ import { ConsoleTab } from "./_tabs/console";
 import { MetricsTab } from "./_tabs/metrics";
 import { StorageTab } from "./_tabs/storage";
 import { SettingsTab } from "./_tabs/settings";
+import { DeployUploadModal } from "./_deploy-upload";
 import "./_app-detail.scss";
 
 type TagType = "green" | "blue" | "cyan" | "red" | "gray";
@@ -96,6 +97,7 @@ export default function AppDetailPage() {
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const { canForProject } = usePermissions();
 
@@ -120,6 +122,11 @@ export default function AppDetailPage() {
 
   async function deployNow() {
     if (!app) return;
+    // Binary and zip apps deploy an upload, so ask for the file first.
+    if (app.sourceType === "binary" || app.sourceType === "zip") {
+      setUploadOpen(true);
+      return;
+    }
     try {
       await api(`/apps/${appId}/deployments/`, {
         method: "POST",
@@ -253,6 +260,17 @@ export default function AppDetailPage() {
               )}
             </ButtonSet>
           }
+        />
+
+        <DeployUploadModal
+          app={app}
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onDeployed={() => {
+            setUploadOpen(false);
+            toast.success("Deployment queued");
+            mutate();
+          }}
         />
 
         <Modal
