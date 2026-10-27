@@ -98,7 +98,21 @@ export async function api<T>(
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const text = await res.text();
-  const raw = text ? JSON.parse(text) : null;
+  // A proxy in front (nginx 502/504, a captive portal) can answer with
+  // HTML; report that as an ApiError instead of a raw SyntaxError.
+  let raw = null;
+  try {
+    raw = text ? JSON.parse(text) : null;
+  } catch {
+    if (res.status === 401 && token) handleUnauthorized();
+    throw new ApiError(
+      res.status,
+      res.ok ? "invalid_response" : undefined,
+      res.ok
+        ? "The server sent a response that isn't JSON."
+        : res.statusText || `Request failed (${res.status})`,
+    );
+  }
   const data = deepCamelCase(raw) as typeof raw;
   if (!res.ok) {
     if (res.status === 401 && token) handleUnauthorized();
