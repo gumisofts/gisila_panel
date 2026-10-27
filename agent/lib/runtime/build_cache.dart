@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:gisila_agent/runtime/exec.dart';
+import 'package:gisila_agent/runtime/tenant_fs.dart';
 
 /// Persistent, per-app build cache that lets dependency installs be skipped when
 /// their inputs (lock files, version pins) are unchanged across deploys.
@@ -74,10 +75,12 @@ class BuildCache {
   static Future<void> store(
       String workDir, String user, String name, String fingerprint) async {
     final d = dir(workDir);
-    await ShellExec.run('mkdir', ['-p', d], requireSuccess: false);
-    File('$d/$name').writeAsStringSync(fingerprint);
-    await ShellExec.run('chown', ['-R', '$user:$user', d],
-        requireSuccess: false);
+    // As the tenant: root writing (and chown -R) through a cache dir the
+    // tenant swapped for a symlink would reach any file on the host.
+    final fs = TenantFs(user);
+    await fs.claim(d);
+    await fs.run(['mkdir', '-p', d], requireSuccess: false);
+    await fs.writeFile('$d/$name', fingerprint);
   }
 
   /// Drop the marker for cache entry [name] so the next freshness check cannot

@@ -89,10 +89,10 @@ autorestart=true
 startsecs=5
 startretries=5
 stopwaitsecs=30
-stdout_logfile=$logs/worker-$i-stdout.log
+stdout_logfile=${supervisorLogDir(linuxUser)}/worker-$i-stdout.log
 stdout_logfile_maxbytes=20MB
 stdout_logfile_backups=3
-stderr_logfile=$logs/worker-$i-stderr.log
+stderr_logfile=${supervisorLogDir(linuxUser)}/worker-$i-stderr.log
 stderr_logfile_maxbytes=20MB
 stderr_logfile_backups=3
 environment=${_envPairs({})}
@@ -111,10 +111,10 @@ autorestart=true
 startsecs=5
 startretries=5
 stopwaitsecs=10
-stdout_logfile=$logs/flower-stdout.log
+stdout_logfile=${supervisorLogDir(linuxUser)}/flower-stdout.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=2
-stderr_logfile=$logs/flower-stderr.log
+stderr_logfile=${supervisorLogDir(linuxUser)}/flower-stderr.log
 stderr_logfile_maxbytes=10MB
 stderr_logfile_backups=2
 environment=${_envPairs({})}
@@ -134,10 +134,10 @@ autorestart=true
 startsecs=5
 startretries=3
 stopwaitsecs=10
-stdout_logfile=$logs/beat-stdout.log
+stdout_logfile=${supervisorLogDir(linuxUser)}/beat-stdout.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=2
-stderr_logfile=$logs/beat-stderr.log
+stderr_logfile=${supervisorLogDir(linuxUser)}/beat-stderr.log
 stderr_logfile_maxbytes=10MB
 stderr_logfile_backups=2
 environment=${_envPairs({})}
@@ -160,6 +160,12 @@ programs=$members
     return buf.toString();
   }
 }
+
+/// Where supervisord writes an app's stdout/stderr. supervisord opens these
+/// files as root, so they live outside the tenant's work dir: a `logs/` the
+/// tenant replaced with a symlink would have root append the app's output to
+/// any file on the host.
+String supervisorLogDir(String linuxUser) => '/var/log/gisila/apps/$linuxUser';
 
 /// Generates a supervisord program config for a deployed app.
 ///
@@ -229,10 +235,10 @@ autorestart=true
 startsecs=3
 startretries=5
 stopwaitsecs=10
-stdout_logfile=$workDir/logs/stdout.log
+stdout_logfile=${supervisorLogDir(linuxUser)}/stdout.log
 stdout_logfile_maxbytes=20MB
 stdout_logfile_backups=3
-stderr_logfile=$workDir/logs/stderr.log
+stderr_logfile=${supervisorLogDir(linuxUser)}/stderr.log
 stderr_logfile_maxbytes=20MB
 stderr_logfile_backups=3
 environment=$pairs

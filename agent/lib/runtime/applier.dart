@@ -8,6 +8,7 @@ import 'package:gisila_agent/runtime/builders.dart';
 import 'package:gisila_agent/runtime/exec.dart';
 import 'package:gisila_agent/runtime/exec_resolver.dart';
 import 'package:gisila_agent/runtime/priv.dart';
+import 'package:gisila_agent/runtime/tenant_fs.dart';
 
 /// Parameters for a Celery deployment passed to [Applier.applyCeleryUnits].
 class CeleryUnitParams {
@@ -145,6 +146,7 @@ class Applier {
       envVars: envVars,
     );
     Directory(supervisorConfDir).createSync(recursive: true);
+    Directory(supervisorLogDir(linuxUser)).createSync(recursive: true);
     File('$supervisorConfDir/${conf.programName}.conf')
         .writeAsStringSync(conf.render());
     // Tell supervisord to pick up the new config.
@@ -271,6 +273,7 @@ class Applier {
         envVars: envVars,
       );
       Directory(supervisorConfDir).createSync(recursive: true);
+      Directory(supervisorLogDir(linuxUser)).createSync(recursive: true);
       // Write a single file — the [group:] block lets supervisorctl address all
       // processes at once as "gisila-<linuxUser>".
       File('$supervisorConfDir/gisila-$linuxUser.conf')
@@ -439,6 +442,9 @@ class Applier {
 
     if (publishFrom != null && publishFrom.isNotEmpty) {
       final resolved = _resolveStaticDir(publishFrom);
+      if (user == null || user.isEmpty) {
+        throw ArgumentError('Publishing a static release needs --user.');
+      }
       final realDir = await _publishStaticRelease(
         workDir: workDir,
         sourceDir: resolved,
@@ -472,9 +478,9 @@ class Applier {
   Future<String> _publishStaticRelease({
     required String workDir,
     required String sourceDir,
+    required String user,
     String? releaseId,
     Set<String>? keepIds,
-    String? user,
   }) async {
     final id = (releaseId != null && releaseId.isNotEmpty)
         ? releaseId
@@ -489,31 +495,32 @@ class Applier {
       previous = null;
     }
 
-    await ShellExec.run('mkdir', ['-p', webRoot]);
+    // Everything here happens in the tenant's own tree, so it runs as the
+    // tenant: root following a symlink the build planted (a `dist` pointing
+    // at /etc/gisila, a `releases/web` pointing at /) would read or delete
+    // files the tenant can't.
+    // Servers deployed before this change have these made by root.
+    await TenantFs(user).claim(webRoot);
+    await TenantFs(user).claim('$workDir/current');
+    await TenantFs(user).run(['mkdir', '-p', webRoot]);
     // Re-deploying the same id (e.g. a retried deployment) must start clean.
-    await ShellExec.run('rm', ['-rf', releaseDir]);
-    await ShellExec.run('mkdir', ['-p', releaseDir]);
+    await TenantFs(user).run(['rm', '-rf', releaseDir]);
+    await TenantFs(user).run(['mkdir', '-p', releaseDir]);
     // Copy the *contents* of the resolved build output (the trailing `/.` keeps
     // dotfiles and avoids nesting the source dir name inside the release).
-    await ShellExec.run('cp', ['-a', '$sourceDir/.', releaseDir]);
+    await TenantFs(user).run(['cp', '-a', '$sourceDir/.', releaseDir]);
     // Never expose VCS metadata (the source may be the repo root when a plain
     // HTML site has no build subdir). Best-effort.
-    await ShellExec.run('rm', ['-rf', '$releaseDir/.git'], requireSuccess: false);
-    if (user != null && user.isNotEmpty) {
-      await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
-          requireSuccess: false);
-    }
+    await TenantFs(user)
+        .run(['rm', '-rf', '$releaseDir/.git'], requireSuccess: false);
 
     // Atomic swap: `ln -sfn` replaces the symlink via rename(2), so nginx sees
     // either the old target or the new one — never a missing root.
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
-    if (user != null && user.isNotEmpty) {
-      await ShellExec.run('chown', ['-h', '$user:$user', link],
-          requireSuccess: false);
-    }
+    await TenantFs(user).run(['mkdir', '-p', '$workDir/current']);
+    await TenantFs(user).run(['ln', '-sfn', releaseDir, link]);
 
     await _pruneStaticReleases(webRoot,
+        user: user,
         liveTarget: releaseDir,
         keepIds: keepIds,
         // Requests that started before the swap may still be reading the
@@ -531,19 +538,19 @@ class Applier {
     String? user,
   }) async {
     final releaseDir = '$workDir/releases/web/$releaseId';
-    if (!Directory(releaseDir).existsSync()) {
+    if (!isPlainAppDir(releaseDir)) {
       throw StateError(
         'Release $releaseId is no longer on disk (only the newest releases '
         'are kept). Redeploy that commit instead.',
       );
     }
-    final link = '$workDir/current/web';
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('ln', ['-sfn', releaseDir, link]);
-    if (user != null && user.isNotEmpty) {
-      await ShellExec.run('chown', ['-h', '$user:$user', link],
-          requireSuccess: false);
+    if (user == null || user.isEmpty) {
+      throw ArgumentError('Activating a static release needs --user.');
     }
+    final link = '$workDir/current/web';
+    await TenantFs(user).claim('$workDir/current');
+    await TenantFs(user).run(['mkdir', '-p', '$workDir/current']);
+    await TenantFs(user).run(['ln', '-sfn', releaseDir, link]);
     await _grantNginxAccess(releaseDir);
     await _grantTraverse('$workDir/current');
     stdout.writeln('[agent] activated static release $releaseId');
@@ -554,7 +561,8 @@ class Applier {
   /// [_keepStaticReleases]. [liveTarget] always survives. Best-effort — a
   /// failed prune must never fail the deploy.
   Future<void> _pruneStaticReleases(String webRoot,
-      {required String liveTarget,
+      {required String user,
+      required String liveTarget,
       Set<String>? keepIds,
       Set<String> alsoKeep = const {}}) async {
     final dir = Directory(webRoot);
@@ -576,7 +584,7 @@ class Applier {
     }
     for (final d in dirs) {
       if (!keep.contains(d.path)) {
-        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+        await TenantFs(user).run(['rm', '-rf', d.path], requireSuccess: false);
       }
     }
   }
@@ -584,6 +592,7 @@ class Applier {
   /// Grant www-data the traverse (execute) bit on a single directory, falling
   /// back to widening the "other" bit when ACLs are unavailable.
   Future<void> _grantTraverse(String dir) async {
+    if (!isPlainAppDir(dir)) return;
     if (await _ensureAcl()) {
       await ShellExec.run('setfacl', ['-m', 'u:www-data:--x', dir],
           requireSuccess: false);
@@ -598,10 +607,69 @@ class Applier {
   /// null so the caller omits the corresponding nginx `location` block.
   static String? _servableDir(String? dir, {required bool requireNonEmpty}) {
     if (dir == null || dir.isEmpty) return null;
-    final d = Directory(dir);
-    if (!d.existsSync()) return null;
-    if (requireNonEmpty && d.listSync().isEmpty) return null;
+    if (!Directory(dir).existsSync()) return null;
+    if (!isPlainAppDir(dir)) {
+      stderr.writeln('[agent] WARNING: not serving $dir: it must be a plain '
+          "directory inside the app's home, with no symlinks on the way");
+      return null;
+    }
+    if (requireNonEmpty && Directory(dir).listSync().isEmpty) return null;
     return dir;
+  }
+
+  static final _appHomeRe = RegExp(r'^app_[a-z0-9]{6,}$');
+  static final _segmentRe = RegExp(r'^[A-Za-z0-9._-]+$');
+
+  /// Whether [path] is a real directory inside an app home
+  /// (`/srv/apps/app_*`) with no symlink anywhere below the home, and only
+  /// plain path characters (it is written into nginx config).
+  ///
+  /// The tenant owns everything under its home and could otherwise point a
+  /// served or ACL'd directory at `/etc` with a symlink. Root acting on the
+  /// path (setfacl, nginx `alias`) would then follow it.
+  static bool isPlainAppDir(String path, {String appsRoot = '/srv/apps'}) {
+    if (!path.startsWith('$appsRoot/')) return false;
+    final segs = path
+        .substring(appsRoot.length)
+        .split('/')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (segs.length < 2 || !_appHomeRe.hasMatch(segs.first)) return false;
+    var current = '$appsRoot/${segs.first}';
+    for (final seg in segs.skip(1)) {
+      if (seg == '.' || seg == '..' || !_segmentRe.hasMatch(seg)) return false;
+      current = '$current/$seg';
+      if (FileSystemEntity.typeSync(current, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Refuses to work in [workDir] when the tenant has replaced one of the
+  /// directories root operates in (`releases`, the build dir, `current`, the
+  /// build cache) with a symlink, which would point root's rm/chown/cp at
+  /// another tenant's tree or the system. Narrows, but doesn't close, the
+  /// window: see PNL-24.
+  static void requirePlainAppTree(String workDir) {
+    for (final sub in const [
+      'releases',
+      'releases/current_build',
+      'releases/web',
+      'current',
+      '.build-cache',
+    ]) {
+      final path = '$workDir/$sub';
+      if (FileSystemEntity.typeSync(path, followLinks: false) ==
+          FileSystemEntityType.notFound) {
+        continue;
+      }
+      if (!isPlainAppDir(path)) {
+        throw StateError('$path must be a plain directory, not a symlink. '
+            'Remove it and deploy again.');
+      }
+    }
   }
 
   /// Resolve the directory nginx should actually serve for a static app.
@@ -687,6 +755,10 @@ class Applier {
   /// Falls back to widening the "other" permission bits when ACLs are
   /// unavailable, so the site still serves.
   Future<void> _grantNginxAccess(String staticDir) async {
+    if (!isPlainAppDir(staticDir)) {
+      throw StateError('Refusing to grant nginx access to $staticDir: it '
+          "must be a plain directory inside the app's home (no symlinks).");
+    }
     const nginx = 'www-data';
     final hasAcl = await _ensureAcl();
 
@@ -707,9 +779,12 @@ class Applier {
         await ShellExec.run('setfacl', ['-m', 'u:$nginx:--x', dir],
             requireSuccess: false);
       }
-      await ShellExec.run('setfacl', ['-R', '-m', 'u:$nginx:rX', staticDir],
+      // -P: never follow a symlink met on the way down.
+      await ShellExec.run(
+          'setfacl', ['-R', '-P', '-m', 'u:$nginx:rX', staticDir],
           requireSuccess: false);
-      await ShellExec.run('setfacl', ['-R', '-d', '-m', 'u:$nginx:rX', staticDir],
+      await ShellExec.run(
+          'setfacl', ['-R', '-P', '-d', '-m', 'u:$nginx:rX', staticDir],
           requireSuccess: false);
     } else {
       // No ACL support: widen the "other" bits. Looser (any local user can
@@ -1220,6 +1295,11 @@ class Applier {
     // releases/, shared/, logs/, tmp/, the venv/runtime symlinks — everything.
     if (workDir != null && workDir.isNotEmpty) {
       await ShellExec.run('rm', ['-rf', workDir], requireSuccess: false);
+    }
+    // supervisord's logs for the app (Docker mode), kept outside the work dir.
+    if (RegExp(r'^app_[a-z0-9]{6,}$').hasMatch(linuxUser)) {
+      await ShellExec.run('rm', ['-rf', supervisorLogDir(linuxUser)],
+          requireSuccess: false);
     }
 
     // ── 6. Linux user ─────────────────────────────────────────────────────

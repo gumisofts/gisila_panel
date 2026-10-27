@@ -58,6 +58,44 @@ class AgentValidators {
     return v;
   }
 
+  /// Total RAM of this host in MB (from /proc/meminfo), or null where that
+  /// can't be read.
+  static int? hostMemoryMb() {
+    try {
+      final line = File('/proc/meminfo')
+          .readAsLinesSync()
+          .firstWhere((l) => l.startsWith('MemTotal:'));
+      final kb = int.parse(RegExp(r'(\d+)').firstMatch(line)![1]!);
+      return kb ~/ 1024;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// A positive integer for --[option], clamped to [max]. Out-of-range
+  /// values are clamped rather than refused so apps saved before the panel
+  /// bounded these fields still deploy; the panel's forms refuse new ones.
+  static int _positiveClamped(String option, String? raw, int max) {
+    final v = int.tryParse(raw ?? '');
+    if (v == null || v < 1) {
+      throw ArgumentError('Invalid --$option: $raw');
+    }
+    return v > max ? max : v;
+  }
+
+  /// `MemoryMax=` in MB for an app unit, at most the host's RAM (a larger
+  /// value would be no limit at all).
+  static int requireMemoryMb(String? raw) =>
+      _positiveClamped('memory-mb', raw, hostMemoryMb() ?? 1 << 30);
+
+  /// `CPUQuota=` percent, at most every core of this host.
+  static int requireCpuQuota(String? raw) =>
+      _positiveClamped('cpu-quota', raw, Platform.numberOfProcessors * 100);
+
+  /// `TasksMax=` for an app unit.
+  static int requireTasksMax(String? raw) =>
+      _positiveClamped('tasks-max', raw, 16384);
+
   static int requirePort(String? raw, {int min = 1024, int max = 65535}) {
     final p = int.tryParse(raw ?? '');
     if (p == null || p < min || p > max) {

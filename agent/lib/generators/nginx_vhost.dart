@@ -299,6 +299,9 @@ class StaticNginxVhost {
   String _locations(String fallback) => '''
     root $staticDir;
     index index.html;
+    # current/web and the release are the tenant's; a symlink in the release
+    # to a file the tenant doesn't own (/etc/...) is refused.
+    disable_symlinks if_not_owner;
 
     location / {
         $fallback
@@ -400,6 +403,9 @@ class NginxVhost {
 
     location $u {
         alias $root/;
+        # The tenant owns this tree: refuse symlinks to files it doesn't own
+        # (a link to /etc/... planted after this file was written).
+        disable_symlinks if_not_owner;
 $cache        try_files \$uri =404;
     }
 ''';
@@ -414,6 +420,7 @@ $cache        try_files \$uri =404;
     location /_protected/ {
         internal;
         alias $mediaRoot/;
+        disable_symlinks if_not_owner;
     }
 '''
         : '';

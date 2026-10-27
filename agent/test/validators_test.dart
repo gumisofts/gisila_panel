@@ -231,4 +231,31 @@ void main() {
       }
     });
   });
+
+  group('resource limits', () {
+    test('memory is clamped to the host, not refused', () {
+      final host = AgentValidators.hostMemoryMb();
+      expect(AgentValidators.requireMemoryMb('256'), 256);
+      if (host != null) {
+        expect(AgentValidators.requireMemoryMb('${host * 4}'), host);
+      }
+    });
+
+    test('CPU quota is clamped to the cores this host has', () {
+      final max = Platform.numberOfProcessors * 100;
+      expect(AgentValidators.requireCpuQuota('${max + 500}'), max);
+      expect(AgentValidators.requireCpuQuota('50'), 50);
+    });
+
+    test('nonsense is refused', () {
+      for (final v in [null, '', 'x', '0', '-5']) {
+        expect(() => AgentValidators.requireMemoryMb(v), throwsArgumentError,
+            reason: '$v');
+        expect(() => AgentValidators.requireTasksMax(v), throwsArgumentError,
+            reason: '$v');
+      }
+      expect(AgentValidators.requireTasksMax('10'), 10); // older apps deploy
+      expect(AgentValidators.requireTasksMax('999999'), 16384);
+    });
+  });
 }

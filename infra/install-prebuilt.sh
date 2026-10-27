@@ -154,6 +154,23 @@ else
   fi
 fi
 
+# Check the download against the checksum published next to it. Releases
+# from before checksums were published have none: warn and go on.
+if [[ -z "${RELEASE_FILE:-}" ]]; then
+  if curl -fsSL "$URL.sha256" -o "$STAGE/release.sha256" 2>/dev/null; then
+    EXPECTED="$(awk '{print $1}' "$STAGE/release.sha256")"
+    ACTUAL="$(sha256sum "$STAGE/release.tar.gz" | awk '{print $1}')"
+    if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ || "$EXPECTED" != "$ACTUAL" ]]; then
+      echo "ERROR: checksum mismatch for $URL" >&2
+      echo "       expected $EXPECTED, got $ACTUAL. Not installing it." >&2
+      exit 1
+    fi
+    echo "    checksum OK ($ACTUAL)"
+  else
+    echo "    WARNING: no $URL.sha256 published; installing without a checksum check" >&2
+  fi
+fi
+
 tar -C "$STAGE" -xzf "$STAGE/release.tar.gz"
 SRC="$(find "$STAGE" -maxdepth 1 -type d -name 'gisila-release*' | head -1)"
 if [[ -z "$SRC" || ! -x "$SRC/bin/gisila-panel" ]]; then

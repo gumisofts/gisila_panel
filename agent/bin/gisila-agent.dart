@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:gisila_agent/databases/mongodb.dart';
+import 'package:gisila_agent/generators/supervisor_conf.dart'
+    show supervisorLogDir;
 import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
@@ -216,6 +218,7 @@ Future<void> _build(List<String> args) async {
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  Applier.requirePlainAppTree(workDir);
   final runtime = AgentValidators.requireRuntime(r['runtime'] as String?);
   final sourceType =
       AgentValidators.requireSourceType(r['source-type'] as String?);
@@ -369,6 +372,7 @@ Future<void> _activateRelease(List<String> args) async {
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  Applier.requirePlainAppTree(workDir);
   final runtime = AgentValidators.requireRuntime(r['runtime'] as String?);
   final releaseId =
       AgentValidators.requireReleaseId(r['release-id'] as String?);
@@ -560,8 +564,9 @@ Future<void> _applyUnit(List<String> args) async {
         queues: r['celery-queues'] as String?,
         extraArgs: r['celery-extra-args'] as String?,
         beatEnabled: r['celery-beat'] as bool,
-        memoryMb: int.parse(r['memory-mb'] as String),
-        cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
+        memoryMb: AgentValidators.requireMemoryMb(r['memory-mb'] as String?),
+        cpuQuotaPercent:
+            AgentValidators.requireCpuQuota(r['cpu-quota'] as String?),
       ),
       envVars: envVars,
     );
@@ -776,9 +781,9 @@ Future<void> _applyUnit(List<String> args) async {
     workDir: workDir,
     startCommand: startCommand,
     port: port,
-    memoryMb: int.parse(r['memory-mb'] as String),
-    cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
-    tasksMax: int.parse(r['tasks-max'] as String),
+    memoryMb: AgentValidators.requireMemoryMb(r['memory-mb'] as String?),
+    cpuQuotaPercent: AgentValidators.requireCpuQuota(r['cpu-quota'] as String?),
+    tasksMax: AgentValidators.requireTasksMax(r['tasks-max'] as String?),
     isPython: isPython,
     isJit: isJit,
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
@@ -1252,14 +1257,13 @@ Future<void> _logs(List<String> args) async {
   final String exe;
   final List<String> cmdArgs;
   if (isDocker) {
-    final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
     exe = 'tail';
     cmdArgs = [
       '-n',
       lines,
       if (follow) '-F',
-      '$workDir/logs/stdout.log',
-      '$workDir/logs/stderr.log',
+      '${supervisorLogDir(user)}/stdout.log',
+      '${supervisorLogDir(user)}/stderr.log',
     ];
   } else if (runtime == 'celery') {
     // Celery runs as a .target with child worker/beat/flower services.
@@ -3431,13 +3435,35 @@ Future<void> _serviceUninstall(String type) async {
   }
 }
 
+/// Pinned Mailpit release and the SHA-256 of its linux tarballs (GitHub's
+/// asset digests, checked by download on 2026-10-28).
+const _mailpitVersion = '1.32.0';
+const _mailpitSha256 = {
+  'amd64': '4b5993c978e8604c70d43927e2ad103b311bba3b1822fa0cf1d4ee4ec890a93c',
+  'arm64': 'e1e45d1dc72bd497fb262a1e4100178eee057c42c5fc36d143eb8621769e1137',
+  'arm': 'fa4cf9769eebe9718ac695c0eb428fdf6bc4c26c5b037081c69c4e94723e3ed5',
+};
+
 Future<void> _installMailpit(Map<String, dynamic> config) async {
-  // Download the latest mailpit binary (requires root to install to /usr/local/bin).
-  await Priv.ensureCmds(['curl', 'ca-certificates']);
-  await _sudo('sh', [
-    '-c',
-    'curl -sL https://raw.githubusercontent.com/axllent/mailpit/develop/install.sh | bash',
-  ]);
+  // A pinned, checksummed release instead of piping the install script from
+  // the develop branch into bash as root.
+  await Priv.ensureCmds(['curl', 'ca-certificates', 'tar']);
+  final arch = _minioArch(); // amd64 / arm64 / arm, same names as mailpit's
+  final sha = _mailpitSha256[arch]!;
+  final tmp = Directory.systemTemp.createTempSync('gisila_mailpit_');
+  try {
+    final tgz = '${tmp.path}/mailpit.tar.gz';
+    await Builders.downloadVerified(
+        'https://github.com/axllent/mailpit/releases/download/'
+        'v$_mailpitVersion/mailpit-linux-$arch.tar.gz',
+        tgz,
+        sha);
+    await _run('tar', ['-xzf', tgz, '-C', tmp.path, 'mailpit']);
+    await _sudo('install',
+        ['-m', '0755', '${tmp.path}/mailpit', '/usr/local/bin/mailpit']);
+  } finally {
+    tmp.deleteSync(recursive: true);
+  }
   await _serviceConfigure('mailpit', config);
   await _serviceCtl('enable', 'mailpit');
   await _serviceCtl('start', 'mailpit');
@@ -4903,12 +4929,26 @@ Future<void> _pgRestore(
   if (!await File(input).exists()) {
     throw Exception('Restore source not found: $input');
   }
+  // Root reads the file into the database, so only a backup the panel made
+  // (under the backup dir, symlinks resolved) may be restored, never an
+  // arbitrary path.
+  final real = File(input).resolveSymbolicLinksSync();
+  final allowed = {
+    _pgBackupBaseDir,
+    if (Platform.environment['GISILA_BACKUP_DIR'] case final dir?
+        when dir.startsWith('/'))
+      dir,
+  };
+  if (!allowed.any((dir) => real.startsWith('$dir/'))) {
+    throw ArgumentError('Restore source must be a backup under '
+        '${allowed.join(' or ')}: $input');
+  }
   final psql = '/usr/lib/postgresql/$version/bin/psql';
   final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
   final decompress = input.endsWith('.gz') ? 'gunzip -c' : 'cat';
 
   final inner = 'set -o pipefail; '
-      '$decompress ${_shq(input)} '
+      '$decompress ${_shq(real)} '
       '| $dropTo$psql -p $port -v ON_ERROR_STOP=0 -d ${_shq(dbName)}';
   final cmd = _priv('bash', ['-c', inner]);
   final res = await Process.run(cmd.first, cmd.skip(1).toList());
@@ -4999,9 +5039,18 @@ Future<void> _pyenvEnsureInstalled() async {
     'clone',
     '--depth',
     '1',
+    '--branch',
+    Builders.pyenvTag,
     'https://github.com/pyenv/pyenv.git',
     _pyenvRoot,
   ]);
+  final head =
+      await Process.run('git', ['-C', _pyenvRoot, 'rev-parse', 'HEAD']);
+  if ((head.stdout as String).trim() != Builders.pyenvCommit) {
+    await _run('rm', ['-rf', _pyenvRoot], failOk: true);
+    throw StateError('pyenv ${Builders.pyenvTag} is not at the expected '
+        'commit; not installing it.');
+  }
   // Compile the bash extension for speed (optional, failures are OK).
   await _run('bash', ['-c', 'cd $_pyenvRoot && src/configure && make -C src'],
       failOk: true);

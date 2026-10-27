@@ -61,6 +61,6 @@ jobs:
             || true
 
           # Both jobs upload VERSION with --clobber; content is identical.
-          gh release upload "$TAG" "$TARBALL" "$VERSION_FILE" \
+          gh release upload "$TAG" "$TARBALL" "$TARBALL.sha256" "$VERSION_FILE" \
             --repo "${{ github.repository }}" \
             --clobber
