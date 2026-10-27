@@ -125,6 +125,111 @@ $locations}
   }
 }
 
+/// Render the Nginx vhost that publishes the local Garage server at
+/// [hostname].
+///
+/// Signed S3 requests (an `Authorization` header or a presigned
+/// `X-Amz-Signature` query) go to the S3 API on [apiPort]. Unsigned GET/HEAD
+/// requests are anonymous reads: they go to Garage's website endpoint on
+/// [webPort], which serves only buckets with website access enabled (the
+/// panel's "public" buckets) and 404s the rest. That keeps the path-style
+/// contract apps rely on: `<public URL>/<bucket>/<key>` works for public
+/// objects, as it did with MinIO's anonymous-download policy.
+///
+/// `Host` is passed as `$http_host` (with any port) because SigV4 signs it.
+class GarageNginxVhost {
+  GarageNginxVhost({
+    required this.hostname,
+    required this.apiPort,
+    required this.webPort,
+  });
+
+  final String hostname;
+  final int apiPort;
+  final int webPort;
+
+  /// Suffix of the website endpoint's bucket hostnames (`root_domain` in
+  /// garage.toml); only nginx uses it, so it never needs to resolve.
+  static const webRootDomain = 'web.garage.internal';
+
+  String get _locations => '''
+    ignore_invalid_headers off;
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    location / {
+        error_page 418 = @gisila_garage_web;
+        if (\$gisila_garage_anonymous) {
+            return 418;
+        }
+        proxy_pass http://127.0.0.1:$apiPort;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection "";
+        chunked_transfer_encoding off;
+        proxy_connect_timeout 300;
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+    }
+
+    # /<bucket>/<key> -> Host <bucket>.$webRootDomain, path /<key>.
+    location @gisila_garage_web {
+        set \$gisila_garage_bucket "";
+        set \$gisila_garage_path "/";
+        if (\$uri ~ "^/([^/]+)(/.*)?\$") {
+            set \$gisila_garage_bucket \$1;
+            set \$gisila_garage_path \$2;
+        }
+        if (\$gisila_garage_path = "") {
+            set \$gisila_garage_path "/";
+        }
+        rewrite ^ \$gisila_garage_path break;
+        proxy_pass http://127.0.0.1:$webPort;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$gisila_garage_bucket.$webRootDomain;
+        proxy_set_header Connection "";
+    }
+
+    access_log /var/log/nginx/gisila-garage.access.log;
+    error_log  /var/log/nginx/gisila-garage.error.log;
+''';
+
+  String _serverFor(String locations) {
+    final http = '''
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $hostname;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+$locations}
+''';
+    if (!letsEncryptReady(hostname)) return http;
+    return '''
+$http
+server {
+${_sslListenPreamble(hostname)}    server_name $hostname;
+$locations}
+''';
+  }
+
+  String render() => '''
+# Managed by gisila-agent (garage) — do not edit by hand.
+# Anonymous = an unsigned GET/HEAD (no Authorization, no presigned query).
+map "\$request_method:\$http_authorization:\$args" \$gisila_garage_anonymous {
+    "~*^(GET|HEAD)::(?!.*x-amz-signature)" 1;
+    default 0;
+}
+
+${_serverFor(_locations)}''';
+}
+
 /// Whether Let's Encrypt material exists for [hostname] on this host.
 bool letsEncryptReady(String hostname) {
   final live = '/etc/letsencrypt/live/$hostname';

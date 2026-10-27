@@ -45,11 +45,14 @@ class Applier {
   Applier({
     String? systemdDir,
     String? apparmorDir,
+    String? apparmorEnabledPath,
     String? nginxDir,
     String? supervisorConfDir,
   })  : isDocker = Platform.environment['DOCKER_DEPLOY'] == 'true',
         systemdDir = systemdDir ?? '/etc/systemd/system',
         apparmorDir = apparmorDir ?? '/etc/apparmor.d',
+        apparmorEnabledPath = apparmorEnabledPath ??
+            '/sys/module/apparmor/parameters/enabled',
         nginxDir = nginxDir ??
             (Platform.environment['DOCKER_DEPLOY'] == 'true'
                 ? '/etc/nginx/conf.d'
@@ -61,8 +64,38 @@ class Applier {
   final bool isDocker;
   final String systemdDir;
   final String apparmorDir;
+  final String apparmorEnabledPath;
   final String nginxDir;
   final String supervisorConfDir;
+
+  /// Whether the kernel enforces AppArmor.
+  bool get apparmorEnabled {
+    try {
+      return File(apparmorEnabledPath).readAsStringSync().trim() == 'Y';
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  /// Loads (or replaces) the profile at [path]. Where AppArmor is enforced a
+  /// failure stops the deploy: the unit names the profile, so the app would
+  /// otherwise fail to start, or keep running under the previously loaded
+  /// version of it. Where it isn't, the profile can't apply and we say so.
+  Future<void> loadApparmorProfile(String path) async {
+    if (!apparmorEnabled) {
+      stdout.writeln('[agent] WARNING: AppArmor is not enabled on this host; '
+          '$path is not enforced and the app runs with systemd sandboxing '
+          'only.');
+      return;
+    }
+    try {
+      await ShellExec.run('apparmor_parser', ['-r', path]);
+    } on ProcessException catch (e) {
+      throw StateError('Could not load AppArmor profile $path '
+          '(apparmor_parser: ${e.message}). Not starting the app under a '
+          'missing or stale profile.');
+    }
+  }
 
   Future<void> applyUnit({
     required int appId,
@@ -179,8 +212,7 @@ class Applier {
     );
     final apparmorPath = '$apparmorDir/gisila-$linuxUser';
     File(apparmorPath).writeAsStringSync(profile.render());
-    await ShellExec.run('apparmor_parser', ['-r', apparmorPath],
-        requireSuccess: false);
+    await loadApparmorProfile(apparmorPath);
 
     final unitWorkingDir = workingDir ??
         ((isPython || isJit)
@@ -1019,6 +1051,32 @@ class Applier {
       await ShellExec.run('systemctl', ['reload', 'nginx'],
           requireSuccess: false);
     }
+  }
+
+  /// Write the nginx vhost publishing the local Garage server at [hostname]
+  /// (S3 API on [apiPort], anonymous reads via the web endpoint on [webPort]),
+  /// then test + reload nginx. Idempotent.
+  Future<void> applyGarageVhost({
+    required String hostname,
+    required int apiPort,
+    required int webPort,
+  }) async {
+    final vhost = GarageNginxVhost(
+      hostname: hostname,
+      apiPort: apiPort,
+      webPort: webPort,
+    ).render();
+    Directory(nginxDir).createSync(recursive: true);
+    File('$nginxDir/gisila-garage.conf').writeAsStringSync(vhost);
+    await ShellExec.run('nginx', ['-t'], requireSuccess: false);
+    await _reloadNginx();
+  }
+
+  /// Remove the Garage nginx vhost and reload nginx. Best-effort.
+  Future<void> removeGarageVhost() async {
+    final path = '$nginxDir/gisila-garage.conf';
+    if (File(path).existsSync()) File(path).deleteSync();
+    await _reloadNginx();
   }
 
   /// Remove the MinIO nginx vhost (e.g. when the public URL is cleared or the
