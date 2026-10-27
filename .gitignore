@@ -17,3 +17,6 @@ utils/
 !backend/lib/utils/
 types/
 *.env
+# SecretBox key (dev mode writes backend/.secret.key)
+.secret.key
+secret.key

@@ -90,6 +90,10 @@ class JWTAuth {
       ).sign(SecretKey(secret), expiresIn: _mfaChallengeLifetime);
 
   /// The payload of a valid session token, or null.
+  /// Key for a signed-out session token in `revoked_sessions`.
+  static String sessionTokenHash(String token) =>
+      sha256.convert(utf8.encode(token)).toString();
+
   static Map<String, dynamic>? decodeSession(String token) {
     final payload = _verified(token);
     if (payload == null || payload.containsKey('purpose')) return null;

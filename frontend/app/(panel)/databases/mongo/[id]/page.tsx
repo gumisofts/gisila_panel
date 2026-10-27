@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type ElementType } from "react";
 import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
@@ -65,6 +63,7 @@ import type {
   MongoDatabaseStatus,
 } from "@/lib/types";
 import "../../_databases.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 type TagType = "red" | "green" | "blue" | "gray" | "cool-gray" | "warm-gray";
 
@@ -360,7 +359,7 @@ export default function MongoInstancePage() {
   }
 
   async function handleDrop(dbId: number) {
-    if (!confirm("Drop this database and its user? This cannot be undone.")) return;
+    if (!(await confirmDialog("Drop this database and its user? This cannot be undone."))) return;
     await action(`/mongo/${id}/dbs/${dbId}`, "DELETE", dbsKey);
     mutate(dbsKey);
   }
@@ -487,7 +486,7 @@ export default function MongoInstancePage() {
                     instance.status === "failed"
                       ? `Remove failed MongoDB ${instance.version} install?`
                       : `Uninstall MongoDB ${instance.version}? All data will be deleted.`;
-                  if (!confirm(label)) return;
+                  if (!(await confirmDialog(label))) return;
                   await action(`/mongo/${id}`, "DELETE");
                   router.push("/databases");
                 }}

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type ElementType } from "react";
 import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
@@ -66,6 +64,7 @@ import type {
   PgDatabaseStatus,
 } from "@/lib/types";
 import "../_databases.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 
@@ -374,7 +373,7 @@ export default function InstancePage() {
   }
 
   async function handleDrop(dbId: number) {
-    if (!confirm("Drop this database and its role? This cannot be undone.")) return;
+    if (!(await confirmDialog("Drop this database and its role? This cannot be undone."))) return;
     await action(`/databases/${id}/dbs/${dbId}`, "DELETE", dbsKey);
     mutate(dbsKey);
   }
@@ -526,7 +525,7 @@ export default function InstancePage() {
                     instance.status === "failed"
                       ? `Remove failed PostgreSQL ${instance.version} install?`
                       : `Uninstall PostgreSQL ${instance.version}? All data will be deleted.`;
-                  if (!confirm(label)) return;
+                  if (!(await confirmDialog(label))) return;
                   await action(`/databases/${id}`, "DELETE");
                   router.push("/databases");
                 }}

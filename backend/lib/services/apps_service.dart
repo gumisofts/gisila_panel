@@ -9,6 +9,7 @@ import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/application_service.dart';
 import 'package:gisila_panel/services/projects_service.dart';
+import 'package:gisila_panel/services/team_quotas.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 
 /// Network exposure modes an [App] can pick at creation time. See the
@@ -172,6 +173,10 @@ class AppsService extends Service {
     // Creating an app is a developer-level action.
     await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
     if (deployKeyId != null) await _authorizeDeployKey(actor, deployKeyId);
+    await TeamQuotas(_db).check(project.teamId,
+        apps: 1,
+        memoryMb: memoryMbLimit ?? 256,
+        cpuPercent: cpuQuotaPercent ?? 50);
 
     // Resolve the Application: prefer the explicit applicationId, falling
     // back to the deprecated free-text `runtime` alias so older API clients
@@ -348,12 +353,37 @@ class AppsService extends Service {
     if (patch['deployKeyId'] case final int keyId when keyId != app.deployKeyId) {
       await _authorizeDeployKey(actor, keyId);
     }
+    await _checkQuotaForUpdate(app, patch);
     patch['updatedAt'] = DateTime.now().toUtc().toIso8601String();
     final rows = await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(app.id!))
         .update(patch)
         .run(_db.context());
     return rows.first;
+  }
+
+  /// Checks the team quota when [patch] raises [app]'s memory or CPU limit
+  /// or moves it to another team's project.
+  Future<void> _checkQuotaForUpdate(App app, Map<String, Object?> patch) async {
+    final touchesLimits = patch.containsKey('memoryMbLimit') ||
+        patch.containsKey('cpuQuotaPercent') ||
+        (patch['projectId'] is int && patch['projectId'] != app.projectId);
+    if (!touchesLimits) return;
+    final projectId = patch['projectId'] as int? ?? app.projectId;
+    final rows = await _db.context().execute(
+      'SELECT id, team_id FROM projects WHERE id IN (\$1, \$2)',
+      parameters: [projectId, app.projectId],
+    );
+    final teamOf = {for (final r in rows) r[0] as int: r[1] as int};
+    final teamId = teamOf[projectId];
+    if (teamId == null) return;
+    await TeamQuotas(_db).check(
+      teamId,
+      apps: teamOf[app.projectId] == teamId ? 0 : 1,
+      memoryMb: patch['memoryMbLimit'] as int? ?? app.memoryMbLimit ?? 256,
+      cpuPercent: patch['cpuQuotaPercent'] as int? ?? app.cpuQuotaPercent ?? 50,
+      excludeAppId: app.id,
+    );
   }
 
   /// Gate pointing an app at SSH key [keyId] for git clones.
@@ -420,7 +450,7 @@ class AppsService extends Service {
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     }).run(_db.context());
 
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:network',
       jsonEncode(<String, Object?>{
         'appId': app.id,

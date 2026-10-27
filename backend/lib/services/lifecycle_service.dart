@@ -13,7 +13,7 @@ class LifecycleService extends Service {
   Database get _db => db<Database>();
 
   Future<void> _enqueueLifecycle(int appId, String action) =>
-      RedisClient.instance.rpush(
+      RedisClient.instance.enqueueJob(
         'gisila:queue:lifecycle',
         jsonEncode(<String, Object?>{
           'appId': appId,

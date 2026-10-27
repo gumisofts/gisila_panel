@@ -245,7 +245,7 @@ class AppsApi {
     // the change (e.g. enabling SPA mode to stop deep-link refreshes 404ing)
     // takes effect immediately.
     if (app.runtime == 'static' && form.staticSpa.value != null) {
-      await RedisClient.instance.rpush(
+      await RedisClient.instance.enqueueJob(
         'gisila:queue:vhosts',
         jsonEncode(<String, Object?>{
           'appId': app.id,
@@ -261,7 +261,7 @@ class AppsApi {
     if (app.runtime != 'static' &&
         (form.mediaEnabled.value != null ||
             form.mediaMaxUploadMb.value != null)) {
-      await RedisClient.instance.rpush(
+      await RedisClient.instance.enqueueJob(
         'gisila:queue:vhosts',
         jsonEncode(<String, Object?>{
           'appId': app.id,
@@ -361,7 +361,7 @@ class AppsApi {
       throw HttpException(422, 'command is required');
     }
     final execId = const Uuid().v4();
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:exec',
       jsonEncode({
         'appId': app.id,

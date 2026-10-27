@@ -9,6 +9,7 @@ import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 import 'package:gisila_panel/utils/totp.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Outcome of a correct email + password: either a session, or — for an
 /// account with a second factor — a challenge to complete with a code.
@@ -141,6 +142,24 @@ class AuthService extends Service {
 
   // ── Sessions ──────────────────────────────────────────────────────────────
 
+  /// Signs out the session [token] alone: it is refused from now until it
+  /// would have expired. Other sessions of the same user stay signed in.
+  Future<void> logout(String token) async {
+    final payload = JWTAuth.decodeSession(token);
+    if (payload == null) return; // already invalid
+    final exp = payload['exp'];
+    final expiresAt = exp is num
+        ? DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true)
+        : DateTime.now().toUtc().add(const Duration(days: 30));
+    final c = _db.context();
+    await c.execute(
+      'INSERT INTO revoked_sessions (token_hash, expires_at) '
+      'VALUES (\$1, \$2) ON CONFLICT (token_hash) DO NOTHING',
+      parameters: [JWTAuth.sessionTokenHash(token), expiresAt],
+    );
+    await c.execute('DELETE FROM revoked_sessions WHERE expires_at < now()');
+  }
+
   /// Invalidate every session token [user] holds and return a fresh one for
   /// the caller, so "sign out other sessions" keeps this one signed in.
   Future<String> revokeSessions(User user) async {
@@ -203,7 +222,7 @@ class AuthService extends Service {
         .run(_db.context());
     await Query<UserTotp>(UserTotpTable.metadata).insert(<String, Object?>{
       'userId': user.id,
-      'secret': secret,
+      'secret': SecretBox.instance.seal(secret, SecretBox.totpSecret),
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).run(_db.context());
     return (
@@ -223,7 +242,7 @@ class AuthService extends Service {
     if (row == null || row.confirmedAt != null) {
       throw BadRequest('Start two-factor setup first.', code: 'totp_not_pending');
     }
-    final step = Totp.verify(row.secret, code);
+    final step = Totp.verify(row.plainSecret, code);
     if (step == null) {
       throw BadRequest('That code is not valid. Check the time on your device.',
           code: 'invalid_code');
@@ -297,7 +316,8 @@ class AuthService extends Service {
   }) async {
     // Both updates are compare-and-swap: of two concurrent requests carrying
     // the same code, only the one whose update matches a row gets in.
-    final step = Totp.verify(row.secret, code, lastUsedStep: row.lastUsedStep);
+    final step =
+        Totp.verify(row.plainSecret, code, lastUsedStep: row.lastUsedStep);
     if (step != null) {
       final rows = await Query<UserTotp>(UserTotpTable.metadata)
           .where(UserTotpTable.id.eq(row.id!))

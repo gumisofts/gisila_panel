@@ -7,6 +7,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// The outcome of the agent's post-restart readiness probe.
 class _HealthVerdict {
@@ -130,7 +131,8 @@ class DeploymentWorker {
       // below, so fetch them once up front.
       final appEnvVars = await Query<EnvVar>(EnvVarTable.metadata)
           .where(EnvVarTable.appId.eq(app.id!))
-          .all(database.context());
+          .all(database.context())
+          .then((rows) => [for (final e in rows) e.opened()]);
       final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
 
       // Model A: when local disk media is enabled, expose the upload root and
@@ -170,7 +172,7 @@ class DeploymentWorker {
             await Query<EnvVar>(EnvVarTable.metadata).insert(<String, Object?>{
               'appId': app.id,
               'name': 'FLOWER_BASIC_AUTH',
-              'value': creds,
+              'value': SecretBox.instance.seal(creds, SecretBox.envVarValue),
               'isSecret': false,
               'updatedAt': now,
             }).one(database.context());
@@ -178,7 +180,7 @@ class DeploymentWorker {
             await Query<EnvVar>(EnvVarTable.metadata)
                 .where(EnvVarTable.id.eq(flowerAuth.id!))
                 .update(<String, Object?>{
-              'value': creds,
+              'value': SecretBox.instance.seal(creds, SecretBox.envVarValue),
               'isSecret': false,
               'updatedAt': now,
             }).run(database.context());
@@ -384,9 +386,10 @@ class DeploymentWorker {
             ? '$deploymentId'
             : (result?['release'] as String? ?? '$deploymentId'),
         if (commit != null) 'gitCommitSha': commit,
-        'deployConfig': jsonEncode(<String, Object?>{
-          'applyUnit': applyUnitArgs,
-        }),
+        'deployConfig': SecretBox.instance.seal(
+          jsonEncode(<String, Object?>{'applyUnit': applyUnitArgs}),
+          SecretBox.deployConfig,
+        ),
       }).run(database.context());
       if (commit != null) {
         await _publishBuildLog(deploymentId,
@@ -514,7 +517,8 @@ class DeploymentWorker {
           .where(DeploymentTable.id.eq(rb.rollbackOfId!))
           .first(database.context());
       final releaseId = rb.releaseId ?? target?.releaseId;
-      final config = _decodeConfig(rb.deployConfig ?? target?.deployConfig);
+      final config = _decodeConfig(
+          rb.plainDeployConfig ?? target?.plainDeployConfig);
       final applyUnit = (config?['applyUnit'] as List?)?.cast<String>();
       if (releaseId == null || applyUnit == null || applyUnit.isEmpty) {
         throw StateError(
@@ -848,7 +852,7 @@ class DeploymentWorker {
           }
         }
         _lastRequeue[id] = now;
-        await RedisClient.instance.rpush(
+        await RedisClient.instance.enqueueJob(
           'gisila:queue:deployments',
           jsonEncode(<String, Object?>{
             'deploymentId': id,

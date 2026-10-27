@@ -110,13 +110,15 @@ echo "$VERSION" > "$STAGE/$PKG/VERSION"
 # ── Pack ──────────────────────────────────────────────────────────────────────
 mkdir -p "$OUT_DIR"
 tar -C "$STAGE" -czf "$TARBALL" "$PKG"
+# install-prebuilt.sh checks the download against this.
+( cd "$(dirname "$TARBALL")" && sha256sum "$(basename "$TARBALL")" > "$(basename "$TARBALL").sha256" )
 echo "$VERSION" > "$OUT_DIR/VERSION"
 
 echo
 echo "✓ Built $TARBALL ($(du -h "$TARBALL" | awk '{print $1}'))"
 echo
 echo "  Publish it to a GitHub Release so install-prebuilt.sh can fetch it:"
-echo "    gh release create v$VERSION \"$TARBALL\" --repo gumisofts/gisila_panel"
+echo "    gh release create v$VERSION \"$TARBALL\" \"$TARBALL.sha256\" --repo gumisofts/gisila_panel"
 echo
 echo "  (Re-uploading the same asset name to the 'latest' release keeps the"
 echo "   'VERSION=latest' install path working.)"

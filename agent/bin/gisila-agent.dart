@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:args/args.dart';
 import 'package:gisila_agent/databases/mongodb.dart';
+import 'package:gisila_agent/generators/nginx_vhost.dart';
+import 'package:gisila_agent/generators/supervisor_conf.dart'
+    show supervisorLogDir;
 import 'package:gisila_agent/runtime/applier.dart';
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/builders.dart';
@@ -17,6 +21,7 @@ import 'package:gisila_agent/runtime/runtime_registry.dart';
 import 'package:gisila_agent/runtime/validators.dart';
 import 'package:gisila_agent/version.dart';
 import 'package:gisila_agent/services/handler.dart';
+import 'package:gisila_agent/storage/s3_client.dart';
 
 /// gisila-agent — the privileged host-side CLI invoked by the worker.
 Future<void> main(List<String> args) async {
@@ -216,6 +221,7 @@ Future<void> _build(List<String> args) async {
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  Applier.requirePlainAppTree(workDir);
   final runtime = AgentValidators.requireRuntime(r['runtime'] as String?);
   final sourceType =
       AgentValidators.requireSourceType(r['source-type'] as String?);
@@ -292,18 +298,21 @@ Future<void> _build(List<String> args) async {
   // flags today (python/celery share --python-version). Falls back to
   // --version for any future plugin that doesn't need a runtime-specific
   // flag name of its own.
-  final version = <String, String?>{
-        'dart': r['dart-version'] as String?,
-        'go': r['go-version'] as String?,
-        'rust': r['rust-version'] as String?,
-        'node': r['node-version'] as String?,
-        // Static sites with a Node build (Vite/Next export/…) use the same pin.
-        'static': r['node-version'] as String?,
-        'bun': r['bun-version'] as String?,
-        'python': r['python-version'] as String?,
-        'celery': r['python-version'] as String?,
-      }[runtime] ??
-      r['version'] as String?;
+  final ownFlag = const <String, String>{
+    'dart': 'dart-version',
+    'go': 'go-version',
+    'rust': 'rust-version',
+    'node': 'node-version',
+    // Static sites with a Node build (Vite/Next export/…) use the same pin.
+    'static': 'node-version',
+    'bun': 'bun-version',
+    'python': 'python-version',
+    'celery': 'python-version',
+  }[runtime];
+  final versionFlag =
+      ownFlag != null && r[ownFlag] != null ? ownFlag : 'version';
+  final version =
+      AgentValidators.optionalVersion(versionFlag, r[versionFlag] as String?);
 
   await RuntimeRegistry.get(runtime).build(RuntimeBuildContext(
     workDir: workDir,
@@ -366,6 +375,7 @@ Future<void> _activateRelease(List<String> args) async {
   });
   final user = AgentValidators.requireUser(r['user'] as String?);
   final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
+  Applier.requirePlainAppTree(workDir);
   final runtime = AgentValidators.requireRuntime(r['runtime'] as String?);
   final releaseId =
       AgentValidators.requireReleaseId(r['release-id'] as String?);
@@ -398,7 +408,8 @@ Future<void> _runtime(List<String> args) async {
     throw ArgumentError('Unknown --key: $key');
   }
   final plugin = RuntimeRegistry.get(key);
-  final version = r['version'] as String?;
+  final version =
+      AgentValidators.optionalVersion('version', r['version'] as String?);
 
   switch (action) {
     case 'install':
@@ -556,8 +567,9 @@ Future<void> _applyUnit(List<String> args) async {
         queues: r['celery-queues'] as String?,
         extraArgs: r['celery-extra-args'] as String?,
         beatEnabled: r['celery-beat'] as bool,
-        memoryMb: int.parse(r['memory-mb'] as String),
-        cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
+        memoryMb: AgentValidators.requireMemoryMb(r['memory-mb'] as String?),
+        cpuQuotaPercent:
+            AgentValidators.requireCpuQuota(r['cpu-quota'] as String?),
       ),
       envVars: envVars,
     );
@@ -772,9 +784,9 @@ Future<void> _applyUnit(List<String> args) async {
     workDir: workDir,
     startCommand: startCommand,
     port: port,
-    memoryMb: int.parse(r['memory-mb'] as String),
-    cpuQuotaPercent: int.parse(r['cpu-quota'] as String),
-    tasksMax: int.parse(r['tasks-max'] as String),
+    memoryMb: AgentValidators.requireMemoryMb(r['memory-mb'] as String?),
+    cpuQuotaPercent: AgentValidators.requireCpuQuota(r['cpu-quota'] as String?),
+    tasksMax: AgentValidators.requireTasksMax(r['tasks-max'] as String?),
     isPython: isPython,
     isJit: isJit,
     runtimeBinDir: (runtimeBinDir != null && runtimeBinDir.isNotEmpty)
@@ -1248,14 +1260,13 @@ Future<void> _logs(List<String> args) async {
   final String exe;
   final List<String> cmdArgs;
   if (isDocker) {
-    final workDir = AgentValidators.requireWorkDir(r['work-dir'] as String?);
     exe = 'tail';
     cmdArgs = [
       '-n',
       lines,
       if (follow) '-F',
-      '$workDir/logs/stdout.log',
-      '$workDir/logs/stderr.log',
+      '${supervisorLogDir(user)}/stdout.log',
+      '${supervisorLogDir(user)}/stderr.log',
     ];
   } else if (runtime == 'celery') {
     // Celery runs as a .target with child worker/beat/flower services.
@@ -3427,13 +3438,35 @@ Future<void> _serviceUninstall(String type) async {
   }
 }
 
+/// Pinned Mailpit release and the SHA-256 of its linux tarballs (GitHub's
+/// asset digests, checked by download on 2026-10-28).
+const _mailpitVersion = '1.32.0';
+const _mailpitSha256 = {
+  'amd64': '4b5993c978e8604c70d43927e2ad103b311bba3b1822fa0cf1d4ee4ec890a93c',
+  'arm64': 'e1e45d1dc72bd497fb262a1e4100178eee057c42c5fc36d143eb8621769e1137',
+  'arm': 'fa4cf9769eebe9718ac695c0eb428fdf6bc4c26c5b037081c69c4e94723e3ed5',
+};
+
 Future<void> _installMailpit(Map<String, dynamic> config) async {
-  // Download the latest mailpit binary (requires root to install to /usr/local/bin).
-  await Priv.ensureCmds(['curl', 'ca-certificates']);
-  await _sudo('sh', [
-    '-c',
-    'curl -sL https://raw.githubusercontent.com/axllent/mailpit/develop/install.sh | bash',
-  ]);
+  // A pinned, checksummed release instead of piping the install script from
+  // the develop branch into bash as root.
+  await Priv.ensureCmds(['curl', 'ca-certificates', 'tar']);
+  final arch = _minioArch(); // amd64 / arm64 / arm, same names as mailpit's
+  final sha = _mailpitSha256[arch]!;
+  final tmp = Directory.systemTemp.createTempSync('gisila_mailpit_');
+  try {
+    final tgz = '${tmp.path}/mailpit.tar.gz';
+    await Builders.downloadVerified(
+        'https://github.com/axllent/mailpit/releases/download/'
+        'v$_mailpitVersion/mailpit-linux-$arch.tar.gz',
+        tgz,
+        sha);
+    await _run('tar', ['-xzf', tgz, '-C', tmp.path, 'mailpit']);
+    await _sudo('install',
+        ['-m', '0755', '${tmp.path}/mailpit', '/usr/local/bin/mailpit']);
+  } finally {
+    tmp.deleteSync(recursive: true);
+  }
   await _serviceConfigure('mailpit', config);
   await _serviceCtl('enable', 'mailpit');
   await _serviceCtl('start', 'mailpit');
@@ -3777,8 +3810,10 @@ const _minioUser = 'gisila-minio';
 Future<void> _storage(List<String> args) async {
   if (args.isEmpty) {
     stderr.writeln('Usage: gisila-agent storage '
-        '<install-minio|uninstall-minio|start-minio|stop-minio|'
-        'expose-minio|unexpose-minio|create-bucket|delete-bucket> [flags]');
+        '<install-garage|uninstall-garage|start-garage|stop-garage|'
+        'expose-garage|unexpose-garage|create-bucket|delete-bucket|'
+        'install-minio|uninstall-minio|start-minio|stop-minio|'
+        'expose-minio|unexpose-minio> [flags]');
     exitCode = 64;
     return;
   }
@@ -3796,7 +3831,8 @@ Future<void> _storage(List<String> args) async {
     p.addOption('console-hostname');
     p.addFlag('tls', defaultsTo: false);
     // Bucket provisioning (any S3 endpoint).
-    p.addOption('kind', defaultsTo: 'minio'); // minio | external
+    p.addOption('kind', defaultsTo: 'minio'); // garage | minio | external
+    p.addOption('region', defaultsTo: 'us-east-1');
     p.addOption('endpoint'); // S3 API endpoint of the admin connection
     p.addOption('access-key'); // admin/root key
     p.addOption('secret-key'); // admin/root secret
@@ -3834,9 +3870,34 @@ Future<void> _storage(List<String> args) async {
       );
     case 'unexpose-minio':
       await Applier().removeMinioVhost();
+    case 'install-garage':
+      await _garageInstall(
+        dataDir: r['data-dir'] as String,
+        port: int.parse(r['port'] as String),
+        adminKey: _req(r['root-user'] as String?, 'root-user'),
+        adminSecret: _req(r['root-secret'] as String?, 'root-secret'),
+      );
+    case 'uninstall-garage':
+      await _garageUninstall(
+        dataDir: r['data-dir'] as String,
+        purge: r['purge'] as bool,
+      );
+    case 'start-garage':
+      await _serviceCtl('start', 'gisila-garage');
+    case 'stop-garage':
+      await _serviceCtl('stop', 'gisila-garage');
+    case 'expose-garage':
+      await _garageExpose(
+        hostname: _req(r['hostname'] as String?, 'hostname'),
+        apiPort: int.parse(r['port'] as String),
+        tls: r['tls'] as bool,
+      );
+    case 'unexpose-garage':
+      await Applier().removeGarageVhost();
     case 'create-bucket':
       await _bucketCreate(
         kind: r['kind'] as String,
+        region: r['region'] as String,
         endpoint: _req(r['endpoint'] as String?, 'endpoint'),
         accessKey: _req(r['access-key'] as String?, 'access-key'),
         secretKey: _req(r['secret-key'] as String?, 'secret-key'),
@@ -3848,6 +3909,7 @@ Future<void> _storage(List<String> args) async {
     case 'delete-bucket':
       await _bucketDelete(
         kind: r['kind'] as String,
+        region: r['region'] as String,
         endpoint: _req(r['endpoint'] as String?, 'endpoint'),
         accessKey: _req(r['access-key'] as String?, 'access-key'),
         secretKey: _req(r['secret-key'] as String?, 'secret-key'),
@@ -3876,21 +3938,14 @@ String _minioArch() {
   return 'amd64';
 }
 
-/// Download a binary from [url] to [dest] (root-owned, executable) if missing.
-Future<void> _ensureBinary(String url, String dest) async {
-  if (await File(dest).exists()) return;
-  await Priv.ensureCmds(['curl', 'ca-certificates']);
-  stdout.writeln('[agent] downloading ${dest.split('/').last} from $url');
-  final cmd = _priv('sh', ['-c', "curl -fsSL '$url' -o '$dest'"]);
-  await _run(cmd.first, cmd.skip(1).toList());
-  await _sudo('chmod', ['0755', dest]);
-}
-
-/// Ensure the MinIO client `mc` is present (needed for both kinds of provider).
+/// The MinIO client `mc`, needed only for existing MinIO providers (user and
+/// policy minting). MinIO stopped publishing community downloads (dl.min.io
+/// answers 410), so it can't be fetched any more: hosts that ran MinIO
+/// already have it.
 Future<void> _ensureMc() async {
-  final arch = _minioArch();
-  await _ensureBinary(
-      'https://dl.min.io/client/mc/release/linux-$arch/mc', _mcBin);
+  if (await File(_mcBin).exists()) return;
+  throw StateError('The MinIO client ($_mcBin) is missing and MinIO no longer '
+      'publishes downloads. Install a Garage provider instead.');
 }
 
 Future<void> _minioInstall({
@@ -3903,9 +3958,12 @@ Future<void> _minioInstall({
   if (rootUser == null || rootUser.isEmpty || rootSecret == null || rootSecret.isEmpty) {
     throw ArgumentError('--root-user and --root-secret are required');
   }
-  final arch = _minioArch();
-  await _ensureBinary(
-      'https://dl.min.io/server/minio/release/linux-$arch/minio', _minioBin);
+  // MinIO stopped publishing community downloads; only a host that already
+  // has the binaries can (re)install it.
+  if (!await File(_minioBin).exists()) {
+    throw StateError('MinIO is no longer distributed (dl.min.io answers 410). '
+        'Install a Garage provider instead.');
+  }
   await _ensureMc();
 
   // Dedicated system user owning the data directory.
@@ -4123,6 +4181,7 @@ Future<ProcessResult> _mc(
 
 Future<void> _bucketCreate({
   required String kind,
+  String region = 'us-east-1',
   required String endpoint,
   required String accessKey,
   required String secretKey,
@@ -4131,6 +4190,40 @@ Future<void> _bucketCreate({
   String? scopedSecretKey,
   required bool public,
 }) async {
+  if (kind == 'garage') {
+    await _garageBucketCreate(
+      adminKey: accessKey,
+      bucket: bucket,
+      scopedAccessKey: _req(scopedAccessKey, 'scoped-access-key'),
+      scopedSecretKey: _req(scopedSecretKey, 'scoped-secret-key'),
+      public: public,
+    );
+    return;
+  }
+  if (kind != 'minio') {
+    // External provider: plain S3 with the provider's own credentials.
+    final s3 = S3Client(
+        endpoint: endpoint,
+        accessKey: accessKey,
+        secretKey: secretKey,
+        region: region);
+    try {
+      await s3.createBucket(bucket);
+      if (public) {
+        try {
+          await s3.setPublicRead(bucket);
+        } on S3Exception catch (e) {
+          // R2 and others manage public access outside S3 policies.
+          stderr.writeln('[agent] warning: could not make "$bucket" public: '
+              "$e. Enable public access in the provider's dashboard.");
+        }
+      }
+    } finally {
+      s3.close();
+    }
+    stdout.writeln('[agent] bucket "$bucket" ready on $endpoint');
+    return;
+  }
   await _ensureMc();
   final c = {'endpoint': endpoint, 'accessKey': accessKey, 'secretKey': secretKey};
 
@@ -4192,12 +4285,43 @@ Future<void> _bucketCreate({
 
 Future<void> _bucketDelete({
   required String kind,
+  String region = 'us-east-1',
   required String endpoint,
   required String accessKey,
   required String secretKey,
   required String bucket,
   String? scopedAccessKey,
 }) async {
+  if (kind != 'minio') {
+    final s3 = S3Client(
+        endpoint: endpoint,
+        accessKey: accessKey,
+        secretKey: secretKey,
+        region: region);
+    try {
+      if (kind == 'garage') {
+        // Garage only deletes empty buckets, and its CLI doesn't empty them.
+        // A create that failed part-way may not have granted the admin key
+        // access yet; grant it so the bucket can still be emptied.
+        if (await _garageOk(['bucket', 'info', bucket])) {
+          await _garage(['bucket', 'allow', '--read', '--write', '--owner',
+              bucket, '--key', accessKey]);
+        }
+        await s3.emptyBucket(bucket);
+        await _garage(['bucket', 'delete', '--yes', bucket], failOk: true);
+        if (scopedAccessKey != null && scopedAccessKey.isNotEmpty) {
+          await _garage(['key', 'delete', '--yes', scopedAccessKey],
+              failOk: true);
+        }
+      } else {
+        await s3.deleteBucket(bucket);
+      }
+    } finally {
+      s3.close();
+    }
+    stdout.writeln('[agent] bucket "$bucket" removed from $endpoint');
+    return;
+  }
   await _ensureMc();
   // Remove the bucket and all its objects.
   await _mc(['rb', '--force', 'gx/$bucket'],
@@ -4215,6 +4339,271 @@ Future<void> _bucketDelete({
         failOk: true);
   }
   stdout.writeln('[agent] bucket "$bucket" removed from $endpoint');
+}
+
+// ── Garage (self-hosted S3, replaces MinIO) ──────────────────────────────────
+//
+// A single-node Garage cluster: S3 API on --port, RPC on port+1 and the
+// website endpoint (anonymous reads of public buckets) on port+2, all bound
+// to 127.0.0.1. nginx publishes it (GarageNginxVhost). The panel's provider
+// credentials become Garage's admin key (allowed to create buckets); each
+// bucket gets its own imported key with access to that bucket only.
+
+const _garageVersion = 'v2.5.0';
+// Pinned: Garage publishes no checksums. Both match the binaries in the
+// official dxflrs/garage:v2.5.0 images (amd64, arm64).
+const _garageSha256 = {
+  'x86_64':
+      '2ff667286217cd73ebcb1c03af993822365000441dfe31a80cb64c5189a9dea8',
+  'aarch64':
+      '69b6040cef428b993500c17dd0d0c1240acf2f3f667b9b05ceba4b9660db4e8c',
+};
+const _garageBin = '/usr/local/bin/gisila-garage-$_garageVersion';
+const _garageConf = '/etc/gisila/garage.toml';
+const _garageUnit = '/etc/systemd/system/gisila-garage.service';
+const _garageUser = 'gisila-garage';
+
+/// Run the Garage CLI against the local node (root reads garage.toml for the
+/// RPC secret). Returns stdout.
+Future<String> _garage(List<String> args, {bool failOk = false}) async {
+  final cmd = _priv(_garageBin, ['-c', _garageConf, ...args]);
+  final r = await Process.run(cmd.first, cmd.skip(1).toList());
+  if (r.exitCode != 0 && !failOk) {
+    throw Exception('garage ${args.join(' ')}: exit ${r.exitCode}\n'
+        '${r.stdout}\n${r.stderr}');
+  }
+  return r.exitCode == 0 ? r.stdout as String : '';
+}
+
+Future<bool> _garageOk(List<String> args) async {
+  final cmd = _priv(_garageBin, ['-c', _garageConf, ...args]);
+  final r = await Process.run(cmd.first, cmd.skip(1).toList());
+  return r.exitCode == 0;
+}
+
+Future<void> _garageInstall({
+  required String dataDir,
+  required int port,
+  required String adminKey,
+  required String adminSecret,
+}) async {
+  final arch = (Process.runSync('uname', ['-m']).stdout as String).trim();
+  final sha = _garageSha256[arch];
+  if (sha == null) {
+    throw StateError('Garage is not available for $arch (x86_64 and aarch64 '
+        'are supported).');
+  }
+  if (!await File(_garageBin).exists()) {
+    await Priv.ensureCmds(['curl', 'ca-certificates']);
+    final tmp = '$_garageBin.download';
+    await Builders.downloadVerified(
+        'https://garagehq.deuxfleurs.fr/_releases/$_garageVersion/'
+        '$arch-unknown-linux-musl/garage',
+        tmp,
+        sha);
+    await _sudo('chmod', ['0755', tmp]);
+    await _sudo('mv', [tmp, _garageBin]);
+  }
+
+  await _sudo('useradd', ['-r', '-s', '/usr/sbin/nologin', _garageUser],
+      failOk: true);
+  await _sudo('mkdir', ['-p', '$dataDir/meta', '$dataDir/data']);
+  await _sudo('chown', ['-R', '$_garageUser:$_garageUser', dataDir]);
+  await _sudo('chmod', ['0750', dataDir]);
+  await _sudo('mkdir', ['-p', '/etc/gisila'], failOk: true);
+
+  // Keep the RPC secret across reinstalls: the node's identity and data are
+  // tied to it.
+  final existing = await _readPrivFile(_garageConf) ?? '';
+  final rpcSecret =
+      RegExp(r'rpc_secret = "([0-9a-f]{64})"').firstMatch(existing)?.group(1) ??
+          _randomHex(32);
+  await _writeFileSudo(_garageConf, '''
+# Managed by gisila-agent — do not edit by hand.
+metadata_dir = "$dataDir/meta"
+data_dir = "$dataDir/data"
+db_engine = "lmdb"
+replication_factor = 1
+
+rpc_bind_addr = "127.0.0.1:${port + 1}"
+rpc_public_addr = "127.0.0.1:${port + 1}"
+rpc_secret = "$rpcSecret"
+
+[s3_api]
+s3_region = "us-east-1"
+api_bind_addr = "127.0.0.1:$port"
+
+[s3_web]
+bind_addr = "127.0.0.1:${port + 2}"
+root_domain = ".${GarageNginxVhost.webRootDomain}"
+index = "index.html"
+''');
+  await _sudo('chown', ['root:$_garageUser', _garageConf]);
+  await _sudo('chmod', ['0640', _garageConf]);
+
+  await _writeFileSudo(_garageUnit, '''
+[Unit]
+Description=Gisila Garage object storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$_garageUser
+Group=$_garageUser
+ExecStart=$_garageBin -c $_garageConf server
+Environment=RUST_LOG=garage=info
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# ── Sandboxing ─────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=$dataDir
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+''');
+  await _sudo('systemctl', ['daemon-reload']);
+  await _serviceCtl('enable', 'gisila-garage');
+  await _serviceCtl('restart', 'gisila-garage');
+  await _garageSetup(
+      dataDir: dataDir, adminKey: adminKey, adminSecret: adminSecret);
+  stdout.writeln('[agent] Garage $_garageVersion is up on 127.0.0.1:$port');
+}
+
+/// Once the server runs: give the single node a role (first start only) and
+/// import the admin key. Idempotent.
+Future<void> _garageSetup({
+  required String dataDir,
+  required String adminKey,
+  required String adminSecret,
+}) async {
+  // Up when the CLI can reach the node over RPC.
+  var up = false;
+  for (var i = 0; i < 30 && !up; i++) {
+    up = await _garageOk(['status']);
+    if (!up) await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  if (!up) throw StateError('Garage did not come up within 30s.');
+
+  final status = await _garage(['status']);
+  if (status.contains('NO ROLE ASSIGNED')) {
+    final nodeId =
+        (await _garage(['node', 'id', '-q'])).trim().split('@').first;
+    await _garage([
+      'layout', 'assign', '-z', 'dc1', '-c', _garageCapacity(dataDir), nodeId,
+    ]);
+    final layout = await _garage(['layout', 'show']);
+    final current = int.tryParse(
+            RegExp(r'[Cc]urrent cluster layout version:\s*(\d+)')
+                    .firstMatch(layout)
+                    ?.group(1) ??
+                '') ??
+        0;
+    await _garage(['layout', 'apply', '--version', '${current + 1}']);
+  }
+
+  if (!await _garageOk(['key', 'info', adminKey])) {
+    await _garage(
+        ['key', 'import', '--yes', '-n', 'gisila-admin', adminKey, adminSecret]);
+  }
+  await _garage(['key', 'allow', '--create-bucket', adminKey]);
+}
+
+/// The node's capacity for the layout: the data filesystem's size. Garage
+/// uses it to place data, not as a quota; with one node any value works.
+String _garageCapacity(String dataDir) {
+  try {
+    final r = Process.runSync('df', ['-B1G', '--output=size', dataDir]);
+    final gb = int.tryParse((r.stdout as String).split('\n')[1].trim());
+    if (gb != null && gb > 0) return '${gb}G';
+  } catch (_) {}
+  return '100G';
+}
+
+String _randomHex(int bytes) {
+  final rng = Random.secure();
+  return [
+    for (var i = 0; i < bytes; i++)
+      rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
+}
+
+Future<void> _garageUninstall({
+  required String dataDir,
+  required bool purge,
+}) async {
+  await _serviceCtl('stop', 'gisila-garage');
+  await _serviceCtl('disable', 'gisila-garage');
+  await _sudo('rm', ['-f', _garageUnit], failOk: true);
+  await _sudo('systemctl', ['daemon-reload'], failOk: true);
+  if (purge) {
+    await _sudo('rm', ['-rf', dataDir], failOk: true);
+    await _sudo('rm', ['-f', _garageConf], failOk: true);
+  }
+  await Applier().removeGarageVhost();
+}
+
+/// Publish Garage at [hostname] through nginx. TLS as for MinIO: best
+/// effort, the HTTP vhost stays up if certbot fails.
+Future<void> _garageExpose({
+  required String hostname,
+  required int apiPort,
+  required bool tls,
+}) async {
+  final host = AgentValidators.requireHostname(hostname);
+  Future<void> apply() => Applier()
+      .applyGarageVhost(hostname: host, apiPort: apiPort, webPort: apiPort + 2);
+  await apply();
+  if (tls) {
+    try {
+      await Applier().issueCert(host);
+      await apply();
+    } catch (e) {
+      stderr.writeln('[agent] WARNING: could not obtain a TLS certificate for '
+          '"$host"; the HTTP vhost is live. Check its DNS A record and that '
+          'port 80 is reachable, then save the Public URL again. ($e)');
+      stdout.writeln('[agent] Garage exposed over HTTP; TLS pending for $host');
+      return;
+    }
+  }
+  stdout.writeln('[agent] Garage exposed at ${tls ? 'https' : 'http'}://$host');
+}
+
+/// Create [bucket] with a key that can use only it. Idempotent.
+Future<void> _garageBucketCreate({
+  required String adminKey,
+  required String bucket,
+  required String scopedAccessKey,
+  required String scopedSecretKey,
+  required bool public,
+}) async {
+  if (!await _garageOk(['bucket', 'info', bucket])) {
+    await _garage(['bucket', 'create', bucket]);
+  }
+  // Garage never accepts a key ID twice, even after deleting it; the panel
+  // mints a fresh one per bucket.
+  if (!await _garageOk(['key', 'info', scopedAccessKey])) {
+    await _garage(['key', 'import', '--yes', '-n', 'gisila-$bucket',
+        scopedAccessKey, scopedSecretKey]);
+  }
+  // The admin key too, so the panel can empty the bucket before deleting it.
+  for (final key in [scopedAccessKey, adminKey]) {
+    await _garage(['bucket', 'allow', '--read', '--write', '--owner', bucket,
+        '--key', key]);
+  }
+  // Website access = anonymous reads through the nginx vhost.
+  await _garage(['bucket', 'website', public ? '--allow' : '--deny', bucket]);
+  stdout.writeln('[agent] bucket "$bucket" ready on Garage');
 }
 
 // =============================================================================
@@ -4899,12 +5288,26 @@ Future<void> _pgRestore(
   if (!await File(input).exists()) {
     throw Exception('Restore source not found: $input');
   }
+  // Root reads the file into the database, so only a backup the panel made
+  // (under the backup dir, symlinks resolved) may be restored, never an
+  // arbitrary path.
+  final real = File(input).resolveSymbolicLinksSync();
+  final allowed = {
+    _pgBackupBaseDir,
+    if (Platform.environment['GISILA_BACKUP_DIR'] case final dir?
+        when dir.startsWith('/'))
+      dir,
+  };
+  if (!allowed.any((dir) => real.startsWith('$dir/'))) {
+    throw ArgumentError('Restore source must be a backup under '
+        '${allowed.join(' or ')}: $input');
+  }
   final psql = '/usr/lib/postgresql/$version/bin/psql';
   final dropTo = _isRoot ? 'runuser -u postgres -- ' : 'sudo -u postgres ';
   final decompress = input.endsWith('.gz') ? 'gunzip -c' : 'cat';
 
   final inner = 'set -o pipefail; '
-      '$decompress ${_shq(input)} '
+      '$decompress ${_shq(real)} '
       '| $dropTo$psql -p $port -v ON_ERROR_STOP=0 -d ${_shq(dbName)}';
   final cmd = _priv('bash', ['-c', inner]);
   final res = await Process.run(cmd.first, cmd.skip(1).toList());
@@ -4995,9 +5398,18 @@ Future<void> _pyenvEnsureInstalled() async {
     'clone',
     '--depth',
     '1',
+    '--branch',
+    Builders.pyenvTag,
     'https://github.com/pyenv/pyenv.git',
     _pyenvRoot,
   ]);
+  final head =
+      await Process.run('git', ['-C', _pyenvRoot, 'rev-parse', 'HEAD']);
+  if ((head.stdout as String).trim() != Builders.pyenvCommit) {
+    await _run('rm', ['-rf', _pyenvRoot], failOk: true);
+    throw StateError('pyenv ${Builders.pyenvTag} is not at the expected '
+        'commit; not installing it.');
+  }
   // Compile the bash extension for speed (optional, failures are OK).
   await _run('bash', ['-c', 'cd $_pyenvRoot && src/configure && make -C src'],
       failOk: true);

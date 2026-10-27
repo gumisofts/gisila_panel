@@ -1,5 +1,3 @@
-"use client";
-
 import { CheckmarkFilled, Renew, WarningAltFilled } from "@carbon/icons-react";
 import { Button, InlineLoading, Tag } from "@carbon/react";
 import { formatRelative } from "@/lib/utils";

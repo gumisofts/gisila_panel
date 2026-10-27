@@ -18,17 +18,16 @@ class StorageApi {
     return {'results': providers.map(_serializeProvider).toList()};
   }
 
-  @Post('/providers/minio', summary: 'Install the self-hosted MinIO server')
-  Future<Map<String, Object?>> installMinio(
-    InstallMinioForm form,
+  @Post('/providers/garage', summary: 'Install the self-hosted Garage server')
+  Future<Map<String, Object?>> installGarage(
+    InstallGarageForm form,
     StorageService svc,
     RequestContext ctx,
   ) async {
     requireSuperuser(ctx);
-    final p = await svc.installMinio(
+    final p = await svc.installGarage(
       displayName: form.displayName.value!,
-      port: form.port.value ?? 9000,
-      consolePort: form.consolePort.value ?? 9001,
+      port: form.port.value ?? 3900,
       publicUrl: form.publicUrl.value?.isNotEmpty == true
           ? form.publicUrl.value
           : null,
@@ -65,7 +64,7 @@ class StorageApi {
     return _serializeProvider(await svc.findProvider(id));
   }
 
-  @Post('/providers/{id}/start', summary: 'Start the MinIO server')
+  @Post('/providers/{id}/start', summary: 'Start the storage server')
   Future<Map<String, Object?>> startProvider(
     int id,
     StorageService svc,
@@ -75,7 +74,7 @@ class StorageApi {
     return _serializeProvider(await svc.startProvider(id));
   }
 
-  @Post('/providers/{id}/stop', summary: 'Stop the MinIO server')
+  @Post('/providers/{id}/stop', summary: 'Stop the storage server')
   Future<Map<String, Object?>> stopProvider(
     int id,
     StorageService svc,
@@ -85,7 +84,7 @@ class StorageApi {
     return _serializeProvider(await svc.stopProvider(id));
   }
 
-  @Post('/providers/{id}/expose', summary: 'Set the public URL (+ MinIO vhost)')
+  @Post('/providers/{id}/expose', summary: 'Set the public URL (+ nginx vhost)')
   Future<Map<String, Object?>> exposeProvider(
     int id,
     ExposeProviderForm form,

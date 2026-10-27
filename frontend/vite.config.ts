@@ -34,6 +34,7 @@ const API_PREFIXES = [
   "applications",
   "services",
   "databases",
+  "db-engines",
   "mongo",
   "storage",
   "mail",

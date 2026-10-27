@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { Activity, Chip } from "@carbon/icons-react";
 import {

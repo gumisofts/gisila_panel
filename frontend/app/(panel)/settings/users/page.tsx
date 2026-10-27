@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
@@ -39,6 +37,7 @@ import { Page, PageHeader } from "@/components/page";
 import { api, fetcher } from "@/lib/api";
 import type { ListResponse, User } from "@/lib/types";
 import "../_settings.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 const CREATE_FORM_ID = "new-user-form";
 
@@ -115,9 +114,9 @@ export default function UsersPage() {
 
   async function resetTotp(user: User) {
     if (
-      !confirm(
+      !(await confirmDialog(
         `Turn off two-factor authentication for ${user.email}? They will be signed out and can sign in with just their password until they set it up again.`,
-      )
+      ))
     ) {
       return;
     }
@@ -134,7 +133,7 @@ export default function UsersPage() {
   }
 
   async function handleDelete(user: User) {
-    if (!confirm(`Delete ${user.email}? This cannot be undone.`)) return;
+    if (!(await confirmDialog(`Delete ${user.email}? This cannot be undone.`))) return;
     setBusyId(user.id);
     try {
       await api(`/auth/users/${user.id}`, { method: "DELETE" });

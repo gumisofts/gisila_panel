@@ -93,6 +93,25 @@ class AuthApi {
 
   // ── Sessions ───────────────────────────────────────────────────────────────
 
+  @Post('/logout',
+      summary: 'Sign out this session (its token stops working)',
+      statusCode: 200)
+  @RequireAuth()
+  Future<Map<String, Object?>> logout(
+    AuthService auth,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final header = ctx.request.headers['authorization'] ?? '';
+    final token = header.split(RegExp(r'\s+')).last;
+    // API tokens (gsl_…) are revoked from the tokens page, not here.
+    if (!token.startsWith('gsl_')) {
+      await auth.logout(token);
+      await auth.recordEvent(user.id!, 'auth.logout');
+    }
+    return <String, Object?>{'detail': 'Signed out.'};
+  }
+
   @Post(
     '/sessions/revoke',
     summary: 'Sign out every other session; returns a new token for this one',

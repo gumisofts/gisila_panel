@@ -111,7 +111,7 @@ class BackupScheduler {
       'createdAt': now.toIso8601String(),
     }).one(database.context());
 
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:postgres',
       jsonEncode({
         'action': 'backup_database',
@@ -156,7 +156,7 @@ class BackupScheduler {
       'createdAt': now.toIso8601String(),
     }).one(database.context());
 
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:mongo',
       jsonEncode({
         'action': 'backup_database',

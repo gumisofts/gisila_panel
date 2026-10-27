@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import {
   Application,
@@ -20,6 +18,7 @@ import {
 } from "@carbon/react";
 import type { ComponentProps, ElementType } from "react";
 import RouterLink from "@/compat/link";
+import { ErrorState } from "@/components/error-state";
 import { Page, PageHeader, PageSection } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -88,6 +87,14 @@ export default function DashboardPage() {
           )
         }
       />
+
+      {apps.error && !apps.data && (
+        <ErrorState
+          title="Couldn't load your apps"
+          error={apps.error}
+          onRetry={() => apps.mutate()}
+        />
+      )}
 
       <Grid condensed className="gisila-cards">
         <Column sm={2} md={2} lg={4}>

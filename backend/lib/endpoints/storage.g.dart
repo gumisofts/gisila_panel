@@ -25,12 +25,11 @@ extension StorageApiGisilaDoc on StorageApi {
     OpenApiSpec spec, {
     String prefix = '',
   }) {
-    spec.putSchema('InstallMinioForm', <String, Object?>{
+    spec.putSchema('InstallGarageForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
         'displayName': <String, Object?>{'type': 'string'},
         'port': <String, Object?>{'type': 'integer', 'format': 'int64'},
-        'consolePort': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'publicUrl': <String, Object?>{'type': 'string'}
       }
     });
@@ -110,8 +109,8 @@ extension StorageApiGisilaDoc on StorageApi {
           ));
     }
     {
-      final basePath = '$prefix/storage/providers/minio';
-      final openApiPath = '$prefix/storage/providers/minio';
+      final basePath = '$prefix/storage/providers/garage';
+      final openApiPath = '$prefix/storage/providers/garage';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
       router.post(
@@ -122,9 +121,9 @@ extension StorageApiGisilaDoc on StorageApi {
             handler: (RequestContext ctx) async {
               try {
                 final request = ctx.request;
-                final form = await bindForm(request, InstallMinioForm.new);
+                final form = await bindForm(request, InstallGarageForm.new);
                 final svc = ctx.service<StorageService>();
-                final result = await this.installMinio(form, svc, ctx);
+                final result = await this.installGarage(form, svc, ctx);
                 return jsonResponse(body: result, statusCode: 201);
               } on TypeError catch (e) {
                 throw BadRequestException('Invalid request payload ($e)');
@@ -138,12 +137,12 @@ extension StorageApiGisilaDoc on StorageApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Install the self-hosted MinIO server',
+            summary: 'Install the self-hosted Garage server',
             tags: <String>['Storage'],
             parameters: <Parameter>[],
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
-                r'$ref': '#/components/schemas/InstallMinioForm'
+                r'$ref': '#/components/schemas/InstallGarageForm'
               })
             }),
             responses: <String, ResponseSpec>{
@@ -284,7 +283,7 @@ extension StorageApiGisilaDoc on StorageApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Start the MinIO server',
+            summary: 'Start the storage server',
             tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
@@ -335,7 +334,7 @@ extension StorageApiGisilaDoc on StorageApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Stop the MinIO server',
+            summary: 'Stop the storage server',
             tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(
@@ -387,7 +386,7 @@ extension StorageApiGisilaDoc on StorageApi {
           openApiPath,
           'post',
           Operation(
-            summary: 'Set the public URL (+ MinIO vhost)',
+            summary: 'Set the public URL (+ nginx vhost)',
             tags: <String>['Storage'],
             parameters: <Parameter>[
               Parameter(

@@ -7,6 +7,7 @@ import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Alerting + notification delivery: the panel-wide SMTP config, threshold
 /// [AlertRule]s (system / app / postgres / mongo / mail / service / runtime
@@ -211,7 +212,8 @@ class NotificationCore {
     // An empty password means "leave the stored one alone" (the UI never
     // re-displays it, so an empty field is not "the user wants to clear it").
     if (smtpPassword != null && smtpPassword.isNotEmpty) {
-      data['smtpPassword'] = smtpPassword;
+      data['smtpPassword'] =
+          SecretBox.instance.seal(smtpPassword, SecretBox.smtpPassword);
     }
     if (smtpSecurity != null) data['smtpSecurity'] = smtpSecurity;
     if (fromEmail != null) data['fromEmail'] = fromEmail.isEmpty ? null : fromEmail;
@@ -246,7 +248,7 @@ class NotificationCore {
       cfg.smtpHost!,
       port: cfg.smtpPort ?? 587,
       username: cfg.smtpUsername,
-      password: cfg.smtpPassword,
+      password: cfg.plainSmtpPassword,
       ssl: security == 'ssl',
       allowInsecure: security == 'none',
     );
@@ -636,7 +638,7 @@ class NotificationCore {
         cfg.smtpHost!,
         port: cfg.smtpPort ?? 587,
         username: cfg.smtpUsername,
-        password: cfg.smtpPassword,
+        password: cfg.plainSmtpPassword,
         ssl: security == 'ssl',
         allowInsecure: security == 'none',
       );

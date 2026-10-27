@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart'
@@ -124,7 +125,8 @@ class PostgresWorker {
         'status': 'running',
         'installedAt': DateTime.now().toUtc().toIso8601String(),
         'errorMessage': null,
-        'monitorPassword': monitorPassword,
+        'monitorPassword':
+            SecretBox.instance.seal(monitorPassword, SecretBox.pgMonitorPassword),
         if (existingDefault == null) 'isDefault': true,
       });
       try {
@@ -281,7 +283,7 @@ class PostgresWorker {
   Future<void> _ensureMonitor(int instanceId) async {
     final instance = await _findInstance(instanceId);
     if (instance == null) return;
-    final password = instance.monitorPassword;
+    final password = instance.plainMonitorPassword;
     if (password == null || password.isEmpty) {
       logger.w('postgres_worker: ensure_monitor with no password — skipping');
       return;
@@ -359,7 +361,7 @@ class PostgresWorker {
         '--role',
         db.roleName,
         '--password',
-        db.password,
+        db.plainPassword,
         if (extensions.isNotEmpty) ...[
           '--extensions',
           extensions.join(','),

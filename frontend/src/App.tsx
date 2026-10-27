@@ -1,35 +1,40 @@
+import { lazy } from "react";
 import { BrowserRouter, Navigate, Routes, Route, useParams } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/lib/toast";
 import { CarbonTheme } from "@/components/carbon-theme";
+import { ConfirmDialogHost } from "@/components/confirm-dialog";
+import { NotFoundPage } from "@/components/error-state";
 
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
 import LoginPage from "../app/(auth)/login/page";
 import PanelLayout from "../app/(panel)/layout";
-import DashboardPage from "../app/(panel)/dashboard/page";
-import ProjectsPage from "../app/(panel)/projects/page";
-import AppsPage from "../app/(panel)/apps/page";
-import NewAppPage from "../app/(panel)/apps/new/page";
-import AppDetailPage from "../app/(panel)/apps/[id]/page";
-import DomainsPage from "../app/(panel)/domains/page";
-import ApplicationsPage from "../app/(panel)/applications/page";
-import ApplicationDetailPage from "../app/(panel)/applications/[id]/page";
-import ServicesPage from "../app/(panel)/services/page";
-import ServiceDetailPage from "../app/(panel)/services/[id]/page";
-import DatabasesPage from "../app/(panel)/databases/page";
-import InstancePage from "../app/(panel)/databases/[id]/page";
-import MongoInstancePage from "../app/(panel)/databases/mongo/[id]/page";
-import StoragePage from "../app/(panel)/storage/page";
-import MailPage from "../app/(panel)/mail/page";
-import ActivityPage from "../app/(panel)/activity/page";
-import NotificationsPage from "../app/(panel)/notifications/page";
-import TeamsPage from "../app/(panel)/teams/page";
-import SettingsPage from "../app/(panel)/settings/page";
-import TokensPage from "../app/(panel)/settings/tokens/page";
-import SshKeysPage from "../app/(panel)/settings/ssh-keys/page";
-import UsersPage from "../app/(panel)/settings/users/page";
-import NotificationSettingsPage from "../app/(panel)/settings/notifications/page";
+
+// Pages load on first visit; the shell and sign-in stay in the main bundle.
+const DashboardPage = lazy(() => import("../app/(panel)/dashboard/page"));
+const ProjectsPage = lazy(() => import("../app/(panel)/projects/page"));
+const AppsPage = lazy(() => import("../app/(panel)/apps/page"));
+const NewAppPage = lazy(() => import("../app/(panel)/apps/new/page"));
+const AppDetailPage = lazy(() => import("../app/(panel)/apps/[id]/page"));
+const DomainsPage = lazy(() => import("../app/(panel)/domains/page"));
+const ApplicationsPage = lazy(() => import("../app/(panel)/applications/page"));
+const ApplicationDetailPage = lazy(() => import("../app/(panel)/applications/[id]/page"));
+const ServicesPage = lazy(() => import("../app/(panel)/services/page"));
+const ServiceDetailPage = lazy(() => import("../app/(panel)/services/[id]/page"));
+const DatabasesPage = lazy(() => import("../app/(panel)/databases/page"));
+const InstancePage = lazy(() => import("../app/(panel)/databases/[id]/page"));
+const MongoInstancePage = lazy(() => import("../app/(panel)/databases/mongo/[id]/page"));
+const StoragePage = lazy(() => import("../app/(panel)/storage/page"));
+const MailPage = lazy(() => import("../app/(panel)/mail/page"));
+const ActivityPage = lazy(() => import("../app/(panel)/activity/page"));
+const NotificationsPage = lazy(() => import("../app/(panel)/notifications/page"));
+const TeamsPage = lazy(() => import("../app/(panel)/teams/page"));
+const SettingsPage = lazy(() => import("../app/(panel)/settings/page"));
+const TokensPage = lazy(() => import("../app/(panel)/settings/tokens/page"));
+const SshKeysPage = lazy(() => import("../app/(panel)/settings/ssh-keys/page"));
+const UsersPage = lazy(() => import("../app/(panel)/settings/users/page"));
+const NotificationSettingsPage = lazy(() => import("../app/(panel)/settings/notifications/page"));
 
 function LegacyRuntimeRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -102,9 +107,11 @@ export default function App() {
             <Route path="/settings/ssh-keys" element={<SshKeysPage />} />
             <Route path="/settings/users" element={<UsersPage />} />
             <Route path="/settings/notifications" element={<NotificationSettingsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
         <Toaster />
+        <ConfirmDialogHost />
         </CarbonTheme>
       </ThemeProvider>
     </BrowserRouter>

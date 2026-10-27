@@ -1,20 +1,22 @@
-"use client";
-
-import { Navigate, Outlet } from "react-router-dom";
+import { Suspense } from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import Link from "@/compat/link";
 import {
   Content,
+  Loading,
   Header,
   HeaderContainer,
   HeaderMenuButton,
   HeaderName,
   SkipToContent,
 } from "@carbon/react";
+import { ErrorBoundary } from "@/components/error-state";
 import { PanelSideNav } from "@/components/sidebar";
 import { PanelHeaderActions } from "@/components/topbar";
 import { getToken } from "@/lib/api";
 
 export default function PanelLayout() {
+  const { pathname } = useLocation();
   // Guard synchronously during render so logged-out users are redirected before
   // the panel paints (no flash), and the protected API calls inside child pages
   // never fire without a token.
@@ -44,7 +46,14 @@ export default function PanelLayout() {
             />
           </Header>
           <Content>
-            <Outlet />
+            {/* Keyed by path: navigating away clears a crashed page. */}
+            <ErrorBoundary key={pathname}>
+              {/* Pages are code-split; a failed chunk load (e.g. after a
+                  redeploy) lands in the boundary, which offers a reload. */}
+              <Suspense fallback={<Loading withOverlay={false} small />}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
           </Content>
         </>
       )}

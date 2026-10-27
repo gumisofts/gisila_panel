@@ -1,6 +1,5 @@
-"use client";
-
 import useSWR from "swr";
+import { ErrorState } from "@/components/error-state";
 import {
   Area,
   AreaChart,
@@ -35,7 +34,7 @@ const TOOLTIP_STYLE = {
 };
 
 export function MetricsTab({ appId }: { appId: number }) {
-  const { data } = useSWR<MetricsResponse>(
+  const { data, error, mutate } = useSWR<MetricsResponse>(
     `/apps/${appId}/metrics/`,
     fetcher,
     { refreshInterval: 5000 },
@@ -98,7 +97,13 @@ export function MetricsTab({ appId }: { appId: number }) {
         </Tile>
       </Column>
 
-      {points.length === 0 && (
+      {error && !data && (
+        <Column sm={4} md={8} lg={16} className="gisila-app__col">
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </Column>
+      )}
+
+      {!error && points.length === 0 && (
         <Column sm={4} md={8} lg={16} className="gisila-app__col">
           <Tile className="gisila-empty">
             No samples yet. The collector records CPU and memory every ~20s

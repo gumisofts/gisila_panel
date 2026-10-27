@@ -4,7 +4,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:gisila_agent/runtime/build_cache.dart';
 import 'package:gisila_agent/runtime/exec.dart';
+import 'package:gisila_agent/runtime/known_hosts.dart';
 import 'package:gisila_agent/runtime/priv.dart';
+import 'package:gisila_agent/runtime/tenant_fs.dart';
 
 /// Per-runtime build / fetch routines.
 ///
@@ -207,37 +209,36 @@ class Builders {
       releaseDir =
           '$releasesRoot/$id-${DateTime.now().toUtc().millisecondsSinceEpoch}';
     }
-    await ShellExec.run('mkdir', ['-p', releaseDir]);
+    // All of this happens in the tenant's tree, so as the tenant (TenantFs).
+    final fs = TenantFs(user);
+    await fs.claim(releasesRoot);
+    await fs.run(['mkdir', '-p', releaseDir]);
     if (!sourceless) {
-      await ShellExec.run('cp', ['-al', '$staging/.', releaseDir]);
+      await fs.run(['cp', '-al', '$staging/.', releaseDir]);
       // The release is what the app runs from; it has no use for VCS metadata,
       // which also carries the remote URL the deploy key authenticated against.
-      await ShellExec.run('rm', ['-rf', '$releaseDir/.git'],
-          requireSuccess: false);
+      await fs.run(['rm', '-rf', '$releaseDir/.git'], requireSuccess: false);
       // Hosts that predate the venv moving out of the source tree still have
       // one at `<staging>/.venv`, which nothing references any more. Unlink the
       // release's copy rather than hardlink a dead interpreter into every
       // release from here on. The staging copy is left alone on purpose — until
       // this deploy restarts the service, that is still the venv it is running
       // from.
-      await ShellExec.run('rm', ['-rf', '$releaseDir/.venv'],
-          requireSuccess: false);
+      await fs.run(['rm', '-rf', '$releaseDir/.venv'], requireSuccess: false);
     }
-    await _recordReleaseState(workDir, releaseDir, sourceless: sourceless);
-    await ShellExec.run('chown', ['-R', '$user:$user', releaseDir],
-        requireSuccess: false);
+    await _recordReleaseState(fs, workDir, releaseDir, sourceless: sourceless);
 
     if (!sourceless) {
-      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-      await ShellExec.run('ln', ['-sfn', releaseDir, link]);
-      await ShellExec.run('chown', ['-h', '$user:$user', link],
-          requireSuccess: false);
+      await fs.claim('$workDir/current');
+      await fs.run(['mkdir', '-p', '$workDir/current']);
+      await fs.run(['ln', '-sfn', releaseDir, link]);
       stdout.writeln('[agent] published release $id → current/src');
     } else {
       stdout.writeln('[agent] recorded binary release $id');
     }
 
     await _pruneReleases(
+      fs,
       releasesRoot,
       liveTarget: releaseDir,
       keepIds: keepIds,
@@ -246,31 +247,32 @@ class Builders {
     // Releases pinned venv generations; with some of them gone, so may be the
     // generations only they referenced.
     final venv = _linkTarget(venvLink(workDir));
-    if (venv != null) await _pruneVenvs(workDir, liveTarget: venv);
+    if (venv != null) await _pruneVenvs(fs, workDir, liveTarget: venv);
     return releaseDir;
   }
 
   /// Snapshot the out-of-tree runtime state into [releaseDir]/[releaseMetaDir].
-  static Future<void> _recordReleaseState(String workDir, String releaseDir,
+  static Future<void> _recordReleaseState(
+      TenantFs fs, String workDir, String releaseDir,
       {required bool sourceless}) async {
     final meta = '$releaseDir/$releaseMetaDir';
-    await ShellExec.run('rm', ['-rf', meta], requireSuccess: false);
-    await ShellExec.run('mkdir', ['-p', meta]);
+    await fs.run(['rm', '-rf', meta], requireSuccess: false);
+    await fs.run(['mkdir', '-p', meta]);
     final app = File('$workDir/current/app');
     if (app.existsSync()) {
       // A hardlink, not a copy: the next build installs its executable by
       // rename (see [_installExecutable]), which leaves this inode exactly the
       // binary this release ran.
-      final linked = await ShellExec.run('ln', ['-f', app.path, '$meta/app'],
-          requireSuccess: false);
-      if (linked != 0) await ShellExec.run('cp', ['-a', app.path, '$meta/app']);
+      final linked =
+          await fs.run(['ln', '-f', app.path, '$meta/app'], requireSuccess: false);
+      if (linked != 0) await fs.run(['cp', '-a', app.path, '$meta/app']);
     }
     for (final e in _releaseLinks.entries) {
       final target = _linkTarget('$workDir/current/${e.value}');
       if (target == null) continue;
-      await ShellExec.run('ln', ['-sfn', target, '$meta/${e.key}']);
+      await fs.run(['ln', '-sfn', target, '$meta/${e.key}']);
     }
-    if (sourceless) File('$meta/sourceless').writeAsStringSync('');
+    if (sourceless) await fs.writeFile('$meta/sourceless', '');
   }
 
   /// Make an already-published release the one the app runs, without
@@ -326,20 +328,16 @@ class Builders {
       links[e.value] = target;
     }
 
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
+    final fs = TenantFs(user);
+    await fs.claim('$workDir/current');
+    await fs.run(['mkdir', '-p', '$workDir/current']);
     final app = File('$meta/app');
     if (app.existsSync()) await _installExecutable(app.path, workDir, user);
     for (final e in links.entries) {
-      final link = '$workDir/current/${e.key}';
-      await ShellExec.run('ln', ['-sfn', e.value, link]);
-      await ShellExec.run('chown', ['-h', '$user:$user', link],
-          requireSuccess: false);
+      await fs.run(['ln', '-sfn', e.value, '$workDir/current/${e.key}']);
     }
     if (!File('$meta/sourceless').existsSync()) {
-      final link = '$workDir/current/src';
-      await ShellExec.run('ln', ['-sfn', releaseDir, link]);
-      await ShellExec.run('chown', ['-h', '$user:$user', link],
-          requireSuccess: false);
+      await fs.run(['ln', '-sfn', releaseDir, '$workDir/current/src']);
     }
     stdout.writeln('[agent] activated release $releaseId');
     return releaseDir;
@@ -367,6 +365,7 @@ class Builders {
   /// the `web/` subtree (static sites publish their own releases in there).
   /// Best-effort: a failed prune must never fail an otherwise good deploy.
   static Future<void> _pruneReleases(
+    TenantFs fs,
     String releasesRoot, {
     required String liveTarget,
     Set<String>? keepIds,
@@ -400,7 +399,7 @@ class Builders {
     }
     for (final d in dirs) {
       if (!keep.contains(d.path)) {
-        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+        await fs.run(['rm', '-rf', d.path], requireSuccess: false);
       }
     }
   }
@@ -446,9 +445,25 @@ class Builders {
       final userKey = '${keyDir.path}/id';
       await ShellExec.run('install',
           ['-o', user, '-g', user, '-m', '0600', deployKeyPath, userKey]);
+      final pinned = File('${keyDir.path}/pinned_known_hosts')
+        ..writeAsStringSync('${pinnedKnownHosts.join('\n')}\n');
       await ShellExec.run('chown', ['$user:$user', keyDir.path]);
-      env['GIT_SSH_COMMAND'] = 'ssh -i ${Priv.shq(userKey)} -o IdentitiesOnly=yes '
-          '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
+      // Hosts first seen on another host's clone are remembered per app, in
+      // a directory the app user creates (root never writes in the work dir).
+      await ShellExec.run(runuserPath,
+          ['-u', user, '--', 'mkdir', '-p', '-m', '700', '$workDir/.ssh'],
+          env: env);
+      final hostKeys = sshHostKeyOptions(url,
+          pinnedFile: pinned.path,
+          appKnownHostsFile: '$workDir/.ssh/known_hosts');
+      env['GIT_SSH_COMMAND'] = [
+        'ssh',
+        '-i',
+        userKey,
+        '-o',
+        'IdentitiesOnly=yes',
+        ...hostKeys,
+      ].map(Priv.shq).join(' ');
     }
 
     try {
@@ -464,8 +479,10 @@ class Builders {
           : await _tryGitUpdate(
               user: user, src: src, url: url, branch: branch, env: env);
       if (!updated) {
-        await ShellExec.run('rm', ['-rf', src]);
-        await ShellExec.run('install', ['-d', '-o', user, '-g', user, src]);
+        final fs = TenantFs(user);
+        await fs.claim('$workDir/releases');
+        await fs.run(['rm', '-rf', src]);
+        await fs.run(['mkdir', '-p', src]);
         await _gitAsUser(
           user,
           [
@@ -514,7 +531,7 @@ class Builders {
     bool requireSuccess = true,
   }) =>
       ShellExec.run(
-        _runuserPath,
+        runuserPath,
         ['-u', user, '--', 'git', ..._gitProtocolConfig, ...args],
         env: env,
         requireSuccess: requireSuccess,
@@ -528,7 +545,7 @@ class Builders {
     Map<String, String> env,
   ) async {
     final r = await Process.run(
-      _runuserPath,
+      runuserPath,
       ['-u', user, '--', 'git', ..._gitProtocolConfig, ...args],
       environment: env,
     );
@@ -595,9 +612,11 @@ class Builders {
     // a lock file that hasn't changed still skips the install. The uploaded zip
     // wins if it happens to ship its own node_modules/.venv. A force-rebuild
     // skips the stash so the artifacts are wiped with the rest of the tree.
-    if (!noCache) await _stashArtifacts(src, stash);
-    await ShellExec.run('rm', ['-rf', src]);
-    await ShellExec.run('install', ['-d', '-o', user, '-g', user, src]);
+    final fs = TenantFs(user);
+    await fs.claim('$workDir/releases');
+    if (!noCache) await _stashArtifacts(fs, src, stash);
+    await fs.run(['rm', '-rf', src]);
+    await fs.run(['mkdir', '-p', src]);
 
     // The archive is the tenant's, so extract it as the app user, like a git
     // clone: a crafted entry (`../`, an absolute path, a write through a
@@ -611,7 +630,7 @@ class Builders {
           'install', ['-o', user, '-g', user, '-m', '0400', zipPath, copy]);
       await ShellExec.run('chown', ['$user:$user', copyDir.path]);
       await ShellExec.run(
-        _runuserPath,
+        runuserPath,
         ['-u', user, '--', 'unzip', '-q', '-d', src, copy],
         env: _appUserEnv(workDir),
         logPrefix: 'unzip (as $user)',
@@ -619,36 +638,35 @@ class Builders {
     } finally {
       await ShellExec.run('rm', ['-rf', copyDir.path], requireSuccess: false);
     }
-    if (!noCache) await _restoreArtifacts(src, stash);
-    await ShellExec.run('chown', ['-R', '$user:$user', src]);
+    if (!noCache) await _restoreArtifacts(fs, src, stash);
   }
 
   /// Move [_artifactDirs] out of [src] into [stash] before the tree is wiped.
-  static Future<void> _stashArtifacts(String src, String stash) async {
-    await ShellExec.run('rm', ['-rf', stash], requireSuccess: false);
+  static Future<void> _stashArtifacts(
+      TenantFs fs, String src, String stash) async {
+    await fs.run(['rm', '-rf', stash], requireSuccess: false);
     var created = false;
     for (final d in _artifactDirs) {
       if (!Directory('$src/$d').existsSync()) continue;
       if (!created) {
-        Directory(stash).createSync(recursive: true);
+        await fs.run(['mkdir', '-p', stash]);
         created = true;
       }
-      await ShellExec.run('mv', ['$src/$d', '$stash/$d'],
-          requireSuccess: false);
+      await fs.run(['mv', '$src/$d', '$stash/$d'], requireSuccess: false);
     }
   }
 
   /// Restore stashed artifacts into the freshly-extracted [src], unless the new
   /// tree already provides its own copy. The stash is removed either way.
-  static Future<void> _restoreArtifacts(String src, String stash) async {
+  static Future<void> _restoreArtifacts(
+      TenantFs fs, String src, String stash) async {
     for (final d in _artifactDirs) {
       if (Directory('$stash/$d').existsSync() &&
           !Directory('$src/$d').existsSync()) {
-        await ShellExec.run('mv', ['$stash/$d', '$src/$d'],
-            requireSuccess: false);
+        await fs.run(['mv', '$stash/$d', '$src/$d'], requireSuccess: false);
       }
     }
-    await ShellExec.run('rm', ['-rf', stash], requireSuccess: false);
+    await fs.run(['rm', '-rf', stash], requireSuccess: false);
   }
 
   static Future<void> buildDart({
@@ -708,11 +726,29 @@ class Builders {
       String artifact, String workDir, String user) async {
     final dest = '$workDir/current/app';
     final staged = '$workDir/current/.app.incoming';
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('rm', ['-f', staged], requireSuccess: false);
-    await ShellExec.run(
-        'install', ['-m', '0755', '-o', user, '-g', user, artifact, staged]);
-    await ShellExec.run('mv', ['-f', staged, dest]);
+    // Written as the tenant. A build output inside its tree is read as the
+    // tenant too (root `install` would follow a symlink there to any file on
+    // the host). An upload from the panel's artifact store, which the tenant
+    // can't read, is first copied by root into a fresh directory of its own.
+    final fs = TenantFs(user);
+    var source = artifact;
+    Directory? handoff;
+    if (!p.isWithin(workDir, p.normalize(artifact))) {
+      handoff = Directory.systemTemp.createTempSync('gisila_bin_');
+      source = '${handoff.path}/app';
+      await ShellExec.run(
+          'install', ['-m', '0755', '-o', user, '-g', user, artifact, source]);
+      await ShellExec.run('chown', ['$user:$user', handoff.path]);
+    }
+    try {
+      await fs.claim('$workDir/current');
+      await fs.run(['mkdir', '-p', '$workDir/current']);
+      await fs.run(['rm', '-f', staged], requireSuccess: false);
+      await fs.run(['install', '-m', '0755', source, staged]);
+      await fs.run(['mv', '-f', staged, dest]);
+    } finally {
+      handoff?.deleteSync(recursive: true);
+    }
   }
 
   /// Locate the binary produced by a compile step.
@@ -833,10 +869,11 @@ class Builders {
     // Stable symlink so the systemd unit can prepend the right bin dir to PATH.
     final nodeInstallDir =
         '/opt/fnm/node-versions/v$resolvedNode/installation';
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('ln', [
-      '-sfn', nodeInstallDir, '$workDir/current/.runtime'
-    ], requireSuccess: false);
+    final fs = TenantFs(user);
+    await fs.claim('$workDir/current');
+    await fs.run(['mkdir', '-p', '$workDir/current']);
+    await fs.run(['ln', '-sfn', nodeInstallDir, '$workDir/current/.runtime'],
+        requireSuccess: false);
 
     // 3. Neutralise corepack.  Its shims intercept package-manager calls and
     //    try to download the version pinned in package.json's `packageManager`
@@ -1006,7 +1043,7 @@ class Builders {
       depInstallEnv['PATH'] = installEnv['PATH']!;
       // Hand the resolved bin dir to apply-unit (separate agent invocation) so
       // the runtime PATH points at the same pnpm. Read back in _applyUnit.
-      File('$workDir/.pnpm-bin').writeAsStringSync('$pnpmBinDir\n');
+      await fs.writeFile('$workDir/.pnpm-bin', '$pnpmBinDir\n');
     }
 
     // 5. Install dependencies — skipped when the lock file and the pinned Node
@@ -1245,17 +1282,17 @@ class Builders {
       final bunBin = await _ensureBun(bunVersion);
       bunPathPrefix = bunBin.parent.path;
       // Stable symlink for runtime
-      await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-      await ShellExec.run('ln', [
-        '-sfn', bunBin.path, '$workDir/current/.runtime'
-      ], requireSuccess: false);
+      final fs = TenantFs(user);
+      await fs.claim('$workDir/current');
+      await fs.run(['mkdir', '-p', '$workDir/current']);
+      await fs.run(['ln', '-sfn', bunBin.path, '$workDir/current/.runtime'],
+          requireSuccess: false);
       // Named `bun` so PATH / ExecSearchPath lookups of the command succeed.
       // `.runtime` is the binary itself (no bin/ subdirectory); without this
       // extra name, `bun run start` is "command not found" even with
       // PATH=$workDir/current.
-      await ShellExec.run('ln', [
-        '-sfn', bunBin.path, '$workDir/current/bun'
-      ], requireSuccess: false);
+      await fs.run(['ln', '-sfn', bunBin.path, '$workDir/current/bun'],
+          requireSuccess: false);
     }
     // HOME sandbox + optional bun PATH. App env is layered under infra so a
     // user-set HOME cannot escape the workDir.
@@ -1480,10 +1517,10 @@ class Builders {
     final root = venvRoot(workDir);
     final venv =
         '$root/${DateTime.now().toUtc().millisecondsSinceEpoch}';
-    await ShellExec.run('mkdir', ['-p', root]);
-    // The venv itself is created by the app user, so it must own the directory
-    // the generation is created in.
-    await ShellExec.run('chown', ['$user:$user', root], requireSuccess: false);
+    // Made by the app user, which also creates the venv inside it.
+    final fs = TenantFs(user);
+    await fs.claim(root);
+    await fs.run(['mkdir', '-p', root]);
     await _runAsUser(
       user,
       workDir,
@@ -1509,13 +1546,11 @@ class Builders {
   static Future<void> _linkVenv(
       String workDir, String user, String venv) async {
     final link = venvLink(workDir);
-    await ShellExec.run('chown', ['-R', '$user:$user', venv],
-        requireSuccess: false);
-    await ShellExec.run('mkdir', ['-p', '$workDir/current']);
-    await ShellExec.run('ln', ['-sfn', venv, link]);
-    await ShellExec.run('chown', ['-h', '$user:$user', link],
-        requireSuccess: false);
-    await _pruneVenvs(workDir, liveTarget: venv);
+    final fs = TenantFs(user);
+    await fs.claim('$workDir/current');
+    await fs.run(['mkdir', '-p', '$workDir/current']);
+    await fs.run(['ln', '-sfn', venv, link]);
+    await _pruneVenvs(fs, workDir, liveTarget: venv);
   }
 
   /// How many virtualenv generations to keep (the live one always counts toward
@@ -1530,7 +1565,7 @@ class Builders {
 
   /// Delete all but the newest [_keepVenvs] generations under [venvRoot], never
   /// [liveTarget]. Best-effort: a failed prune must not fail a good deploy.
-  static Future<void> _pruneVenvs(String workDir,
+  static Future<void> _pruneVenvs(TenantFs fs, String workDir,
       {required String liveTarget}) async {
     final root = venvRoot(workDir);
     final dir = Directory(root);
@@ -1555,7 +1590,7 @@ class Builders {
     keep.addAll(_venvsPinnedByReleases(workDir));
     for (final d in dirs) {
       if (!keep.contains(d.path)) {
-        await ShellExec.run('rm', ['-rf', d.path], requireSuccess: false);
+        await fs.run(['rm', '-rf', d.path], requireSuccess: false);
       }
     }
   }
@@ -1650,9 +1685,9 @@ class Builders {
     // Create the collect targets up front and hand them to the app user so the
     // unprivileged `collectstatic` can write and nginx (granted an ACL later)
     // can read.
+    final fs = TenantFs(user);
     for (final dir in [staticRoot, mediaRoot]) {
-      await ShellExec.run('mkdir', ['-p', dir]);
-      await ShellExec.run('chown', ['-R', '$user:$user', dir]);
+      await fs.run(['mkdir', '-p', dir]);
     }
 
     // Resolve the project's settings module so the shim can re-export it.
@@ -1661,12 +1696,12 @@ class Builders {
     if (settingsModule != null) {
       const shimModule = '_gisila_static_settings';
       final shim = File('$src/$shimModule.py');
-      shim.writeAsStringSync(
+      await fs.writeFile(
+        shim.path,
         '# Generated by gisila-agent — overrides STATIC_ROOT for collectstatic.\n'
         'from $settingsModule import *  # noqa: F401,F403\n'
         'STATIC_ROOT = r"$staticRoot"\n',
       );
-      await ShellExec.run('chown', ['$user:$user', shim.path]);
       settingsArg = ' --settings=$shimModule';
       stdout.writeln(
           '[agent] Django collectstatic → $staticRoot (settings shim over '
@@ -1736,16 +1771,28 @@ class Builders {
       );
 
   /// Install pyenv at [root] if absent.
+  /// Pinned pyenv release and the commit its tag points at. python-build
+  /// checks the CPython tarballs it downloads against its own checksums.
+  static const pyenvTag = 'v2.8.14';
+  static const pyenvCommit = '3fb25668b463ad38ac2db6092dbf476ef744c0ca';
+
   static Future<void> _ensurePyenv(String root) async {
     if (Directory('$root/bin').existsSync()) return;
-    // Clone pyenv.
     await ShellExec.run('git', [
       'clone',
       '--depth',
       '1',
+      '--branch',
+      pyenvTag,
       'https://github.com/pyenv/pyenv.git',
       root,
     ]);
+    final head = await Process.run('git', ['-C', root, 'rev-parse', 'HEAD']);
+    if ((head.stdout as String).trim() != pyenvCommit) {
+      await ShellExec.run('rm', ['-rf', root], requireSuccess: false);
+      throw StateError('pyenv $pyenvTag is not at the expected commit '
+          '$pyenvCommit; not installing it.');
+    }
     // Build the bash extension for speed.
     await ShellExec.run(
         'bash', ['-c', 'cd $root && src/configure && make -C src'],
@@ -2076,14 +2123,65 @@ class Builders {
     Directory(dir).createSync(recursive: true);
     stdout.writeln('[agent] Downloading Dart SDK $version ($arch)…');
     final archive = '$dir/dart-sdk.zip';
-    await ShellExec.run('curl', [
-      '-fSL', '--output', archive,
-      'https://storage.googleapis.com/dart-archive/channels/stable/release/'
-          '$version/sdk/dartsdk-linux-$arch-release.zip',
-    ]);
+    final url = 'https://storage.googleapis.com/dart-archive/channels/stable/'
+        'release/$version/sdk/dartsdk-linux-$arch-release.zip';
+    await downloadVerified(
+        url, archive, await publishedSha256('$url.sha256sum'));
     await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
     await ShellExec.run('rm', ['-f', archive]);
     return bin;
+  }
+
+  // ── Verified downloads ────────────────────────────────────────────────────
+  //
+  // Toolchains are downloaded as root, so each archive is checked against a
+  // SHA-256 before anything is unpacked or run: the vendor's published
+  // checksum file, or a hash pinned here when the vendor publishes none.
+
+  /// Downloads [url] to [dest] and checks it against [sha256] (hex). On a
+  /// mismatch the file is deleted and the install fails.
+  static Future<void> downloadVerified(
+      String url, String dest, String sha256) async {
+    await ShellExec.run('curl', [
+      '--proto', '=https', '--tlsv1.2', '-fSL', '--retry', '3',
+      '--output', dest, url,
+    ]);
+    final sum = await Process.run('sha256sum', [dest]);
+    final got = (sum.stdout as String).split(' ').first.trim().toLowerCase();
+    if (sum.exitCode != 0 || got != sha256.trim().toLowerCase()) {
+      await ShellExec.run('rm', ['-f', dest], requireSuccess: false);
+      throw StateError('Checksum mismatch for $url: expected $sha256, '
+          'got ${got.isEmpty ? 'nothing' : got}. Not installing it.');
+    }
+  }
+
+  /// The SHA-256 a vendor publishes for a download: the first word of
+  /// [checksumUrl]'s body, or of its line naming [fileName] when the file
+  /// lists several (`SHASUMS256.txt`).
+  static Future<String> publishedSha256(String checksumUrl,
+      {String? fileName}) async {
+    final r = await Process.run('curl', [
+      '--proto', '=https', '--tlsv1.2', '-fsSL', '--retry', '3', checksumUrl,
+    ]);
+    if (r.exitCode != 0) {
+      throw StateError('Could not fetch the checksum at $checksumUrl');
+    }
+    final lines = (r.stdout as String)
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty);
+    final line = fileName == null
+        ? lines.firstOrNull
+        : lines.where((l) {
+            final name = l.split(RegExp(r'\s+')).last.replaceFirst('*', '');
+            return name == fileName || name.endsWith('/$fileName');
+          }).firstOrNull;
+    final sha = line?.split(RegExp(r'\s+')).first ?? '';
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(sha)) {
+      throw StateError('No SHA-256 for ${fileName ?? 'the download'} at '
+          '$checksumUrl');
+    }
+    return sha;
   }
 
   // ── Go version management ─────────────────────────────────────────────────
@@ -2108,10 +2206,9 @@ class Builders {
       Directory(dir).createSync(recursive: true);
       stdout.writeln('[agent] Downloading Go $version ($arch)…');
       final archive = '$dir/go.tar.gz';
-      await ShellExec.run('curl', [
-        '-fSL', '--output', archive,
-        'https://go.dev/dl/go$version.linux-$arch.tar.gz',
-      ]);
+      final file = 'go$version.linux-$arch.tar.gz';
+      await downloadVerified('https://go.dev/dl/$file', archive,
+          await publishedSha256('https://dl.google.com/go/$file.sha256'));
       await ShellExec.run('tar', ['-C', dir, '-xzf', archive]);
       await ShellExec.run('rm', ['-f', archive]);
     }
@@ -2137,16 +2234,39 @@ class Builders {
     }
     await _ensureHostTools(['curl', 'ca-certificates']);
     stdout.writeln('[agent] Installing rustup…');
-    await ShellExec.run('bash', [
-      '-c',
-      'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path',
-    ], requireSuccess: false);
+    // rustup-init itself (what https://sh.rustup.rs downloads), verified
+    // against its published checksum instead of piping a script into sh.
+    final triple = switch (_hostMachine()) {
+      'x86_64' => 'x86_64-unknown-linux-gnu',
+      'aarch64' => 'aarch64-unknown-linux-gnu',
+      final m => throw StateError('Unsupported host architecture for '
+          'rustup: $m'),
+    };
+    final url = 'https://static.rust-lang.org/rustup/dist/$triple/rustup-init';
+    final tmp = Directory.systemTemp.createTempSync('gisila_rustup_');
+    try {
+      final init = '${tmp.path}/rustup-init';
+      await downloadVerified(url, init, await publishedSha256('$url.sha256'));
+      await ShellExec.run('chmod', ['+x', init]);
+      await ShellExec.run(init, ['-y', '--no-modify-path'],
+          requireSuccess: false);
+    } finally {
+      tmp.deleteSync(recursive: true);
+    }
   }
 
   // ── Node.js / fnm version management ─────────────────────────────────────
 
   static const _fnmDir = '/opt/fnm';
   static const _fnmBin = '/usr/local/bin/fnm';
+
+  /// Pinned fnm release; the hashes are of its `fnm-linux.zip` and
+  /// `fnm-arm64.zip` (computed 2026-10-28). Update all three together.
+  static const _fnmVersion = '1.39.0';
+  static const _fnmSha256X64 =
+      '7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224';
+  static const _fnmSha256Arm64 =
+      '4eaff58b2c5bf30d0934027572dd0b5bbb60d2a1af309230b53662d4b1d45599';
 
   /// Pick the Node version for a build: explicit pin, else newest installed
   /// under fnm. Throws a clear error when nothing is installed so the admin
@@ -2196,11 +2316,28 @@ class Builders {
         await ShellExec.run('rm', ['-f', _fnmBin], requireSuccess: false);
       }
       await _ensureHostTools(['curl', 'ca-certificates', 'unzip']);
-      stdout.writeln('[agent] Installing fnm…');
-      await ShellExec.run('bash', [
-        '-c',
-        'curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir /usr/local/bin --skip-shell',
-      ]);
+      stdout.writeln('[agent] Installing fnm $_fnmVersion…');
+      // fnm publishes no checksums, so the release zips are pinned here.
+      final (asset, sha) = switch (_hostMachine()) {
+        'x86_64' => ('fnm-linux.zip', _fnmSha256X64),
+        'aarch64' => ('fnm-arm64.zip', _fnmSha256Arm64),
+        final m =>
+          throw StateError('Unsupported host architecture for fnm: $m'),
+      };
+      final tmp = Directory.systemTemp.createTempSync('gisila_fnm_');
+      try {
+        final zip = '${tmp.path}/$asset';
+        await downloadVerified(
+            'https://github.com/Schniz/fnm/releases/download/'
+            'v$_fnmVersion/$asset',
+            zip,
+            sha);
+        await ShellExec.run('unzip', ['-q', '-o', '-d', tmp.path, zip]);
+        await ShellExec.run(
+            'install', ['-m', '0755', '${tmp.path}/fnm', _fnmBin]);
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
     }
 
     // 2. Install the requested Node version if absent or wrong-arch.
@@ -2252,10 +2389,11 @@ class Builders {
     Directory(dir).createSync(recursive: true);
     stdout.writeln('[agent] Downloading Bun $version ($arch)…');
     final archive = '$dir/$asset.zip';
-    await ShellExec.run('curl', [
-      '-fSL', '--output', archive,
-      'https://github.com/oven-sh/bun/releases/download/bun-v$version/$asset.zip',
-    ]);
+    final release =
+        'https://github.com/oven-sh/bun/releases/download/bun-v$version';
+    await downloadVerified('$release/$asset.zip', archive,
+        await publishedSha256('$release/SHASUMS256.txt',
+            fileName: '$asset.zip'));
     await ShellExec.run('unzip', ['-q', '-d', dir, archive]);
     // The zip extracts to `bun-linux-<arch>/bun` — move it up.
     final extracted = File('$dir/$asset/bun');
@@ -2549,7 +2687,7 @@ class Builders {
       // By absolute path: Process.start resolves a bare name against the
       // CHILD's PATH, which here is the app's — so `runuser` could otherwise be
       // a binary the tenant planted and root would execute it.
-      _runuserPath,
+      runuserPath,
       ['-u', user, '--', 'bash', '-lc', wrapped],
       cwd: cwd,
       env: rootEnv,
@@ -2557,7 +2695,7 @@ class Builders {
     );
   }
 
-  static final String _runuserPath = const [
+  static final String runuserPath = const [
     '/usr/sbin/runuser',
     '/sbin/runuser',
     '/usr/bin/runuser',

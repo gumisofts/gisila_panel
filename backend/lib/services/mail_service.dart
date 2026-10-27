@@ -203,7 +203,7 @@ class MailService extends Service {
   }
 
   /// Enqueue a full sync. Public so the endpoint and worker can both call it.
-  Future<void> enqueueSync() => RedisClient.instance.rpush(
+  Future<void> enqueueSync() => RedisClient.instance.enqueueJob(
         'gisila:queue:mail',
         jsonEncode({'action': 'sync'}),
       );
@@ -244,7 +244,7 @@ class MailService extends Service {
   /// Enqueue installation of the mail tooling. The worker runs `mail setup`
   /// (apt install + base config) under sudo; the panel polls [isStackInstalled]
   /// to learn when it has finished.
-  Future<void> enqueueInstall() => RedisClient.instance.rpush(
+  Future<void> enqueueInstall() => RedisClient.instance.enqueueJob(
         'gisila:queue:mail',
         jsonEncode({'action': 'setup'}),
       );
@@ -253,7 +253,7 @@ class MailService extends Service {
   /// action [HealthMonitorWorker] enqueues automatically when a periodic
   /// probe finds the stack unhealthy, exposed here for the panel's
   /// superuser-only "Repair now" button.
-  Future<void> enqueueRepair() => RedisClient.instance.rpush(
+  Future<void> enqueueRepair() => RedisClient.instance.enqueueJob(
         'gisila:queue:mail',
         jsonEncode({'action': 'repair'}),
       );

@@ -1,17 +1,16 @@
 import 'package:gisila/gisila.dart';
 
-/// `POST /storage/providers/minio` — install the self-hosted MinIO server.
-class InstallMinioForm extends Form {
+/// `POST /storage/providers/garage` — install the self-hosted Garage server.
+class InstallGarageForm extends Form {
   final displayName =
       StringField(name: 'displayName', required: true, maxLength: 128);
+  // S3 API port; Garage also uses port+1 (RPC) and port+2 (website).
   final port = IntField(name: 'port');
-  final consolePort = IntField(name: 'consolePort');
-  // Optional public base URL for reads (nginx-fronted MinIO or a CDN).
+  // Optional public URL (nginx-fronted Garage).
   final publicUrl = StringField(name: 'publicUrl', maxLength: 255);
 
   @override
-  List<FormField<Object?>> collectFields() =>
-      [displayName, port, consolePort, publicUrl];
+  List<FormField<Object?>> collectFields() => [displayName, port, publicUrl];
 }
 
 /// `POST /storage/providers/external` — register an external S3 endpoint.

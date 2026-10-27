@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
@@ -35,7 +33,8 @@ import {
 import { Page, PageHeader, PageSection } from "@/components/page";
 import { AlertRulesManager } from "@/components/alert-rules-manager";
 import { HealthBadge, RepairButton } from "@/components/health-badge";
-import { api, fetcher, getToken, getWsBase } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
+import { openLogSocket } from "@/lib/log-socket";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";
 import type {
@@ -47,6 +46,7 @@ import type {
 import { toast } from "@/lib/toast";
 import { PgBouncerConfig } from "./_panels/pgbouncer-config";
 import "../_services.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 // ── Status display ────────────────────────────────────────────────────────────
 
@@ -224,8 +224,6 @@ export default function ServiceDetailPage() {
 
 // ── Live install / lifecycle logs ──────────────────────────────────────────────
 
-const WS_BASE = getWsBase();
-
 interface SvcLogLine {
   ts: string;
   stream: string;
@@ -243,72 +241,18 @@ function ServiceLogPanel({
   const endRef = useRef<HTMLDivElement>(null);
   const active = ["installing", "pending", "uninstalling"].includes(status);
 
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    let closed = false;
-
-    function connect() {
-      ws = new WebSocket(`${WS_BASE}/services/${serviceId}/logs`);
-
-      ws.onopen = () => {
-        attempt = 0;
+  useEffect(
+    () =>
+      openLogSocket({
+        path: `/services/${serviceId}/logs`,
+        auth: { serviceId },
         // History replays the full buffer, so reset to avoid duplicates.
-        setLines([]);
-        ws?.send(JSON.stringify({ token, serviceId }));
-      };
-
-      ws.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data);
-          if (data.error) return;
-          const raw =
-            typeof data.message === "string"
-              ? data.message
-              : JSON.stringify(data.message);
-          let parsed: { stream?: string; line?: string } = {};
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            parsed = { line: raw };
-          }
-          setLines((prev) =>
-            [
-              ...prev,
-              {
-                ts: data.ts ?? new Date().toISOString(),
-                stream: parsed.stream ?? "stdout",
-                line: parsed.line ?? raw,
-              },
-            ].slice(-1000),
-          );
-        } catch {
-          /* ignore */
-        }
-      };
-
-      ws.onclose = () => {
-        if (closed) return;
-        const delay = Math.min(1000 * 2 ** attempt, 10000);
-        attempt += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-
-      ws.onerror = () => ws?.close();
-    }
-
-    connect();
-
-    return () => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
-    };
-  }, [serviceId]);
+        onConnect: () => setLines([]),
+        onLine: ({ ts, stream, line }) =>
+          setLines((prev) => [...prev, { ts, stream, line }].slice(-1000)),
+      }),
+    [serviceId],
+  );
 
   useEffect(() => {
     scrollLogPaneToBottom(endRef.current);
@@ -343,7 +287,7 @@ function ServiceLogPanel({
               }
             >
               <span className="gisila-logs__ts">{l.ts.slice(11, 19)}</span>
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))
         )}

@@ -125,6 +125,8 @@ Future<GisilaStudio> _buildStudio() async {
     listDisplay: ['id', 'app_id', 'name', 'isSecret', 'updatedAt'],
     searchFields: ['name'],
     readonlyFields: ['id'],
+    // Encrypted at rest (SecretBox); edit values in the panel.
+    excludeFields: ['value'],
     ordering: ['app_id', 'name'],
     group: 'Projects',
   );
@@ -145,6 +147,8 @@ Future<GisilaStudio> _buildStudio() async {
       'finishedAt',
     ],
     readonlyFields: ['id', 'createdAt'],
+    // Encrypted env snapshot (SecretBox).
+    excludeFields: ['deployConfig'],
     ordering: ['-createdAt'],
     group: 'Deployments',
   );

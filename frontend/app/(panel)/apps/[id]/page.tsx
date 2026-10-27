@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR from "swr";
@@ -28,11 +26,12 @@ import {
 } from "@carbon/icons-react";
 import RouterLink from "@/compat/link";
 import { toast } from "@/lib/toast";
-import { api, fetcher } from "@/lib/api";
+import { ApiError, api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 import type { App } from "@/lib/types";
 import { EXPOSE_MODE_LABEL } from "@/lib/types";
+import { ErrorState, NotFoundPage } from "@/components/error-state";
 import { Page, PageHeader } from "@/components/page";
 import { OverviewTab } from "./_tabs/overview";
 import { DeploymentsTab } from "./_tabs/deployments";
@@ -92,7 +91,7 @@ export default function AppDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const appId = Number(params.id);
-  const { data: app, mutate } = useSWR<App>(`/apps/${appId}`, fetcher, {
+  const { data: app, error, mutate } = useSWR<App>(`/apps/${appId}`, fetcher, {
     refreshInterval: 5000,
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -100,6 +99,19 @@ export default function AppDetailPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const { canForProject } = usePermissions();
+
+  if (!app && error) {
+    // A missing app (or one in a team you're not in) is a 404 from the API;
+    // without this the page would show its loading skeleton forever.
+    return error instanceof ApiError && error.status === 404 ? (
+      <NotFoundPage />
+    ) : (
+      <Page>
+        <PageHeader title="App" />
+        <ErrorState error={error} onRetry={() => mutate()} />
+      </Page>
+    );
+  }
 
   if (!app) {
     return (

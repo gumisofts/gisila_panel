@@ -1,10 +1,8 @@
-"use client";
-
 import { useState } from "react";
 import { Button, PasswordInput, Stack, TextInput } from "@carbon/react";
 import { useRouter } from "@/compat/navigation";
 import { toast } from "@/lib/toast";
-import { api, setToken } from "@/lib/api";
+import { api, clearCachedData, setToken } from "@/lib/api";
 import type { LoginResponse, User } from "@/lib/types";
 import "../../(panel)/_batch-a.scss";
 
@@ -19,6 +17,7 @@ export default function LoginPage() {
 
   function signedIn(access: string) {
     setToken(access);
+    clearCachedData();
     toast.success("Welcome back");
     router.push("/dashboard");
   }

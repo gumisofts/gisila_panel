@@ -26,7 +26,8 @@ import 'package:gisila_panel/config.dart';
 ///   GET /ws/services/{id}/logs                      → live service install logs
 ///
 /// Authentication: the client sends a single JSON text frame immediately after
-/// the socket opens carrying the JWT and the relevant ids, e.g.
+/// the socket opens carrying the JWT and the relevant ids (the server answers
+/// `{"ready": true}`, or `{"error": ...}` and closes), e.g.
 ///   { "token": "<jwt>", "appId": 1 }
 ///   { "token": "<jwt>", "appId": 1, "deploymentId": 7 }
 ///   { "token": "<jwt>", "serviceId": 3 }
@@ -157,6 +158,9 @@ Future<void> _authThen(
       try {
         final auth = await _authenticate(webSocket, database, raw, requireApp);
         if (auth == null) return; // error already sent + socket closed
+        // Tells the client it is authenticated before any line arrives, so
+        // it doesn't show "Live" for a socket about to be refused.
+        webSocket.sink.add(jsonEncode({'ready': true}));
         handlerFuture = handler(auth, closed.future);
         await handlerFuture;
       } catch (e) {

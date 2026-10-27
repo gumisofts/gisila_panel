@@ -3,6 +3,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 class EnvsService extends Service {
   Database get _db => db<Database>();
@@ -10,10 +11,11 @@ class EnvsService extends Service {
   Future<List<EnvVar>> list(User actor, int appId) async {
     final appsSvc = AppsService()..attach(ctx);
     final app = await appsSvc.findForUser(actor, appId);
-    return Query<EnvVar>(EnvVarTable.metadata)
+    final rows = await Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.appId.eq(app.id!))
         .orderBy(EnvVarTable.name)
         .all(_db.context());
+    return [for (final e in rows) e.opened()];
   }
 
   Future<EnvVar> upsert(
@@ -32,25 +34,28 @@ class EnvsService extends Service {
         .first(_db.context());
 
     final now = DateTime.now().toUtc().toIso8601String();
+    final sealed = SecretBox.instance.sealOrNull(value, SecretBox.envVarValue);
     if (existing == null) {
-      return Query<EnvVar>(EnvVarTable.metadata).insert(<String, Object?>{
+      final row = await Query<EnvVar>(EnvVarTable.metadata)
+          .insert(<String, Object?>{
         'appId': app.id,
         'name': name,
-        'value': value,
+        'value': sealed,
         'isSecret': isSecret,
         'updatedAt': now,
       }).one(_db.context());
+      return row.opened();
     }
     final rows = await Query<EnvVar>(EnvVarTable.metadata)
         .where(EnvVarTable.id.eq(existing.id!))
         .update(<String, Object?>{
       // An omitted value keeps the stored one: secrets are never sent to
       // clients, so an edit that only flips `isSecret` has no value to send.
-      if (value != null) 'value': value,
+      if (value != null) 'value': sealed,
       'isSecret': isSecret,
       'updatedAt': now,
     }).run(_db.context());
-    return rows.first;
+    return rows.first.opened();
   }
 
   Future<void> bulkUpsert(

@@ -1,5 +1,3 @@
-"use client";
-
 import { WarningAltFilled } from "@carbon/icons-react";
 import { PageSection } from "@/components/page";
 import { AlertRulesManager } from "@/components/alert-rules-manager";

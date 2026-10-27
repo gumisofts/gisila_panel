@@ -3,11 +3,15 @@ import 'dart:io';
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Handles async object-storage jobs from the [gisila:queue:storage] queue.
 ///
-/// Actions: install_minio | uninstall_minio | start_minio | stop_minio |
-///          create_bucket | delete_bucket
+/// Actions: install_server | uninstall_server | start_server | stop_server |
+///          expose_server | create_bucket | delete_bucket. The server actions
+/// act on the provider's kind (`garage`, or `minio` on hosts installed before
+/// MinIO stopped publishing downloads); the `*_minio` names are accepted for
+/// jobs queued by an older panel.
 class StorageWorker {
   StorageWorker(this.database);
 
@@ -17,18 +21,18 @@ class StorageWorker {
     final action = payload['action'] as String?;
     if (action == null) return;
     switch (action) {
-      case 'install_minio':
-        await _installMinio(payload['providerId'] as int);
-      case 'uninstall_minio':
-        await _uninstallMinio(payload['providerId'] as int);
-      case 'start_minio':
-        await _lifecycleMinio(payload['providerId'] as int, 'start-minio',
+      case 'install_server' || 'install_minio':
+        await _installServer(payload['providerId'] as int);
+      case 'uninstall_server' || 'uninstall_minio':
+        await _uninstallServer(payload['providerId'] as int);
+      case 'start_server' || 'start_minio':
+        await _lifecycle(payload['providerId'] as int, 'start',
             okStatus: 'running');
-      case 'stop_minio':
-        await _lifecycleMinio(payload['providerId'] as int, 'stop-minio',
+      case 'stop_server' || 'stop_minio':
+        await _lifecycle(payload['providerId'] as int, 'stop',
             okStatus: 'stopped');
-      case 'expose_minio':
-        await _exposeMinio(
+      case 'expose_server' || 'expose_minio':
+        await _expose(
           payload['providerId'] as int,
           issueCert: payload['issueCert'] as bool?,
         );
@@ -49,7 +53,7 @@ class StorageWorker {
 
   // ── Providers ───────────────────────────────────────────────────────────────
 
-  Future<void> _installMinio(int providerId) async {
+  Future<void> _installServer(int providerId) async {
     final p = await _findProvider(providerId);
     if (p == null) return;
     await _patchProvider(providerId, {'status': 'installing'});
@@ -57,25 +61,26 @@ class StorageWorker {
       final port = Uri.parse(p.endpoint).port;
       await _runAgent([
         'storage',
-        'install-minio',
-        '--data-dir', _minioDataDir,
+        'install-${p.kind}',
+        '--data-dir', _dataDir(p.kind),
         '--port', '$port',
-        '--console-port', '${p.consolePort ?? 9001}',
+        if (p.kind == 'minio')
+          ...['--console-port', '${p.consolePort ?? 9001}'],
         '--root-user', p.accessKey,
-        '--root-secret', p.secretKey,
+        '--root-secret', p.plainSecretKey,
       ]);
       await _patchProvider(providerId, {
         'status': 'running',
         'installedAt': DateTime.now().toUtc().toIso8601String(),
         'errorMessage': null,
       });
-      // If a public URL was configured at install time, front MinIO with nginx
-      // so that URL actually serves (MinIO binds 127.0.0.1 only).
+      // If a public URL was configured at install time, front the server with
+      // nginx so that URL actually serves (it binds 127.0.0.1 only).
       if ((p.publicUrl ?? '').isNotEmpty) {
-        await _exposeMinio(providerId);
+        await _expose(providerId);
       }
     } catch (e) {
-      logger.e('storage_worker: minio install failed', error: e);
+      logger.e('storage_worker: ${p.kind} install failed', error: e);
       await _patchProvider(providerId, {
         'status': 'failed',
         'errorMessage': e.toString(),
@@ -83,17 +88,17 @@ class StorageWorker {
     }
   }
 
-  Future<void> _uninstallMinio(int providerId) async {
+  Future<void> _uninstallServer(int providerId) async {
     final p = await _findProvider(providerId);
     if (p == null) return;
     try {
       await _runAgent([
         'storage',
-        'uninstall-minio',
-        '--data-dir', _minioDataDir,
+        'uninstall-${p.kind}',
+        '--data-dir', _dataDir(p.kind),
       ]);
     } catch (e) {
-      logger.w('storage_worker: minio uninstall error (continuing): $e');
+      logger.w('storage_worker: ${p.kind} uninstall error (continuing): $e');
     }
     await Query<StorageProvider>(StorageProviderTable.metadata)
         .where(StorageProviderTable.id.eq(providerId))
@@ -101,12 +106,12 @@ class StorageWorker {
         .run(database.context());
   }
 
-  Future<void> _lifecycleMinio(int providerId, String agentAction,
+  Future<void> _lifecycle(int providerId, String verb,
       {required String okStatus}) async {
     final p = await _findProvider(providerId);
     if (p == null) return;
     try {
-      await _runAgent(['storage', agentAction]);
+      await _runAgent(['storage', '$verb-${p.kind}']);
       await _patchProvider(providerId, {'status': okStatus, 'errorMessage': null});
     } catch (e) {
       await _patchProvider(providerId, {
@@ -116,15 +121,18 @@ class StorageWorker {
     }
   }
 
-  /// (Re)create or remove the nginx reverse-proxy vhost for MinIO's public URL.
+  /// (Re)create or remove the nginx reverse-proxy vhost for the server's
+  /// public URL.
   ///
   /// [issueCert] controls whether certbot is run: when null it defaults to
   /// "yes, if the URL is https" (e.g. the post-install auto-expose). Callers can
   /// pass false to skip issuance entirely — useful when TLS is terminated
   /// upstream (Cloudflare proxy, an external load balancer).
-  Future<void> _exposeMinio(int providerId, {bool? issueCert}) async {
+  Future<void> _expose(int providerId, {bool? issueCert}) async {
     final p = await _findProvider(providerId);
-    if (p == null || p.kind != 'minio') return;
+    if (p == null) return;
+    if (p.kind == 'garage') return _exposeGarage(p, issueCert: issueCert);
+    if (p.kind != 'minio') return;
     final url = (p.publicUrl ?? '').trim();
     final consoleUrl = (p.consoleUrl ?? '').trim();
     final apiPort = Uri.parse(p.endpoint).port;
@@ -157,6 +165,28 @@ class StorageWorker {
     }
   }
 
+  /// Garage has no console: one vhost, S3 API plus anonymous reads.
+  Future<void> _exposeGarage(StorageProvider p, {bool? issueCert}) async {
+    final url = (p.publicUrl ?? '').trim();
+    try {
+      if (url.isEmpty) {
+        await _runAgent(['storage', 'unexpose-garage']);
+        return;
+      }
+      final uri = Uri.parse(url);
+      await _runAgent([
+        'storage',
+        'expose-garage',
+        '--hostname', uri.host,
+        '--port', '${Uri.parse(p.endpoint).port}',
+        if ((issueCert ?? true) && uri.scheme == 'https') '--tls',
+      ]);
+    } catch (e) {
+      logger.w('storage_worker: garage expose error (continuing): $e');
+      await _patchProvider(p.id!, {'errorMessage': 'Expose failed: $e'});
+    }
+  }
+
   // ── Buckets ─────────────────────────────────────────────────────────────────
 
   Future<void> _createBucket(int providerId, int bucketId) async {
@@ -168,12 +198,13 @@ class StorageWorker {
         'storage',
         'create-bucket',
         '--kind', p.kind,
+        '--region', p.region ?? 'us-east-1',
         '--endpoint', p.endpoint,
         '--access-key', p.accessKey,
-        '--secret-key', p.secretKey,
+        '--secret-key', p.plainSecretKey,
         '--bucket', b.bucketName,
         '--scoped-access-key', b.accessKey,
-        '--scoped-secret-key', b.secretKey,
+        '--scoped-secret-key', b.plainSecretKey,
         if (b.isPublic == true) '--public',
       ]);
       await _patchBucket(bucketId, {'status': 'active', 'errorMessage': null});
@@ -195,9 +226,10 @@ class StorageWorker {
           'storage',
           'delete-bucket',
           '--kind', p.kind,
+          '--region', p.region ?? 'us-east-1',
           '--endpoint', p.endpoint,
           '--access-key', p.accessKey,
-          '--secret-key', p.secretKey,
+          '--secret-key', p.plainSecretKey,
           '--bucket', b.bucketName,
           '--scoped-access-key', b.accessKey,
         ]);
@@ -214,7 +246,7 @@ class StorageWorker {
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  static const _minioDataDir = '/var/lib/gisila/minio';
+  static String _dataDir(String kind) => '/var/lib/gisila/$kind';
 
   Future<StorageProvider?> _findProvider(int id) =>
       Query<StorageProvider>(StorageProviderTable.metadata)

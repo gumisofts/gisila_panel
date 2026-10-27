@@ -1,8 +1,7 @@
-"use client";
-
 import type { ComponentProps, ElementType } from "react";
 import RouterLink from "@/compat/link";
 import useSWR from "swr";
+import { ErrorState } from "@/components/error-state";
 import { Earth } from "@carbon/icons-react";
 import { ClickableTile, Stack, Tag, Tile } from "@carbon/react";
 import { Page, PageHeader } from "@/components/page";
@@ -56,6 +55,9 @@ export default function DomainsPage() {
             </div>
           </LinkTile>
         ))}
+        {apps.error && !apps.data && (
+          <ErrorState error={apps.error} onRetry={() => apps.mutate()} />
+        )}
         {apps.data?.results.length === 0 && (
           <Tile className="gisila-empty">
             You don&rsquo;t have any apps yet.

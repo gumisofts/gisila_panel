@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, useState } from "react";
 import useSWR from "swr";
 import {
@@ -42,6 +40,7 @@ import {
   type AppLimits,
   type ListResponse,
 } from "@/lib/types";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 /// Metrics available per scope — mirrors what `AlertEvaluator` actually knows
 /// how to sample (see backend/lib/workers/alert_worker.dart): whole-host
@@ -260,7 +259,7 @@ export function AlertRulesManager({
   }
 
   async function handleDelete(rule: AlertRule) {
-    if (!confirm(`Delete this alert rule? This cannot be undone.`)) return;
+    if (!(await confirmDialog(`Delete this alert rule? This cannot be undone.`))) return;
     try {
       await api(`/notifications/rules/${rule.id}`, { method: "DELETE" });
       toast.success("Alert rule deleted");

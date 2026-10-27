@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { HeaderGlobalAction } from "@carbon/react";
 import { Notification as NotificationIcon } from "@carbon/icons-react";

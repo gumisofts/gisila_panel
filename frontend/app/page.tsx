@@ -1,5 +1,3 @@
-"use client";
-
 import { Navigate } from "react-router-dom";
 import { getToken } from "@/lib/api";
 

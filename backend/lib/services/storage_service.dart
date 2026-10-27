@@ -7,12 +7,14 @@ import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// S3-compatible object storage (Model B).
 ///
-/// A [StorageProvider] is an endpoint — either the self-hosted MinIO managed
-/// service (`kind=minio`, installed/run by the panel) or an external connector
-/// (`kind=external`, credentials only). [StorageBucket]s are provisioned inside
+/// A [StorageProvider] is an endpoint — a self-hosted server installed and run
+/// by the panel (`kind=garage`; `kind=minio` for installs from before MinIO
+/// stopped publishing downloads) or an external connector (`kind=external`,
+/// credentials only). [StorageBucket]s are provisioned inside
 /// a provider and surfaced to apps as `<prefix>_*` env vars via
 /// [AppStorageLink], which injects the credentials into the app's env on link.
 class StorageService extends Service {
@@ -33,16 +35,18 @@ class StorageService extends Service {
     return row;
   }
 
-  /// Install (or re-install) the self-hosted MinIO server. Only one MinIO
-  /// provider is allowed; an existing failed one is replaced.
-  Future<StorageProvider> installMinio({
+  /// Whether [kind] is a server the panel installs and runs on this host.
+  static bool isLocal(String kind) => kind == 'garage' || kind == 'minio';
+
+  /// Install (or re-install) the self-hosted Garage server. One local server
+  /// is allowed (an existing MinIO counts); a failed one is replaced.
+  Future<StorageProvider> installGarage({
     required String displayName,
-    int port = 9000,
-    int consolePort = 9001,
+    int port = 3900,
     String? publicUrl,
   }) async {
     final existing = await Query<StorageProvider>(StorageProviderTable.metadata)
-        .where(StorageProviderTable.kind.eq('minio'))
+        .where(StorageProviderTable.kind.inList(['garage', 'minio']))
         .first(_db.context());
     if (existing != null) {
       if (existing.status == 'failed') {
@@ -51,32 +55,34 @@ class StorageService extends Service {
             .delete()
             .run(_db.context());
       } else {
-        throw HttpException(409, 'MinIO is already installed.');
+        throw HttpException(409,
+            'A storage server (${existing.kind}) is already installed.');
       }
     }
-    if (port < 1024 || port > 65535 || consolePort < 1024 || consolePort > 65535) {
-      throw HttpException(422, 'Ports must be between 1024 and 65535.');
+    // Garage also takes port+1 (RPC) and port+2 (website endpoint).
+    if (port < 1024 || port > 65533) {
+      throw HttpException(422, 'Port must be between 1024 and 65533.');
     }
 
     final now = DateTime.now().toUtc();
     final provider =
         await Query<StorageProvider>(StorageProviderTable.metadata)
             .insert(<String, Object?>{
-      'kind': 'minio',
+      'kind': 'garage',
       'displayName': displayName,
       'endpoint': 'http://127.0.0.1:$port',
       'region': 'us-east-1',
       'publicUrl': publicUrl,
-      // Root credentials the worker passes to the agent on install.
-      'accessKey': _generateAccessKey(),
-      'secretKey': _generateSecret(),
+      // Admin key the worker passes to the agent on install.
+      'accessKey': _garageKeyId(),
+      'secretKey': SecretBox.instance
+          .seal(_garageSecret(), SecretBox.storageProviderSecret),
       'forcePathStyle': true,
-      'consolePort': consolePort,
       'status': 'pending',
       'createdAt': now.toIso8601String(),
     }).one(_db.context());
 
-    await _enqueue('install_minio', {'providerId': provider.id});
+    await _enqueue('install_server', {'providerId': provider.id});
     return findProvider(provider.id!);
   }
 
@@ -104,7 +110,8 @@ class StorageService extends Service {
       'region': region,
       'publicUrl': publicUrl,
       'accessKey': accessKey,
-      'secretKey': secretKey,
+      'secretKey':
+          SecretBox.instance.seal(secretKey, SecretBox.storageProviderSecret),
       'forcePathStyle': forcePathStyle,
       'status': 'config_only',
       'installedAt': now.toIso8601String(),
@@ -114,9 +121,9 @@ class StorageService extends Service {
   }
 
   /// Set (or clear) a provider's public URL (and, for MinIO, its console URL).
-  /// For MinIO this also (re)creates the nginx reverse-proxy vhost(s) so the S3
-  /// API + console are reachable at those hostnames — MinIO only binds
-  /// 127.0.0.1, so without this the URLs 404. The public URL is re-injected into
+  /// For a local server this also (re)creates the nginx reverse-proxy vhost(s)
+  /// so it is reachable at those hostnames — it only binds 127.0.0.1, so
+  /// without this the URLs 404. The public URL is re-injected into
   /// every linked app's `<prefix>_PUBLIC_URL` env var.
   Future<StorageProvider> setPublicUrl(
     int id,
@@ -144,10 +151,10 @@ class StorageService extends Service {
       if (updateConsole) 'consoleUrl': cleanConsole.isEmpty ? null : cleanConsole,
     });
     await _reinjectProviderLinks(id);
-    // Only MinIO needs an nginx front; external providers' public URL is just a
-    // CDN/base metadata value with nothing to expose.
-    if (p.kind == 'minio') {
-      await _enqueue('expose_minio', {'providerId': id, 'issueCert': issueCert});
+    // Only a local server needs an nginx front; external providers' public
+    // URL is just a CDN/base metadata value with nothing to expose.
+    if (isLocal(p.kind)) {
+      await _enqueue('expose_server', {'providerId': id, 'issueCert': issueCert});
     }
     return findProvider(id);
   }
@@ -169,24 +176,24 @@ class StorageService extends Service {
 
   Future<StorageProvider> startProvider(int id) async {
     final p = await findProvider(id);
-    if (p.kind != 'minio') return p; // external is always "on"
+    if (!isLocal(p.kind)) return p; // external is always "on"
     if (p.status == 'running') return p;
     await _patchProvider(id, {'status': 'pending'});
-    await _enqueue('start_minio', {'providerId': id});
+    await _enqueue('start_server', {'providerId': id});
     return findProvider(id);
   }
 
   Future<StorageProvider> stopProvider(int id) async {
     final p = await findProvider(id);
-    if (p.kind != 'minio') {
-      throw HttpException(422, 'Only the MinIO server can be stopped.');
+    if (!isLocal(p.kind)) {
+      throw HttpException(422, 'Only a local storage server can be stopped.');
     }
     if (p.status == 'stopped') return p;
-    await _enqueue('stop_minio', {'providerId': id});
+    await _enqueue('stop_server', {'providerId': id});
     return findProvider(id);
   }
 
-  /// Remove a provider. For MinIO this enqueues an agent uninstall; for external
+  /// Remove a provider. A local server gets an agent uninstall; for external
   /// it just drops the record. Either way, every bucket linked to an app first
   /// has its injected env vars stripped so apps aren't left with dead creds.
   Future<void> uninstallProvider(int id) async {
@@ -196,9 +203,9 @@ class StorageService extends Service {
     for (final b in buckets) {
       await _removeAllLinksForBucket(b.id!);
     }
-    if (p.kind == 'minio') {
+    if (isLocal(p.kind)) {
       await _patchProvider(id, {'status': 'uninstalling'});
-      await _enqueue('uninstall_minio', {'providerId': id});
+      await _enqueue('uninstall_server', {'providerId': id});
     } else {
       await Query<StorageProvider>(StorageProviderTable.metadata)
           .where(StorageProviderTable.id.eq(id))
@@ -229,17 +236,19 @@ class StorageService extends Service {
     bool isPublic = false,
   }) async {
     final provider = await findProvider(providerId);
-    if (provider.kind == 'minio' && provider.status != 'running') {
-      throw HttpException(422, 'MinIO must be running to create a bucket.');
+    if (isLocal(provider.kind) && provider.status != 'running') {
+      throw HttpException(
+          422, 'The storage server must be running to create a bucket.');
     }
     _validateBucketName(bucketName);
 
-    // MinIO mints a dedicated, bucket-scoped user; external providers reuse the
-    // provider credentials (no IAM user minting over plain S3).
-    final scopedAccess =
-        provider.kind == 'minio' ? _generateAccessKey() : provider.accessKey;
-    final scopedSecret =
-        provider.kind == 'minio' ? _generateSecret() : provider.secretKey;
+    // Local servers get a dedicated, bucket-scoped key; external providers
+    // reuse the provider credentials (no IAM user minting over plain S3).
+    final (scopedAccess, scopedSecret) = switch (provider.kind) {
+      'garage' => (_garageKeyId(), _garageSecret()),
+      'minio' => (_generateAccessKey(), _generateSecret()),
+      _ => (provider.accessKey, provider.plainSecretKey),
+    };
 
     final now = DateTime.now().toUtc();
     final bucket = await Query<StorageBucket>(StorageBucketTable.metadata)
@@ -247,7 +256,8 @@ class StorageService extends Service {
       'providerId': providerId,
       'bucketName': bucketName,
       'accessKey': scopedAccess,
-      'secretKey': scopedSecret,
+      'secretKey':
+          SecretBox.instance.seal(scopedSecret, SecretBox.storageBucketSecret),
       'isPublic': isPublic,
       'status': 'pending',
       'createdAt': now.toIso8601String(),
@@ -288,7 +298,7 @@ class StorageService extends Service {
       'region': provider.region ?? 'us-east-1',
       'bucket': bucket.bucketName,
       'accessKey': bucket.accessKey,
-      'secretKey': bucket.secretKey,
+      'secretKey': bucket.plainSecretKey,
       'publicUrl': provider.publicUrl,
       'forcePathStyle': provider.forcePathStyle ?? true,
     };
@@ -381,7 +391,7 @@ class StorageService extends Service {
       '${prefix}_REGION': (value: provider.region ?? 'us-east-1', secret: false),
       '${prefix}_BUCKET': (value: bucket.bucketName, secret: false),
       '${prefix}_ACCESS_KEY': (value: bucket.accessKey, secret: true),
-      '${prefix}_SECRET_KEY': (value: bucket.secretKey, secret: true),
+      '${prefix}_SECRET_KEY': (value: bucket.plainSecretKey, secret: true),
       if (provider.publicUrl != null && provider.publicUrl!.isNotEmpty)
         '${prefix}_PUBLIC_URL': (value: provider.publicUrl!, secret: false),
       '${prefix}_FORCE_PATH_STYLE': (
@@ -399,7 +409,8 @@ class StorageService extends Service {
         await Query<EnvVar>(EnvVarTable.metadata).insert(<String, Object?>{
           'appId': appId,
           'name': entry.key,
-          'value': entry.value.value,
+          'value': SecretBox.instance
+              .seal(entry.value.value, SecretBox.envVarValue),
           'isSecret': entry.value.secret,
           'updatedAt': now,
         }).run(_db.context());
@@ -407,7 +418,8 @@ class StorageService extends Service {
         await Query<EnvVar>(EnvVarTable.metadata)
             .where(EnvVarTable.id.eq(existing.id!))
             .update(<String, Object?>{
-          'value': entry.value.value,
+          'value': SecretBox.instance
+              .seal(entry.value.value, SecretBox.envVarValue),
           'isSecret': entry.value.secret,
           'updatedAt': now,
         }).run(_db.context());
@@ -489,7 +501,7 @@ class StorageService extends Service {
           .run(_db.context());
 
   Future<void> _enqueue(String action, Map<String, Object?> payload) =>
-      RedisClient.instance.rpush(
+      RedisClient.instance.enqueueJob(
         'gisila:queue:storage',
         jsonEncode({'action': action, ...payload}),
       );
@@ -506,6 +518,19 @@ String _generateAccessKey() {
   final rng = Random.secure();
   return List.generate(20, (_) => _accessAlphabet[rng.nextInt(_accessAlphabet.length)])
       .join();
+}
+
+// Garage only imports keys in its own format: `GK` + 12 random bytes in hex,
+// and a 32-byte hex secret.
+String _garageKeyId() => 'GK${_hex(12)}';
+String _garageSecret() => _hex(32);
+
+String _hex(int bytes) {
+  final rng = Random.secure();
+  return [
+    for (var i = 0; i < bytes; i++)
+      rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
 }
 
 String _generateSecret() {

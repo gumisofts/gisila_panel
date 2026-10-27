@@ -432,7 +432,7 @@ class ApplicationService extends Service {
     // single version must leave the family and its other versions alone.
     bool dropFamily = false,
   }) =>
-      RedisClient.instance.rpush(
+      RedisClient.instance.enqueueJob(
         'gisila:queue:applications',
         jsonEncode({
           'action': action,

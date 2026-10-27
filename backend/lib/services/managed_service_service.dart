@@ -196,7 +196,7 @@ class ManagedServiceService extends Service {
           .run(_db.context());
 
   Future<void> _enqueue(String action, int serviceId) =>
-      RedisClient.instance.rpush(
+      RedisClient.instance.enqueueJob(
         'gisila:queue:services',
         jsonEncode({'action': action, 'serviceId': serviceId}),
       );

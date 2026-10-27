@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
@@ -26,6 +24,7 @@ import { api, fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
 import type { ApiToken, ListResponse } from "@/lib/types";
 import "../_settings.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export default function TokensPage() {
   const { data, mutate } = useSWR<ListResponse<ApiToken>>(
@@ -64,7 +63,7 @@ export default function TokensPage() {
   }
 
   async function revoke(id: number) {
-    if (!confirm("Revoke this token?")) return;
+    if (!(await confirmDialog("Revoke this token?"))) return;
     await api(`/me/security/tokens/${id}`, { method: "DELETE" });
     mutate();
   }

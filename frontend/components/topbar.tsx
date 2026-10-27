@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { useRouter } from "@/compat/navigation";
 import {
@@ -12,7 +10,7 @@ import { Add, UserAvatar } from "@carbon/icons-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { ServerIpChip } from "@/components/server-ip";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { fetcher, setToken } from "@/lib/api";
+import { api, clearCachedData, fetcher, setToken } from "@/lib/api";
 import type { User } from "@/lib/types";
 
 /// Right-hand side of the Carbon header: create action, theme picker and the
@@ -22,8 +20,16 @@ export function PanelHeaderActions() {
   const { data } = useSWR<User>("/auth/me", fetcher);
   const router = useRouter();
 
-  function signOut() {
+  async function signOut() {
+    // End the session on the server too, so the token stops working even if
+    // a copy of it is still around. Sign out locally whatever happens.
+    try {
+      await api("/auth/logout", { method: "POST" });
+    } catch {
+      /* offline, or the session already ended */
+    }
     setToken(null);
+    clearCachedData();
     router.push("/login");
   }
 

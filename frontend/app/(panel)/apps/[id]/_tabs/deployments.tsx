@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import {
@@ -16,10 +14,12 @@ import {
 } from "@carbon/react";
 import { Branch, Renew, Time } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
-import { api, fetcher, getToken, getWsBase } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
+import { openLogSocket } from "@/lib/log-socket";
 import { formatRelative, scrollLogPaneToBottom } from "@/lib/utils";
 import type { BuildLog, Deployment, ListResponse } from "@/lib/types";
 import "../_app-detail.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 // ── Stage detection ────────────────────────────────────────────────────────────
 const STAGES = [
@@ -62,7 +62,6 @@ function detectStage(logs: BuildLog[]): StageId {
   return "provision";
 }
 
-const WS_BASE = getWsBase();
 
 type TagType = "green" | "blue" | "cyan" | "red" | "gray";
 
@@ -144,7 +143,6 @@ function LogPanel({
   const [lines, setLines] = useState<BuildLog[]>([]);
   const [loading, setLoading] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
   const active = ["queued", "building", "deploying"].includes(deployment.status);
   const currentStage = detectStage(lines);
 
@@ -173,37 +171,22 @@ function LogPanel({
   // Live stream for active deployments
   useEffect(() => {
     if (!active) return;
-    const token = getToken();
-    if (!token) return;
-
-    const ws = new WebSocket(
-      `${WS_BASE}/apps/${appId}/build-logs/${deployment.id}`
-    );
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ token, appId, deploymentId: deployment.id }));
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        const raw =
-          typeof data.message === "string"
-            ? data.message
-            : JSON.stringify(data.message);
-        let parsed: { stream?: string; line?: string } = {};
-        try { parsed = JSON.parse(raw); } catch { parsed = { line: raw }; }
+    return openLogSocket({
+      path: `/apps/${appId}/build-logs/${deployment.id}`,
+      auth: { appId, deploymentId: deployment.id },
+      onLine: (frame) => {
         const line: BuildLog = {
           id: Date.now(),
           deploymentId: deployment.id,
-          stream: (parsed.stream ?? "stdout") as BuildLog["stream"],
-          line: parsed.line ?? raw,
-          createdAt: data.ts ?? new Date().toISOString(),
+          stream: frame.stream as BuildLog["stream"],
+          line: frame.line,
+          createdAt: frame.ts,
         };
         setLines((prev) => {
-          // Replay frames overlap the HTTP snapshot — skip those dupes only.
-          // Live lines must not be deduped (identical output can repeat).
-          if (data.replay) {
+          // Replay frames overlap the HTTP snapshot (and, after a reconnect,
+          // what was already streamed) — skip those dupes only. Live lines
+          // must not be deduped (identical output can repeat).
+          if (frame.replay) {
             const already = prev.some(
               (p) => p.stream === line.stream && p.line === line.line,
             );
@@ -211,9 +194,8 @@ function LogPanel({
           }
           return [...prev, line].slice(-2000);
         });
-      } catch { /* ignore */ }
-    };
-    return () => { ws.close(); wsRef.current = null; };
+      },
+    });
   }, [appId, deployment.id, active]);
 
   // Auto-scroll inside the log pane only (not the page).
@@ -255,7 +237,7 @@ function LogPanel({
               {l.stream === "stderr" && (
                 <span className="gisila-term__stream">[err]</span>
               )}
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))}
           <div ref={endRef} />
