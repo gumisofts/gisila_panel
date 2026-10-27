@@ -141,6 +141,24 @@ class AuthService extends Service {
 
   // ── Sessions ──────────────────────────────────────────────────────────────
 
+  /// Signs out the session [token] alone: it is refused from now until it
+  /// would have expired. Other sessions of the same user stay signed in.
+  Future<void> logout(String token) async {
+    final payload = JWTAuth.decodeSession(token);
+    if (payload == null) return; // already invalid
+    final exp = payload['exp'];
+    final expiresAt = exp is num
+        ? DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true)
+        : DateTime.now().toUtc().add(const Duration(days: 30));
+    final c = _db.context();
+    await c.execute(
+      'INSERT INTO revoked_sessions (token_hash, expires_at) '
+      'VALUES (\$1, \$2) ON CONFLICT (token_hash) DO NOTHING',
+      parameters: [JWTAuth.sessionTokenHash(token), expiresAt],
+    );
+    await c.execute('DELETE FROM revoked_sessions WHERE expires_at < now()');
+  }
+
   /// Invalidate every session token [user] holds and return a fresh one for
   /// the caller, so "sign out other sessions" keeps this one signed in.
   Future<String> revokeSessions(User user) async {

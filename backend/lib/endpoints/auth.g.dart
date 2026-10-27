@@ -270,6 +270,46 @@ extension AuthApiGisilaDoc on AuthApi {
           ));
     }
     {
+      final basePath = '$prefix/auth/logout';
+      final openApiPath = '$prefix/auth/logout';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.post(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final auth = ctx.service<AuthService>();
+                final result = await this.logout(auth, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary: 'Sign out this session (its token stops working)',
+            tags: <String>['Auth'],
+            parameters: <Parameter>[],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
       final basePath = '$prefix/auth/sessions/revoke';
       final openApiPath = '$prefix/auth/sessions/revoke';
       final RouteConfig __cfg =

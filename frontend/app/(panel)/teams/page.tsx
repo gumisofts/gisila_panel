@@ -106,6 +106,10 @@ export default function TeamsPage() {
                       <p className="gisila-card__meta">
                         {t.slug} · created {formatRelative(t.createdAt)}
                       </p>
+                      <TeamQuotaLine
+                        teamId={t.id}
+                        canEdit={me?.isSuperuser === true}
+                      />
                     </div>
                   </div>
                   <div className="gisila-row__actions">
@@ -150,5 +154,113 @@ export default function TeamsPage() {
         </p>
       </Modal>
     </Page>
+  );
+}
+
+interface TeamQuota {
+  maxApps: number | null;
+  maxMemoryMb: number | null;
+  maxCpuPercent: number | null;
+  usage: { apps: number; memoryMb: number; cpuPercent: number };
+}
+
+function used(value: number, max: number | null, unit = "") {
+  return max == null ? `${value}${unit}` : `${value}/${max}${unit}`;
+}
+
+/// Usage against the team's quota; superusers can change the quota.
+function TeamQuotaLine({ teamId, canEdit }: { teamId: number; canEdit: boolean }) {
+  const { data, mutate } = useSWR<TeamQuota>(`/teams/${teamId}/quota`, fetcher);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ apps: "", memory: "", cpu: "" });
+  const [saving, setSaving] = useState(false);
+  if (!data) return null;
+  const limited =
+    data.maxApps != null || data.maxMemoryMb != null || data.maxCpuPercent != null;
+
+  function edit() {
+    setForm({
+      apps: data!.maxApps?.toString() ?? "",
+      memory: data!.maxMemoryMb?.toString() ?? "",
+      cpu: data!.maxCpuPercent?.toString() ?? "",
+    });
+    setOpen(true);
+  }
+
+  async function save() {
+    const num = (v: string) => (v.trim() === "" ? null : Number(v));
+    setSaving(true);
+    try {
+      await api(`/teams/${teamId}/quota`, {
+        method: "PUT",
+        body: JSON.stringify({
+          maxApps: num(form.apps),
+          maxMemoryMb: num(form.memory),
+          maxCpuPercent: num(form.cpu),
+        }),
+      });
+      setOpen(false);
+      mutate();
+      toast.success("Quota saved");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save quota");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="gisila-card__meta">
+        {limited ? "Quota: " : "No quota · using "}
+        {used(data.usage.apps, data.maxApps)} apps ·{" "}
+        {used(data.usage.memoryMb, data.maxMemoryMb, " MB")} ·{" "}
+        {used(data.usage.cpuPercent, data.maxCpuPercent, "%")} CPU
+        {canEdit && (
+          <>
+            {" "}
+            <Button kind="ghost" size="sm" onClick={edit}>
+              Edit quota
+            </Button>
+          </>
+        )}
+      </p>
+      <Modal
+        size="sm"
+        open={open}
+        modalHeading="Team quota"
+        primaryButtonText={saving ? "Saving…" : "Save"}
+        secondaryButtonText="Cancel"
+        primaryButtonDisabled={saving}
+        onRequestClose={() => setOpen(false)}
+        onRequestSubmit={save}
+      >
+        <p>Totals across the team's apps. Leave a field empty for no limit.</p>
+        <TextInput
+          id={`quota-apps-${teamId}`}
+          labelText="Apps"
+          type="number"
+          min={0}
+          value={form.apps}
+          onChange={(e) => setForm({ ...form, apps: e.target.value })}
+        />
+        <TextInput
+          id={`quota-memory-${teamId}`}
+          labelText="Memory (MB)"
+          type="number"
+          min={0}
+          value={form.memory}
+          onChange={(e) => setForm({ ...form, memory: e.target.value })}
+        />
+        <TextInput
+          id={`quota-cpu-${teamId}`}
+          labelText="CPU (% of one core)"
+          type="number"
+          min={0}
+          value={form.cpu}
+          onChange={(e) => setForm({ ...form, cpu: e.target.value })}
+        />
+      </Modal>
+    </>
   );
 }

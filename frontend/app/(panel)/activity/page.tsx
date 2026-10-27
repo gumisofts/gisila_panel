@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
+import { ErrorState } from "@/components/error-state";
 import {
   Activity,
   Add,
@@ -36,7 +37,7 @@ export default function ActivityPage() {
   const [pageSize, setPageSize] = useState(25);
   const offset = (page - 1) * pageSize;
 
-  const { data, isLoading } = useSWR<ListResponse<AuditLog>>(
+  const { data, error, isLoading, mutate } = useSWR<ListResponse<AuditLog>>(
     `/audit/?limit=${pageSize}&offset=${offset}`,
     fetcher,
     // Auto-refresh only the first page — polling while offset > 0 would
@@ -56,7 +57,11 @@ export default function ActivityPage() {
 
       {isLoading && <StructuredListSkeleton rowCount={8} />}
 
-      {!isLoading && items.length === 0 && (
+      {!isLoading && error && !data && (
+        <ErrorState error={error} onRetry={() => mutate()} />
+      )}
+
+      {!isLoading && !error && items.length === 0 && (
         <Tile className="gisila-empty">No activity yet.</Tile>
       )}
 

@@ -66,7 +66,7 @@ class DomainsService extends Service {
     }).one(_db.context());
 
     // Tell the worker to (re)write the Nginx vhost.
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:vhosts',
       jsonEncode(<String, Object?>{
         'appId': app.id,
@@ -92,7 +92,7 @@ class DomainsService extends Service {
         .where(DomainTable.id.eq(domain.id!))
         .update(<String, Object?>{'sslStatus': 'pending'}).run(_db.context());
 
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:ssl',
       jsonEncode(<String, Object?>{
         'domainId': domain.id,
@@ -112,7 +112,7 @@ class DomainsService extends Service {
         .delete()
         .run(_db.context());
 
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:vhosts',
       jsonEncode(<String, Object?>{
         'appId': app.id,

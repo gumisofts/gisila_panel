@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Stack, TextInput } from "@carbon/react";
 import { PlayFilled, Terminal, TrashCan } from "@carbon/icons-react";
 import { api, getToken, getWsBase } from "@/lib/api";
+import { handleSocketError } from "@/lib/log-socket";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
 
@@ -76,6 +77,7 @@ export function ConsoleTab({ appId }: { appId: number }) {
       try {
         const data = JSON.parse(ev.data);
         if (data.error) {
+          if (handleSocketError(data.error)) return;
           append({
             ts: new Date().toISOString(),
             stream: "stderr",

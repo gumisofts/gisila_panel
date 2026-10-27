@@ -3,11 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@carbon/react";
 import { PauseFilled, PlayFilled, TrashCan } from "@carbon/icons-react";
-import { getToken, getWsBase } from "@/lib/api";
+import { openLogSocket, type LogSocketState } from "@/lib/log-socket";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
-
-const WS_URL = getWsBase();
 
 interface LogLine {
   ts: string;
@@ -15,7 +13,7 @@ interface LogLine {
   line: string;
 }
 
-type ConnState = "connecting" | "connected" | "reconnecting";
+const MAX_LINES = 1000;
 
 function lineClass(stream: string): string {
   if (stream === "stderr") return "gisila-term__line gisila-term__line--stderr";
@@ -26,91 +24,48 @@ function lineClass(stream: string): string {
 export function LogsTab({ appId }: { appId: number }) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [paused, setPaused] = useState(false);
-  const [conn, setConn] = useState<ConnState>("connecting");
+  const [conn, setConn] = useState<LogSocketState>("connecting");
+  const [connError, setConnError] = useState<string | undefined>();
   const pausedRef = useRef(false);
+  // Lines that arrived while paused, shown on resume.
+  const heldRef = useRef<LogLine[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // Keep a ref in sync so pausing doesn't tear down / recreate the socket.
   useEffect(() => {
     pausedRef.current = paused;
+    if (!paused && heldRef.current.length > 0) {
+      const held = heldRef.current;
+      heldRef.current = [];
+      setLines((prev) => [...prev, ...held].slice(-MAX_LINES));
+    }
   }, [paused]);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    let closed = false; // set on unmount to stop reconnecting
-
-    const append = (l: LogLine) =>
-      setLines((prev) => [...prev, l].slice(-1000));
-
-    function connect() {
-      setConn(attempt === 0 ? "connecting" : "reconnecting");
-      ws = new WebSocket(`${WS_URL}/apps/${appId}/logs`);
-
-      ws.onopen = () => {
-        attempt = 0;
-        setConn("connected");
-        ws?.send(JSON.stringify({ token, appId }));
-      };
-
-      ws.onmessage = (ev) => {
-        if (pausedRef.current) return;
-        try {
-          const data = JSON.parse(ev.data);
-          if (data.error) {
-            append({
-              ts: new Date().toISOString(),
-              stream: "system",
-              line: `[error] ${data.error}`,
-            });
-            return;
-          }
-          const raw =
-            typeof data.message === "string"
-              ? data.message
-              : JSON.stringify(data.message);
-          let parsed: { stream?: string; line?: string } = {};
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            parsed = { line: raw };
-          }
-          append({
-            ts: data.ts ?? new Date().toISOString(),
-            stream: parsed.stream ?? "stdout",
-            line: parsed.line ?? raw,
-          });
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-
-      ws.onclose = () => {
-        if (closed) return;
-        setConn("reconnecting");
-        // Exponential backoff capped at 10s.
-        const delay = Math.min(1000 * 2 ** attempt, 10000);
-        attempt += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-
-      ws.onerror = () => {
-        // onclose will follow and trigger the reconnect.
-        ws?.close();
-      };
-    }
-
-    connect();
-
-    return () => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
+    const append = (l: LogLine) => {
+      if (pausedRef.current) {
+        heldRef.current = [...heldRef.current, l].slice(-MAX_LINES);
+        return;
+      }
+      setLines((prev) => [...prev, l].slice(-MAX_LINES));
     };
+
+    return openLogSocket({
+      path: `/apps/${appId}/logs`,
+      auth: { appId },
+      onLine: ({ ts, stream, line }) => append({ ts, stream, line }),
+      onState: (state, error) => {
+        setConn(state);
+        setConnError(error);
+        if (error) {
+          append({
+            ts: new Date().toISOString(),
+            stream: "system",
+            line: `[error] ${error}`,
+          });
+        }
+      },
+    });
   }, [appId]);
 
   useEffect(() => {
@@ -119,8 +74,9 @@ export function LogsTab({ appId }: { appId: number }) {
 
   const statusMeta = {
     connecting: { label: "Connecting…", tone: "waiting" },
-    connected: { label: "Live", tone: "live" },
+    live: { label: paused ? "Paused" : "Live", tone: "live" },
     reconnecting: { label: "Reconnecting…", tone: "waiting" },
+    stopped: { label: connError ? "Stopped" : "Disconnected", tone: "waiting" },
   }[conn];
 
   return (

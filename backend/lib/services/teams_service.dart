@@ -6,6 +6,7 @@ import 'package:gisila_panel/authz/authz.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/slugs.dart';
+import 'package:gisila_panel/services/team_quotas.dart';
 
 class TeamsService extends Service {
   Database get _db => db<Database>();
@@ -40,6 +41,27 @@ class TeamsService extends Service {
     }).run(_db.context());
 
     return team;
+  }
+
+  /// [teamId]'s quota and usage; any member may see it.
+  Future<TeamQuota> quota(User user, int teamId) async {
+    await findForUser(user, teamId);
+    return TeamQuotas(_db).load(teamId);
+  }
+
+  /// Sets [teamId]'s quota. Superusers only: quotas protect the host from a
+  /// team, so a team's own owners can't raise them.
+  Future<TeamQuota> setQuota(User user, int teamId,
+      {int? maxApps, int? maxMemoryMb, int? maxCpuPercent}) async {
+    if (user.isSuperuser != true) {
+      throw Forbidden('Only a superuser can change team quotas.');
+    }
+    await findForUser(user, teamId);
+    await TeamQuotas(_db).set(teamId,
+        maxApps: maxApps,
+        maxMemoryMb: maxMemoryMb,
+        maxCpuPercent: maxCpuPercent);
+    return TeamQuotas(_db).load(teamId);
   }
 
   Future<Team> findForUser(User user, int teamId) async {
@@ -80,7 +102,7 @@ class TeamsService extends Service {
         'updatedAt': DateTime.now().toUtc().toIso8601String(),
       }).run(_db.context());
     }
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:teardown',
       jsonEncode(<String, Object?>{
         'scope': 'team',

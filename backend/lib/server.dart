@@ -9,6 +9,7 @@ import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/infra/ui_headers.dart';
 import 'package:gisila_panel/version.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
 import 'package:gisila_panel/endpoints/applications.dart';
@@ -154,7 +155,7 @@ Future<Handler> application() async {
         logger.i('GisilaStudio enabled at /admin (STUDIO_ENABLED)');
       }
       router.mount('/docs', docsHandler(spec));
-      router.mount('/', _panelUiHandler());
+      router.mount('/', withPanelUiHeaders(_panelUiHandler()));
     },
   );
 
@@ -194,7 +195,10 @@ Handler _spaNavigationFallback(Handler inner) {
         index.existsSync()) {
       return Response.ok(
         index.readAsBytesSync(),
-        headers: {'content-type': 'text/html; charset=utf-8'},
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          ...panelUiHeaders(req),
+        },
       );
     }
     return inner(req);

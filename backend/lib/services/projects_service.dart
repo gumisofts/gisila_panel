@@ -87,7 +87,7 @@ class ProjectsService extends Service {
       'status': 'deleting',
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     }).run(_db.context());
-    await RedisClient.instance.rpush(
+    await RedisClient.instance.enqueueJob(
       'gisila:queue:teardown',
       jsonEncode(<String, Object?>{
         'scope': 'project',

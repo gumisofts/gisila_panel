@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate as mutateCache } from "swr";
+import { ErrorState } from "@/components/error-state";
 import {
   CheckmarkFilled,
   ErrorFilled,
@@ -36,7 +37,9 @@ export default function NotificationsPage() {
   const offset = (page - 1) * pageSize;
   const key = `/notifications/inbox?limit=${pageSize}&offset=${offset}${unreadOnly ? "&unreadOnly=true" : ""}`;
 
-  const { data, isLoading, mutate } = useSWR<ListResponse<AppNotification>>(
+  const { data, error, isLoading, mutate } = useSWR<
+    ListResponse<AppNotification>
+  >(
     key,
     fetcher,
     // Auto-refresh only the first page — polling while offset > 0 would
@@ -95,7 +98,11 @@ export default function NotificationsPage() {
         />
       </div>
 
-      {!isLoading && items.length === 0 && (
+      {!isLoading && error && !data && (
+        <ErrorState error={error} onRetry={() => mutate()} />
+      )}
+
+      {!isLoading && !error && items.length === 0 && (
         <Tile className="gisila-empty">
           <div className="gisila-inbox__empty">
             <NotificationIcon size={32} />

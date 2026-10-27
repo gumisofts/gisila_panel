@@ -1,3 +1,4 @@
+import { mutate } from "swr";
 import { toast } from "@/lib/toast";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
@@ -48,6 +49,15 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+/**
+ * Drops every cached SWR response without refetching. Call it when the
+ * signed-in user changes (sign-in, sign-out), so one account's data is
+ * never shown to the next.
+ */
+export function clearCachedData() {
+  void mutate(() => true, undefined, { revalidate: false });
+}
+
 export function setToken(token: string | null) {
   if (token == null) localStorage.removeItem(TOKEN_KEY);
   else localStorage.setItem(TOKEN_KEY, token);
@@ -77,10 +87,11 @@ export class ApiError extends Error {
 // attempt) is a normal auth failure and must be left for the caller to handle.
 let loggedOut = false;
 
-function handleUnauthorized() {
+export function handleUnauthorized() {
   if (loggedOut) return;
   loggedOut = true;
   setToken(null);
+  clearCachedData();
   if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
     toast.error("Your session has expired. Please sign in again.");
     window.location.assign("/login");

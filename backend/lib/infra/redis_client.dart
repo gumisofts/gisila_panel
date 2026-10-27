@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/workers/job_signing.dart';
 import 'package:redis/redis.dart' show Command;
 
 /// A tiny lazy singleton wrapper around the `redis` package. The connection is
@@ -53,6 +54,12 @@ class RedisClient {
   /// from the head with `BLPOP`.
   Future<void> rpush(String queue, String payload) =>
       _run((cmd) => cmd.send_object(['RPUSH', queue, payload]));
+
+  /// Put a job for the worker on [queue]: [payloadJson] signed (see
+  /// [JobSigner]) and pushed onto the head, which the worker takes from the
+  /// tail. Use this, not [rpush], for every `gisila:queue:*` list.
+  Future<void> enqueueJob(String queue, String payloadJson) => _run(
+      (cmd) => cmd.send_object(['LPUSH', queue, JobSigner.wrap(payloadJson)]));
 
   /// Publish a payload on a Redis pubsub channel (e.g. build log lines).
   Future<void> publish(String channel, String payload) =>

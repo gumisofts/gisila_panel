@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route, useParams } from "react-router-
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/lib/toast";
 import { CarbonTheme } from "@/components/carbon-theme";
+import { NotFoundPage } from "@/components/error-state";
 
 import LandingPage from "../app/page";
 import AuthLayout from "../app/(auth)/layout";
@@ -102,6 +103,7 @@ export default function App() {
             <Route path="/settings/ssh-keys" element={<SshKeysPage />} />
             <Route path="/settings/users" element={<UsersPage />} />
             <Route path="/settings/notifications" element={<NotificationSettingsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
         <Toaster />

@@ -116,7 +116,7 @@ class DeploymentsService extends Service {
     }).run(_db.context());
 
     try {
-      await RedisClient.instance.rpush(
+      await RedisClient.instance.enqueueJob(
         'gisila:queue:deployments',
         jsonEncode(<String, Object?>{
           'deploymentId': deployment.id,
@@ -204,7 +204,7 @@ class DeploymentsService extends Service {
     }).run(_db.context());
 
     try {
-      await RedisClient.instance.rpush(
+      await RedisClient.instance.enqueueJob(
         'gisila:queue:deployments',
         jsonEncode(<String, Object?>{
           'deploymentId': rb.id,

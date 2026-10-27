@@ -81,7 +81,7 @@ class JwtAuthenticator extends Authenticator {
 
 /// The active [User] a session JWT belongs to, or null when the token is
 /// invalid, expired, an MFA challenge, revoked by the user's
-/// `sessionsValidAfter`, or the account is gone or deactivated.
+/// `sessionsValidAfter`, signed out, or the account is gone or deactivated.
 ///
 /// Shared by the REST authenticator and the log WebSockets so both accept
 /// exactly the same tokens.
@@ -94,5 +94,11 @@ Future<User?> userForSessionJwt(Database database, String token) async {
       .first(database.context());
   if (user == null || user.isActive == false) return null;
   if (JWTAuth.isRevoked(payload, user)) return null;
+  // Signed out (POST /auth/logout) before it expired.
+  final signedOut = await database.context().execute(
+    'SELECT 1 FROM revoked_sessions WHERE token_hash = \$1',
+    parameters: [JWTAuth.sessionTokenHash(token)],
+  );
+  if (signedOut.isNotEmpty) return null;
   return user;
 }

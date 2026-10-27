@@ -9,6 +9,20 @@ import 'package:gisila_panel/forms/runtime_version.dart';
 // cores the panel process itself sees on this host.
 final int _maxCpuQuotaPercent = Platform.numberOfProcessors * 100;
 
+// Same idea for memory: a MemoryMax above the host's RAM is no limit at all,
+// so one app could starve the rest. Null where /proc/meminfo is unreadable
+// (development on macOS), which leaves the field uncapped there.
+final int? _hostMemoryMb = () {
+  try {
+    final line = File('/proc/meminfo')
+        .readAsLinesSync()
+        .firstWhere((l) => l.startsWith('MemTotal:'));
+    return int.parse(RegExp(r'(\d+)').firstMatch(line)![1]!) ~/ 1024;
+  } on Object {
+    return null;
+  }
+}();
+
 /// A [StringField] that binds an empty string as `""` rather than treating it
 /// as absent, so a PATCH can tell "clear this field" apart from "leave it".
 class _ClearableStringField extends StringField {
@@ -75,10 +89,11 @@ class CreateAppForm extends Form {
   final startCommand = StringField(name: 'startCommand');
   final healthCheckPath = StringField(name: 'healthCheckPath');
 
-  final memoryMbLimit = IntField(name: 'memoryMbLimit');
+  final memoryMbLimit =
+      IntField(name: 'memoryMbLimit', min: 32, max: _hostMemoryMb);
   final cpuQuotaPercent =
       IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
-  final tasksLimit = IntField(name: 'tasksLimit');
+  final tasksLimit = IntField(name: 'tasksLimit', min: 16, max: 16384);
 
   // Python-specific fields.
   final pythonVersion =
@@ -98,7 +113,8 @@ class CreateAppForm extends Form {
       StringField(name: 'nodeVersion', validators: [validRuntimeVersion]);
   final dartVersion =
       StringField(name: 'dartVersion', validators: [validRuntimeVersion]);
-  final goVersion = StringField(name: 'goVersion', validators: [validRuntimeVersion]);
+  final goVersion =
+      StringField(name: 'goVersion', validators: [validRuntimeVersion]);
   final rustVersion =
       StringField(name: 'rustVersion', validators: [validRuntimeVersion]);
   final bunVersion =
@@ -194,10 +210,11 @@ class UpdateAppForm extends Form {
   final healthCheckPath = StringField(name: 'healthCheckPath');
   // Previous successful builds kept on disk for instant rollback.
   final releasesToKeep = IntField(name: 'releasesToKeep', min: 1, max: 50);
-  final memoryMbLimit = IntField(name: 'memoryMbLimit');
+  final memoryMbLimit =
+      IntField(name: 'memoryMbLimit', min: 32, max: _hostMemoryMb);
   final cpuQuotaPercent =
       IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
-  final tasksLimit = IntField(name: 'tasksLimit');
+  final tasksLimit = IntField(name: 'tasksLimit', min: 16, max: 16384);
   final pythonVersion =
       StringField(name: 'pythonVersion', validators: [validRuntimeVersion]);
   final pythonMode = StringField(name: 'pythonMode');
@@ -211,7 +228,8 @@ class UpdateAppForm extends Form {
       StringField(name: 'nodeVersion', validators: [validRuntimeVersion]);
   final dartVersion =
       StringField(name: 'dartVersion', validators: [validRuntimeVersion]);
-  final goVersion = StringField(name: 'goVersion', validators: [validRuntimeVersion]);
+  final goVersion =
+      StringField(name: 'goVersion', validators: [validRuntimeVersion]);
   final rustVersion =
       StringField(name: 'rustVersion', validators: [validRuntimeVersion]);
   final bunVersion =

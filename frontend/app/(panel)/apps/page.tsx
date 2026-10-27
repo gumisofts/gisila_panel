@@ -18,6 +18,7 @@ import {
 } from "@carbon/react";
 import RouterLink from "@/compat/link";
 import { useSearchParams } from "@/compat/navigation";
+import { ErrorState } from "@/components/error-state";
 import { Page, PageHeader } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
@@ -44,7 +45,10 @@ const STATUS_TAG: Record<AppStatus, TagType> = {
 };
 
 export default function AppsPage() {
-  const { data, isLoading } = useSWR<ListResponse<App>>("/apps/", fetcher);
+  const { data, error, isLoading, mutate } = useSWR<ListResponse<App>>(
+    "/apps/",
+    fetcher,
+  );
   const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
   // Kept in the URL so the Projects page's "apps" link lands pre-filtered and
   // a filtered view survives a reload.
@@ -102,6 +106,8 @@ export default function AppsPage() {
 
       {isLoading ? (
         <SkeletonGrid />
+      ) : error && !data ? (
+        <ErrorState error={error} onRetry={() => mutate()} />
       ) : apps.length ? (
         <Grid narrow className="gisila-apps__grid">
           {apps.map((app) => (

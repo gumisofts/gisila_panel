@@ -41,7 +41,8 @@ Future<void> main(List<String> args) async {
   queue.on('gisila:queue:postgres', postgresWorker.onPostgresJob);
   queue.on('gisila:queue:mongo', mongoWorker.onMongoJob);
   queue.on('gisila:queue:storage', storageWorker.onStorageJob);
-  queue.on('gisila:queue:exec', execWorker.onExecJob);
+  // A command a user ran must not run again after a worker restart.
+  queue.on('gisila:queue:exec', execWorker.onExecJob, atMostOnce: true);
   queue.on('gisila:queue:mail', mailWorker.onMailJob);
 
   // Self-driven periodic metrics collector (CPU / memory samples per app).

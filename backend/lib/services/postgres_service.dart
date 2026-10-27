@@ -1235,7 +1235,7 @@ class PostgresService extends Service {
           .run(_db.context());
 
   Future<void> _enqueue(String action, Map<String, Object?> payload) =>
-      RedisClient.instance.rpush(
+      RedisClient.instance.enqueueJob(
         'gisila:queue:postgres',
         jsonEncode({'action': action, ...payload}),
       );

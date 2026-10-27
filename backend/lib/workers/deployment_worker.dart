@@ -848,7 +848,7 @@ class DeploymentWorker {
           }
         }
         _lastRequeue[id] = now;
-        await RedisClient.instance.rpush(
+        await RedisClient.instance.enqueueJob(
           'gisila:queue:deployments',
           jsonEncode(<String, Object?>{
             'deploymentId': id,

@@ -256,6 +256,10 @@ final Map<String, String> agentEnvironment = {
     'TZ',
     'TERM',
     'SUPERVISOR_CONF_DIR',
+    // Where uploads and backups live, when moved from the defaults: the
+    // agent checks paths it is given against these.
+    'GISILA_ARTIFACT_DIR',
+    'GISILA_BACKUP_DIR',
     'RUSTUP_HOME',
     'CARGO_HOME',
     'PUB_CACHE',

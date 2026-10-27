@@ -113,7 +113,7 @@ class HealthMonitorWorker {
 
     if (report['healthy'] != true && await _cooldownElapsed(mailHealthRedisKey)) {
       logger.i('health_monitor: mail stack unhealthy — enqueueing repair');
-      await RedisClient.instance.rpush(
+      await RedisClient.instance.enqueueJob(
         'gisila:queue:mail',
         jsonEncode({'action': 'repair'}),
       );
@@ -145,7 +145,7 @@ class HealthMonitorWorker {
       if (report['healthy'] != true && await _cooldownElapsed(key)) {
         logger.i(
             'health_monitor: service #${svc.id} (${svc.serviceType}) unhealthy — enqueueing repair');
-        await RedisClient.instance.rpush(
+        await RedisClient.instance.enqueueJob(
           'gisila:queue:services',
           jsonEncode({'action': 'repair', 'serviceId': svc.id}),
         );

@@ -32,6 +32,14 @@ extension TeamsApiGisilaDoc on TeamsApi {
         'slug': <String, Object?>{'type': 'string'}
       }
     });
+    spec.putSchema('TeamQuotaForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'maxApps': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'maxMemoryMb': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'maxCpuPercent': <String, Object?>{'type': 'integer', 'format': 'int64'}
+      }
+    });
     spec.putSchema('InviteMemberForm', <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -221,6 +229,114 @@ extension TeamsApiGisilaDoc on TeamsApi {
             ],
             responses: <String, ResponseSpec>{
               '204': ResponseSpec(description: 'No Content', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/teams/<id>/quota';
+      final openApiPath = '$prefix/teams/{id}/quota';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.get(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final teams = ctx.service<TeamsService>();
+                final result = await this.quota(id, teams, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'A team\'s resource quota and usage',
+            tags: <String>['Teams'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              })
+            },
+          ));
+    }
+    {
+      final basePath = '$prefix/teams/<id>/quota';
+      final openApiPath = '$prefix/teams/{id}/quota';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      router.put(
+          basePath,
+          gisilaRoute(
+            app: app,
+            config: __cfg,
+            handler: (RequestContext ctx) async {
+              try {
+                final request = ctx.request;
+                final id =
+                    coerce<int>(request.params['id'], 'id', required: true);
+                final form = await bindForm(request, TeamQuotaForm.new);
+                final teams = ctx.service<TeamsService>();
+                final result = await this.setQuota(id, form, teams, ctx);
+                return jsonResponse(body: result, statusCode: 200);
+              } on TypeError catch (e) {
+                throw BadRequestException('Invalid request payload ($e)');
+              } on FormatException catch (e) {
+                throw BadRequestException(
+                    'Invalid request format: ${e.message}');
+              }
+            },
+          ));
+      spec.putOperation(
+          openApiPath,
+          'put',
+          Operation(
+            summary: 'Set a team\'s resource quota (superuser)',
+            tags: <String>['Teams'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/TeamQuotaForm'
+              })
+            }),
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
                 'application/json': MediaType(schema: <String, Object?>{
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}

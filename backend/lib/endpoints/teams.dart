@@ -65,6 +65,31 @@ class TeamsApi {
     return <String, Object?>{'detail': 'Team removal requested.'};
   }
 
+  @Get('/{id}/quota', summary: "A team's resource quota and usage")
+  Future<Map<String, Object?>> quota(
+    int id,
+    TeamsService teams,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    return (await teams.quota(user, id)).toJson();
+  }
+
+  @Put('/{id}/quota', summary: "Set a team's resource quota (superuser)")
+  Future<Map<String, Object?>> setQuota(
+    int id,
+    TeamQuotaForm form,
+    TeamsService teams,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final quota = await teams.setQuota(user, id,
+        maxApps: form.maxApps.value,
+        maxMemoryMb: form.maxMemoryMb.value,
+        maxCpuPercent: form.maxCpuPercent.value);
+    return quota.toJson();
+  }
+
   @Get('/{id}/members', summary: 'List team members')
   Future<Map<String, Object?>> members(
     int id,
