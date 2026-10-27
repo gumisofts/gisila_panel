@@ -652,7 +652,9 @@ export interface MailDnsResponse {
 
 // ── Object storage (Model B) ──────────────────────────────────────────────────
 
-export type StorageProviderKind = "minio" | "external";
+// "minio" only on hosts that installed it before MinIO stopped publishing
+// downloads; new self-hosted installs are Garage.
+export type StorageProviderKind = "garage" | "minio" | "external";
 
 export type StorageProviderStatus =
   | "pending"

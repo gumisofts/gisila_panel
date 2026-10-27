@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { ErrorState } from "@/components/error-state";
 import {

@@ -1,5 +1,3 @@
-"use client";
-
 import type { ComponentProps, ElementType } from "react";
 import RouterLink from "@/compat/link";
 import useSWR from "swr";

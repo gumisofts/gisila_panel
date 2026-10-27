@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Button, PasswordInput, Stack, TextInput } from "@carbon/react";
 import { useRouter } from "@/compat/navigation";

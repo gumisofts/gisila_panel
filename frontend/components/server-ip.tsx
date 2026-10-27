@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { Copy } from "@carbon/icons-react";
 import { fetcher } from "@/lib/api";

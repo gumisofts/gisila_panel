@@ -9,6 +9,7 @@ import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/utils/slugs.dart';
 import 'package:gisila_panel/utils/totp.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Outcome of a correct email + password: either a session, or — for an
 /// account with a second factor — a challenge to complete with a code.
@@ -221,7 +222,7 @@ class AuthService extends Service {
         .run(_db.context());
     await Query<UserTotp>(UserTotpTable.metadata).insert(<String, Object?>{
       'userId': user.id,
-      'secret': secret,
+      'secret': SecretBox.instance.seal(secret, SecretBox.totpSecret),
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).run(_db.context());
     return (
@@ -241,7 +242,7 @@ class AuthService extends Service {
     if (row == null || row.confirmedAt != null) {
       throw BadRequest('Start two-factor setup first.', code: 'totp_not_pending');
     }
-    final step = Totp.verify(row.secret, code);
+    final step = Totp.verify(row.plainSecret, code);
     if (step == null) {
       throw BadRequest('That code is not valid. Check the time on your device.',
           code: 'invalid_code');
@@ -315,7 +316,8 @@ class AuthService extends Service {
   }) async {
     // Both updates are compare-and-swap: of two concurrent requests carrying
     // the same code, only the one whose update matches a row gets in.
-    final step = Totp.verify(row.secret, code, lastUsedStep: row.lastUsedStep);
+    final step =
+        Totp.verify(row.plainSecret, code, lastUsedStep: row.lastUsedStep);
     if (step != null) {
       final rows = await Query<UserTotp>(UserTotpTable.metadata)
           .where(UserTotpTable.id.eq(row.id!))

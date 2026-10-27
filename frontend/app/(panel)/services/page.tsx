@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";

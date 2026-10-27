@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import qrcode from "qrcode-generator";
@@ -21,6 +19,7 @@ import { PageSection } from "@/components/page";
 import { toast } from "@/lib/toast";
 import { api, fetcher, setToken } from "@/lib/api";
 import type { TotpStatus } from "@/lib/types";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : "Failed";
@@ -544,7 +543,7 @@ function Sessions() {
   const [busy, setBusy] = useState(false);
 
   async function revoke() {
-    if (!confirm("Sign out of the panel everywhere except this browser?")) return;
+    if (!(await confirmDialog("Sign out of the panel everywhere except this browser?"))) return;
     setBusy(true);
     try {
       const res = await api<{ access: string }>("/auth/sessions/revoke", {

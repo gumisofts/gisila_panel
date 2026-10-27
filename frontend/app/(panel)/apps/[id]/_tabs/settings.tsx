@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect, type ReactNode } from "react";
 import useSWR from "swr";
 import {

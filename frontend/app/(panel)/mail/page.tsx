@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
@@ -60,6 +58,7 @@ import type {
   MailStatus,
 } from "@/lib/types";
 import "../_storage-mail.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 // How long to watch for a queued repair to report back, and how often.
 const REPAIR_WAIT_MS = 90_000;
@@ -392,7 +391,7 @@ function DomainCard({ domain }: { domain: MailDomain }) {
   }
 
   async function handleRemoveDomain() {
-    if (!confirm(`Remove ${domain.domain} and all its mailboxes?`)) return;
+    if (!(await confirmDialog(`Remove ${domain.domain} and all its mailboxes?`))) return;
     setRemoving(true);
     try {
       await api(`/mail/domains/${domain.id}`, { method: "DELETE" });
@@ -447,7 +446,7 @@ function DomainCard({ domain }: { domain: MailDomain }) {
   }
 
   async function handleDeleteAccount(acc: MailAccount) {
-    if (!confirm(`Delete mailbox ${acc.address}?`)) return;
+    if (!(await confirmDialog(`Delete mailbox ${acc.address}?`))) return;
     try {
       await api(`/mail/accounts/${acc.id}`, { method: "DELETE" });
       reloadAccounts();

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type ElementType } from "react";
 import useSWR, { mutate } from "swr";
 import { toast } from "@/lib/toast";
@@ -46,6 +44,7 @@ import type {
   StorageBucket,
 } from "@/lib/types";
 import "../_storage-mail.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 type StatusTone = "green" | "gray" | "red" | "blue";
 
@@ -78,22 +77,25 @@ function copied() {
   toast.success("Copied");
 }
 
+/** A server the panel installs and runs on this host. */
+const isLocal = (kind: string) => kind === "garage" || kind === "minio";
+
 export default function StoragePage() {
   const { data, isLoading } = useSWR<ListResponse<StorageProvider>>(
     "/storage/providers",
     fetcher,
   );
-  const [minioOpen, setMinioOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
   const [connectorOpen, setConnectorOpen] = useState(false);
 
   const providers = data?.results ?? [];
-  const hasMinio = providers.some((p) => p.kind === "minio");
+  const hasLocal = providers.some((p) => isLocal(p.kind));
 
   return (
     <Page>
       <PageHeader
         title="Object storage"
-        description="S3-compatible buckets — self-hosted MinIO or an external provider."
+        description="S3-compatible buckets — self-hosted Garage or an external provider."
         actions={
           <>
             <Button
@@ -104,13 +106,13 @@ export default function StoragePage() {
             >
               Add connector
             </Button>
-            {!hasMinio && (
+            {!hasLocal && (
               <Button
                 size="sm"
                 renderIcon={BareMetalServer}
-                onClick={() => setMinioOpen(true)}
+                onClick={() => setInstallOpen(true)}
               >
-                Install MinIO
+                Install Garage
               </Button>
             )}
           </>
@@ -123,7 +125,7 @@ export default function StoragePage() {
         <Tile className="gisila-empty">
           <ObjectStorage size={32} style={{ opacity: 0.4 }} />
           <p>
-            No storage providers yet. Install MinIO for self-hosted buckets, or
+            No storage providers yet. Install Garage for self-hosted buckets, or
             connect an external S3/R2 endpoint.
           </p>
         </Tile>
@@ -135,7 +137,7 @@ export default function StoragePage() {
         </Stack>
       )}
 
-      <InstallMinioDialog open={minioOpen} onOpenChange={setMinioOpen} />
+      <InstallGarageDialog open={installOpen} onOpenChange={setInstallOpen} />
       <AddConnectorDialog open={connectorOpen} onOpenChange={setConnectorOpen} />
     </Page>
   );
@@ -160,7 +162,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
   }
 
   async function remove() {
-    if (!confirm(`Remove "${p.displayName}"? Buckets and any app links are removed too.`))
+    if (!(await confirmDialog(`Remove "${p.displayName}"? Buckets and any app links are removed too.`)))
       return;
     try {
       await api(`/storage/providers/${p.id}`, { method: "DELETE" });
@@ -178,7 +180,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
       <div className="gisila-sm__tile-head">
         <Stack gap={2}>
           <div className="gisila-sm__title-row">
-            {p.kind === "minio" ? (
+            {isLocal(p.kind) ? (
               <BareMetalServer size={16} />
             ) : (
               <Cloud size={16} />
@@ -195,7 +197,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
               </CarbonLink>
             </p>
           ) : (
-            p.kind === "minio" && (
+            isLocal(p.kind) && (
               <p className="gisila-sm__warning">
                 Not publicly exposed — only reachable from apps on this host.
               </p>
@@ -214,7 +216,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
           )}
         </Stack>
         <div className="gisila-sm__actions">
-          {p.kind === "minio" && (
+          {isLocal(p.kind) && (
             <Button
               kind="ghost"
               size="sm"
@@ -224,7 +226,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
               onClick={() => setExposeOpen(true)}
             />
           )}
-          {p.kind === "minio" && p.status === "stopped" && (
+          {isLocal(p.kind) && p.status === "stopped" && (
             <Button
               kind="ghost"
               size="sm"
@@ -234,7 +236,7 @@ function ProviderCard({ provider: p }: { provider: StorageProvider }) {
               onClick={() => lifecycle("start")}
             />
           )}
-          {p.kind === "minio" && p.status === "running" && (
+          {isLocal(p.kind) && p.status === "running" && (
             <Button
               kind="ghost"
               size="sm"
@@ -365,17 +367,20 @@ function ExposeDialog({
           value={publicUrl}
           onChange={(e) => setPublicUrl(e.target.value)}
         />
-        <TextInput
-          id={`expose-console-${p.id}`}
-          labelText={
-            <>
-              Console URL <span className="gisila-sm__optional">(optional)</span>
-            </>
-          }
-          placeholder="https://minio.example.com"
-          value={consoleUrl}
-          onChange={(e) => setConsoleUrl(e.target.value)}
-        />
+        {p.kind === "minio" && (
+          <TextInput
+            id={`expose-console-${p.id}`}
+            labelText={
+              <>
+                Console URL{" "}
+                <span className="gisila-sm__optional">(optional)</span>
+              </>
+            }
+            placeholder="https://minio.example.com"
+            value={consoleUrl}
+            onChange={(e) => setConsoleUrl(e.target.value)}
+          />
+        )}
         <Checkbox
           id={`expose-cert-${p.id}`}
           labelText="Obtain a Let's Encrypt certificate"
@@ -384,12 +389,22 @@ function ExposeDialog({
           onChange={(_, { checked }) => setIssueCert(checked)}
         />
         <div className="gisila-sm__callout gisila-sm__note">
-          <p>
-            MinIO listens on <code className="gisila-sm__code">127.0.0.1</code>{" "}
-            only. Each URL creates an nginx reverse-proxy vhost — the S3 API
-            (unlimited upload size) and the web console (websockets) get their
-            own hostnames, since they can&apos;t share one.
-          </p>
+          {p.kind === "minio" ? (
+            <p>
+              MinIO listens on <code className="gisila-sm__code">127.0.0.1</code>{" "}
+              only. Each URL creates an nginx reverse-proxy vhost — the S3 API
+              (unlimited upload size) and the web console (websockets) get their
+              own hostnames, since they can&apos;t share one.
+            </p>
+          ) : (
+            <p>
+              Garage listens on <code className="gisila-sm__code">127.0.0.1</code>{" "}
+              only. The URL gets an nginx vhost for the S3 API (unlimited upload
+              size); objects in public buckets are also readable there without
+              credentials, at{" "}
+              <code className="gisila-sm__code">/&lt;bucket&gt;/&lt;key&gt;</code>.
+            </p>
+          )}
           <p>
             Leave the certificate box unchecked if TLS is terminated upstream
             (e.g. a Cloudflare proxy or external load balancer) — nginx then
@@ -429,7 +444,7 @@ function BucketRow({
   }
 
   async function remove() {
-    if (!confirm(`Delete bucket "${b.bucketName}" and all its objects?`)) return;
+    if (!(await confirmDialog(`Delete bucket "${b.bucketName}" and all its objects?`))) return;
     try {
       await api(`/storage/providers/${providerId}/buckets/${b.id}`, {
         method: "DELETE",
@@ -539,7 +554,7 @@ function CredentialList({ rows }: { rows: (string | null | undefined)[][] }) {
   );
 }
 
-function InstallMinioDialog({
+function InstallGarageDialog({
   open,
   onOpenChange,
 }: {
@@ -547,30 +562,29 @@ function InstallMinioDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const [form, setForm] = useState({
-    displayName: "MinIO",
-    port: "9000",
-    consolePort: "9001",
+    displayName: "Garage",
+    port: "3900",
     publicUrl: "",
   });
   const [saving, setSaving] = useState(false);
+  const port = Number(form.port) || 3900;
 
   async function submit() {
     setSaving(true);
     try {
-      await api("/storage/providers/minio", {
+      await api("/storage/providers/garage", {
         method: "POST",
         body: JSON.stringify({
           displayName: form.displayName,
           port: Number(form.port),
-          consolePort: Number(form.consolePort),
           publicUrl: form.publicUrl || undefined,
         }),
       });
-      toast.success("MinIO installation queued.");
+      toast.success("Garage installation queued.");
       onOpenChange(false);
       mutate("/storage/providers");
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to install MinIO");
+      toast.error(err instanceof Error ? err.message : "Failed to install Garage");
     } finally {
       setSaving(false);
     }
@@ -580,7 +594,7 @@ function InstallMinioDialog({
     <Modal
       open={open}
       onRequestClose={() => onOpenChange(false)}
-      modalHeading="Install MinIO"
+      modalHeading="Install Garage"
       primaryButtonText={saving ? "Installing…" : "Install"}
       primaryButtonDisabled={saving}
       secondaryButtonText="Cancel"
@@ -589,48 +603,29 @@ function InstallMinioDialog({
     >
       <Stack gap={5}>
         <TextInput
-          id="minio-display-name"
+          id="garage-display-name"
           labelText="Display name"
           value={form.displayName}
           onChange={(e) => setForm({ ...form, displayName: e.target.value })}
         />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "1rem",
-          }}
-        >
-          <NumberInput
-            id="minio-port"
-            label="API port"
-            allowEmpty
-            hideSteppers
-            value={form.port}
-            onChange={(_, { value }) =>
-              setForm({ ...form, port: String(value) })
-            }
-          />
-          <NumberInput
-            id="minio-console-port"
-            label="Console port"
-            allowEmpty
-            hideSteppers
-            value={form.consolePort}
-            onChange={(_, { value }) =>
-              setForm({ ...form, consolePort: String(value) })
-            }
-          />
-        </div>
+        <NumberInput
+          id="garage-port"
+          label="S3 API port"
+          helperText={`Garage also uses ${port + 1} (internal RPC) and ${port + 2} (public reads), all on 127.0.0.1.`}
+          allowEmpty
+          hideSteppers
+          value={form.port}
+          onChange={(_, { value }) => setForm({ ...form, port: String(value) })}
+        />
         <TextInput
-          id="minio-public-url"
+          id="garage-public-url"
           labelText={
             <>
               Public URL <span className="gisila-sm__optional">(optional)</span>
             </>
           }
-          placeholder="https://cdn.example.com"
-          helperText="Base URL for public object reads (front MinIO with nginx or a CDN). The server listens on 127.0.0.1 only."
+          placeholder="https://s3.example.com"
+          helperText="Publishes the S3 API through nginx at this URL. Without it, buckets are reachable only from apps on this host."
           value={form.publicUrl}
           onChange={(e) => setForm({ ...form, publicUrl: e.target.value })}
         />

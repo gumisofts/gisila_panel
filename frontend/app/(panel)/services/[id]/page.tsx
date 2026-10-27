@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import RouterLink from "@/compat/link";
 import { useParams, useRouter } from "@/compat/navigation";
@@ -48,6 +46,7 @@ import type {
 import { toast } from "@/lib/toast";
 import { PgBouncerConfig } from "./_panels/pgbouncer-config";
 import "../_services.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 // ── Status display ────────────────────────────────────────────────────────────
 
@@ -288,7 +287,7 @@ function ServiceLogPanel({
               }
             >
               <span className="gisila-logs__ts">{l.ts.slice(11, 19)}</span>
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))
         )}

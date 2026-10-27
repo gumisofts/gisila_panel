@@ -1,9 +1,9 @@
-"use client";
-
+import { Suspense } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import Link from "@/compat/link";
 import {
   Content,
+  Loading,
   Header,
   HeaderContainer,
   HeaderMenuButton,
@@ -48,7 +48,11 @@ export default function PanelLayout() {
           <Content>
             {/* Keyed by path: navigating away clears a crashed page. */}
             <ErrorBoundary key={pathname}>
-              <Outlet />
+              {/* Pages are code-split; a failed chunk load (e.g. after a
+                  redeploy) lands in the boundary, which offers a reload. */}
+              <Suspense fallback={<Loading withOverlay={false} small />}>
+                <Outlet />
+              </Suspense>
             </ErrorBoundary>
           </Content>
         </>

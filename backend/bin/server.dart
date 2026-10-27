@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 import 'package:gisila_panel/server.dart';
 import 'package:shelf/shelf_io.dart';
 import 'package:shelf_hotreload/shelf_hotreload.dart';
@@ -16,6 +17,9 @@ Future<void> main(List<String> args) async {
     await seedSuperuser();
     return;
   }
+
+  // Before serving: the key exists and no secret is left in plaintext.
+  await SecretBox.prepare();
 
   final port = int.parse(env.getOrElse('PORT', () => '8000'));
   final isDev = args.contains('--dev') || args.contains('dev');
@@ -40,6 +44,7 @@ Future<void> _createProdServer(int port) async {
       debugName: 'gisila-panel-$i',
       (int p) async {
         await init();
+        await SecretBox.load();
         final handler = await application();
         final server = await serve(handler, '0.0.0.0', p, shared: true);
         server.autoCompress = true;

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "@/compat/navigation";
 import useSWR from "swr";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { useParams, useRouter } from "@/compat/navigation";
 import useSWR from "swr";

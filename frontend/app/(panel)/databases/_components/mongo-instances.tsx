@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type ComponentProps, type ElementType } from "react";
 import RouterLink from "@/compat/link";
 import useSWR, { mutate } from "swr";

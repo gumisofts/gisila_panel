@@ -1,5 +1,3 @@
-"use client";
-
 import type { ComponentType, ElementType } from "react";
 import useSWR from "swr";
 import { Add } from "@carbon/icons-react";

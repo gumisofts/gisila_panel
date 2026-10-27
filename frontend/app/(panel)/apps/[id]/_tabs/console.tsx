@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { Button, Stack, TextInput } from "@carbon/react";
 import { PlayFilled, Terminal, TrashCan } from "@carbon/icons-react";
@@ -7,6 +5,7 @@ import { api, getToken, getWsBase } from "@/lib/api";
 import { handleSocketError } from "@/lib/log-socket";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 const WS_URL = getWsBase();
 
@@ -89,17 +88,17 @@ export function ConsoleTab({ appId }: { appId: number }) {
           typeof data.message === "string"
             ? data.message
             : JSON.stringify(data.message);
-        let parsed: { stream?: string; line?: string } = {};
+        let parsed: { stream?: string; line?: string; exit?: number } = {};
         try {
           parsed = JSON.parse(raw);
         } catch {
           parsed = { line: raw };
         }
         const line = parsed.line ?? raw;
-        // Completion marker emitted by the exec worker.
-        const exitMatch = /^__EXIT__:(-?\d+)$/.exec(line);
-        if (exitMatch) {
-          const code = Number(exitMatch[1]);
+        // Completion is its own frame from the exec worker, not a line of
+        // output, so a command can't print its way to "finished".
+        if (typeof parsed.exit === "number") {
+          const code = parsed.exit;
           append({
             ts: data.ts ?? new Date().toISOString(),
             stream: code === 0 ? "system" : "stderr",
@@ -198,7 +197,7 @@ export function ConsoleTab({ appId }: { appId: number }) {
           {lines.map((l, i) => (
             <div key={i} className={lineClass(l.stream)}>
               <span className="gisila-term__ts">{l.ts.slice(11, 19)}</span>
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))}
           <div ref={endRef} />

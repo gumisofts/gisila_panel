@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
@@ -30,6 +28,7 @@ import { formatRelative } from "@/lib/utils";
 import type { ListResponse, SshKey, User } from "@/lib/types";
 import { SecuritySections } from "./_security";
 import "./_settings.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export default function SettingsPage() {
   const me = useSWR<User>("/auth/me", fetcher);
@@ -67,7 +66,7 @@ export default function SettingsPage() {
   }
 
   async function removeKey(id: number) {
-    if (!confirm("Remove this SSH key?")) return;
+    if (!(await confirmDialog("Remove this SSH key?"))) return;
     await api(`/me/security/ssh-keys/${id}`, { method: "DELETE" });
     keys.mutate();
   }

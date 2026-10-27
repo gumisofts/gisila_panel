@@ -12,7 +12,8 @@ import 'package:gisila_panel/models/models.dart';
 /// Output is streamed live to a per-execution Redis channel
 /// (`gisila:logs:exec:<execId>`) and buffered into a capped history list, exactly
 /// like the service-install logs, so the panel's Console can replay + tail it.
-/// A trailing `__EXIT__:<code>` system line signals completion to the client.
+/// Completion is a frame of its own, `{"stream":"system","exit":<code>}`, so
+/// nothing the command prints can fake it.
 class ExecWorker {
   ExecWorker(this.database);
 
@@ -33,7 +34,7 @@ class ExecWorker {
     if (app == null || app.linuxUser == null) {
       await _log(execId, 'stderr',
           'App is not provisioned yet — deploy it before running commands.');
-      await _log(execId, 'system', '__EXIT__:1');
+      await _exit(execId, 1);
       return;
     }
 
@@ -70,10 +71,10 @@ class ExecWorker {
         ],
         '--command', command,
       ], execId);
-      await _log(execId, 'system', '__EXIT__:$exit');
+      await _exit(execId, exit);
     } catch (e) {
       await _log(execId, 'stderr', 'Execution failed: $e');
-      await _log(execId, 'system', '__EXIT__:1');
+      await _exit(execId, 1);
     }
   }
 
@@ -111,8 +112,13 @@ class ExecWorker {
   String _historyKey(String execId) => 'gisila:logs:exec:$execId:history';
   String _channel(String execId) => 'gisila:logs:exec:$execId';
 
-  Future<void> _log(String execId, String stream, String line) async {
-    final payload = jsonEncode({'stream': stream, 'line': line});
+  Future<void> _exit(String execId, int code) =>
+      _publish(execId, jsonEncode({'stream': 'system', 'exit': code}));
+
+  Future<void> _log(String execId, String stream, String line) =>
+      _publish(execId, jsonEncode({'stream': stream, 'line': line}));
+
+  Future<void> _publish(String execId, String payload) async {
     try {
       await RedisClient.instance.rpush(_historyKey(execId), payload);
       await RedisClient.instance.ltrim(_historyKey(execId), -2000, -1);

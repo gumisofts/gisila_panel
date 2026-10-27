@@ -12,6 +12,7 @@ import 'package:gisila_panel/services/postgres_service.dart'
     show isLocalInstance, statsTarget;
 import 'package:gisila_panel/workers/health_monitor_worker.dart';
 import 'package:gisila_panel/workers/host_stats_sampler.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Self-driven [Timer] loop that walks every enabled [AlertRule], samples the
 /// metric it watches, and fires/resolves [AlertEvent]s through
@@ -300,7 +301,7 @@ class AlertEvaluator {
     mongo.Db? conn;
     try {
       final uri =
-          'mongodb://gisila_monitor:${inst.monitorPassword}@127.0.0.1:${inst.port}/admin?authSource=admin';
+          'mongodb://gisila_monitor:${inst.plainMonitorPassword}@127.0.0.1:${inst.port}/admin?authSource=admin';
       conn = await mongo.Db.create(uri);
       await conn.open();
       final status = await conn.runCommand({'serverStatus': 1});

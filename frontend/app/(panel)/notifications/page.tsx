@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR, { mutate as mutateCache } from "swr";
 import { ErrorState } from "@/components/error-state";

@@ -315,6 +315,15 @@ else
   fi
 fi
 
+# Key for secrets the panel encrypts in Postgres (env var values, TOTP
+# secrets). Created once and never replaced: losing it loses those values,
+# so back it up with the database. The panel also creates it on first start.
+if [[ ! -s /etc/gisila/secret.key ]]; then
+  echo "==> Creating /etc/gisila/secret.key"
+  ( umask 077 && head -c 32 /dev/urandom | base64 > /etc/gisila/secret.key )
+  chown "$GISILA_USER:$GISILA_USER" /etc/gisila/secret.key
+fi
+
 # ── 10. /etc/gisila/database.yaml ─────────────────────────────────────────────
 echo "==> Writing /etc/gisila/database.yaml"
 # Detect the major version of the configured cluster (works for remote hosts

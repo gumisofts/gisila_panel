@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import {
@@ -21,6 +19,7 @@ import { openLogSocket } from "@/lib/log-socket";
 import { formatRelative, scrollLogPaneToBottom } from "@/lib/utils";
 import type { BuildLog, Deployment, ListResponse } from "@/lib/types";
 import "../_app-detail.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 // ── Stage detection ────────────────────────────────────────────────────────────
 const STAGES = [
@@ -238,7 +237,7 @@ function LogPanel({
               {l.stream === "stderr" && (
                 <span className="gisila-term__stream">[err]</span>
               )}
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))}
           <div ref={endRef} />

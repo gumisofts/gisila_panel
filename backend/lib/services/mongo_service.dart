@@ -10,6 +10,7 @@ import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/postgres_service.dart'
     show computeNextRun, generatePassword, pgBackupDir;
 import 'package:mongo_dart/mongo_dart.dart' as mongo;
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// MongoDB Community versions the panel can install side-by-side.
 const kMongoVersions = ['6.0', '7.0', '8.0'];
@@ -124,7 +125,8 @@ class MongoService extends Service {
       'isDefault': false,
       // The root admin password is generated up front so the agent can create
       // the authenticated root user during install.
-      'rootPassword': generatePassword(),
+      'rootPassword':
+          SecretBox.instance.seal(generatePassword(), SecretBox.mongoRootPassword),
       'dataDirectory': '/var/lib/mongo/$version',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
     }).one(_db.context());
@@ -264,7 +266,8 @@ class MongoService extends Service {
       'instanceId': instanceId,
       'dbName': dbName,
       'userName': userName,
-      'password': password,
+      'password':
+          SecretBox.instance.sealOrEmpty(password, SecretBox.mongoDatabasePassword),
       'roles': jsonEncode(normRoles),
       'status': 'pending',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
@@ -350,13 +353,13 @@ class MongoService extends Service {
     final host = '127.0.0.1';
     final port = instance.port;
     final url =
-        'mongodb://${database.userName}:${database.password}@$host:$port/${database.dbName}?authSource=${database.dbName}';
+        'mongodb://${database.userName}:${database.plainPassword}@$host:$port/${database.dbName}?authSource=${database.dbName}';
     final info = <String, Object?>{
       'host': host,
       'port': port,
       'database': database.dbName,
       'username': database.userName,
-      'password': database.password,
+      'password': database.plainPassword,
       'authSource': database.dbName,
       'url': url,
     };
@@ -364,7 +367,7 @@ class MongoService extends Service {
       final pubHost = instance.publicDomain!;
       info['publicHost'] = pubHost;
       info['publicUrl'] =
-          'mongodb://${database.userName}:${database.password}@$pubHost:$port/${database.dbName}?authSource=${database.dbName}&tls=true';
+          'mongodb://${database.userName}:${database.plainPassword}@$pubHost:$port/${database.dbName}?authSource=${database.dbName}&tls=true';
     }
     return info;
   }
@@ -538,14 +541,17 @@ class MongoService extends Service {
   /// the read-only `gisila_monitor` user on the instance.
   Future<void> _ensureMonitor(MongoInstance inst) async {
     if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
-      await _patchInstance(inst.id!, {'monitorPassword': generatePassword()});
+      await _patchInstance(inst.id!, {
+        'monitorPassword': SecretBox.instance
+            .seal(generatePassword(), SecretBox.mongoMonitorPassword),
+      });
     }
     await _enqueue('ensure_monitor', {'instanceId': inst.id});
   }
 
   Future<mongo.Db> _openMonitor(MongoInstance inst) async {
     final uri =
-        'mongodb://gisila_monitor:${inst.monitorPassword}@127.0.0.1:${inst.port}/admin?authSource=admin';
+        'mongodb://gisila_monitor:${inst.plainMonitorPassword}@127.0.0.1:${inst.port}/admin?authSource=admin';
     final conn = await mongo.Db.create(uri);
     await conn.open();
     return conn;

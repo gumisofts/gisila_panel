@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import {
@@ -23,6 +21,7 @@ import { formatRelative } from "@/lib/utils";
 import type { Domain, ListResponse } from "@/lib/types";
 import { useServerInfo } from "@/components/server-ip";
 import "../_app-detail.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export function DomainsTab({ appId }: { appId: number }) {
   const { data, mutate } = useSWR<ListResponse<Domain>>(
@@ -64,7 +63,7 @@ export function DomainsTab({ appId }: { appId: number }) {
   const server = useServerInfo();
 
   async function remove(id: number) {
-    if (!confirm("Remove this domain?")) return;
+    if (!(await confirmDialog("Remove this domain?"))) return;
     await api(`/apps/${appId}/domains/${id}`, { method: "DELETE" });
     mutate();
   }

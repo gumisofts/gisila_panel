@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { fetcher } from "./api";
 import type { ListResponse, Project, Role, Team, User } from "./types";

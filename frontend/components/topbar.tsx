@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { useRouter } from "@/compat/navigation";
 import {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
+import 'package:gisila_panel/infra/secret_box.dart';
 import 'package:gisila_panel/workers/alert_worker.dart';
 import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
@@ -19,6 +20,8 @@ import 'package:gisila_panel/workers/storage_worker.dart';
 
 Future<void> main(List<String> args) async {
   await init();
+  // The panel server creates the key on first start; wait for it.
+  await SecretBox.load();
   final database = await Database.connect(databaseConfig);
   final deploymentWorker = DeploymentWorker(database);
   final serviceWorker = ServiceWorker(database);

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import {
   Button,
@@ -29,6 +27,7 @@ import { api } from "@/lib/api";
 import { SshKey, SshKeyAlgorithm } from "@/lib/types";
 import { Add, Checkmark, Copy, Password, TrashCan } from "@carbon/icons-react";
 import "../_settings.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 const ALGORITHMS: { value: SshKeyAlgorithm; label: string; badge: string }[] = [
   { value: "ed25519",   label: "Ed25519",   badge: "Recommended" },
@@ -117,7 +116,7 @@ export default function SshKeysPage() {
   };
 
   const deleteKey = async (id: number) => {
-    if (!confirm("Delete this SSH key? This action cannot be undone.")) return;
+    if (!(await confirmDialog("Delete this SSH key? This action cannot be undone."))) return;
     await api(`/me/security/ssh-keys/${id}`, { method: "DELETE" });
     setKeys((prev) => prev.filter((k) => k.id !== id));
   };

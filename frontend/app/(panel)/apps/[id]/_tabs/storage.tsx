@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
@@ -25,6 +23,7 @@ import type {
   StorageProvider,
 } from "@/lib/types";
 import "../_app-detail.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export function StorageTab({ appId }: { appId: number }) {
   const linksKey = `/storage/apps/${appId}/links`;
@@ -76,7 +75,7 @@ export function StorageTab({ appId }: { appId: number }) {
   }
 
   async function unlink(linkId: number) {
-    if (!confirm("Unlink this bucket? Its injected env vars will be removed.")) return;
+    if (!(await confirmDialog("Unlink this bucket? Its injected env vars will be removed."))) return;
     try {
       await api(`${linksKey}/${linkId}`, { method: "DELETE" });
       toast.success("Bucket unlinked.");

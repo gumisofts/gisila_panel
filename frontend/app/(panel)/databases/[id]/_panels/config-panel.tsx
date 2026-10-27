@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { toast } from "@/lib/toast";

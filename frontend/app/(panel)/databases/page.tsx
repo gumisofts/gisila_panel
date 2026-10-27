@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { Tab, TabList, TabPanel, TabPanels, Tabs } from "@carbon/react";
 import { Page, PageHeader } from "@/components/page";

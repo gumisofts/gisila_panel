@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import {
@@ -30,6 +28,7 @@ import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
 import type { EnvVar, ListResponse } from "@/lib/types";
 import "../_app-detail.scss";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 // ── .env parser ───────────────────────────────────────────────────────────────
 
@@ -121,7 +120,7 @@ export function EnvsTab({ appId }: { appId: number }) {
   }
 
   async function remove(envId: number) {
-    if (!confirm("Delete this env var?")) return;
+    if (!(await confirmDialog("Delete this env var?"))) return;
     await api(`/apps/${appId}/envs/${envId}`, { method: "DELETE" });
     mutate();
   }

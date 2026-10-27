@@ -1,11 +1,10 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@carbon/react";
 import { PauseFilled, PlayFilled, TrashCan } from "@carbon/icons-react";
 import { openLogSocket, type LogSocketState } from "@/lib/log-socket";
 import { scrollLogPaneToBottom } from "@/lib/utils";
 import "../_app-detail.scss";
+import { renderAnsi } from "@/lib/ansi";
 
 interface LogLine {
   ts: string;
@@ -122,7 +121,7 @@ export function LogsTab({ appId }: { appId: number }) {
           {lines.map((l, i) => (
             <div key={i} className={lineClass(l.stream)}>
               <span className="gisila-term__ts">{l.ts.slice(11, 19)}</span>
-              {l.line}
+              {renderAnsi(l.line)}
             </div>
           ))}
           <div ref={endRef} />

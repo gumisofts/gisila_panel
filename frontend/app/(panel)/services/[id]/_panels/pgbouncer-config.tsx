@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Add, Save, TrashCan, View, ViewOff } from "@carbon/icons-react";

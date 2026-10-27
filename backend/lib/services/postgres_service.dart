@@ -17,6 +17,7 @@ import 'package:gisila_panel/config.dart'
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:postgres/postgres.dart' as pg;
+import 'package:gisila_panel/infra/secret_box.dart';
 
 /// Postgres settings the panel lets users tune via the Configuration tab.
 /// Keys must match `pg_settings.name`; the agent applies them with
@@ -190,7 +191,7 @@ bool isLoopbackHost(String host) {
         port: inst.port,
         database: 'postgres',
         username: 'gisila_monitor',
-        password: inst.monitorPassword,
+        password: inst.plainMonitorPassword,
       ),
       settings: pg.ConnectionSettings(
         sslMode: pg.SslMode.disable,
@@ -610,7 +611,8 @@ class PostgresService extends Service {
       'instanceId': instanceId,
       'dbName': dbName,
       'roleName': roleName,
-      'password': password,
+      'password':
+          SecretBox.instance.sealOrEmpty(password, SecretBox.pgDatabasePassword),
       'extensions': jsonEncode(extensions ?? []),
       'roleAttributes': jsonEncode(attrs),
       'status': 'pending',
@@ -725,13 +727,13 @@ class PostgresService extends Service {
       };
     }
     final url =
-        'postgresql://${db.roleName}:${db.password}@$host:$port/${db.dbName}';
+        'postgresql://${db.roleName}:${db.plainPassword}@$host:$port/${db.dbName}';
     final info = <String, Object?>{
       'host': host,
       'port': port,
       'database': db.dbName,
       'username': db.roleName,
-      'password': db.password,
+      'password': db.plainPassword,
       'url': url,
     };
     // When the instance is publicly exposed, also surface the external,
@@ -741,7 +743,7 @@ class PostgresService extends Service {
       final pubHost = instance.publicDomain!;
       info['publicHost'] = pubHost;
       info['publicUrl'] =
-          'postgresql://${db.roleName}:${db.password}@$pubHost:$port/${db.dbName}?sslmode=verify-full';
+          'postgresql://${db.roleName}:${db.plainPassword}@$pubHost:$port/${db.dbName}?sslmode=verify-full';
     }
     return info;
   }
@@ -997,7 +999,10 @@ class PostgresService extends Service {
   Future<void> _ensureMonitor(PostgresInstance inst) async {
     if (!isLocalInstance(inst)) return;
     if (inst.monitorPassword == null || inst.monitorPassword!.isEmpty) {
-      await _patchInstance(inst.id!, {'monitorPassword': generatePassword()});
+      await _patchInstance(inst.id!, {
+        'monitorPassword':
+            SecretBox.instance.seal(generatePassword(), SecretBox.pgMonitorPassword),
+      });
     }
     await _enqueue('ensure_monitor', {'instanceId': inst.id});
   }
