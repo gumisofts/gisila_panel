@@ -171,4 +171,64 @@ void main() {
           throwsArgumentError);
     });
   });
+
+  group('requireWorkDir', () {
+    test('accepts the app home and paths under it', () {
+      for (final d in [
+        '/srv/apps/app_abc123',
+        '/srv/apps/app_abc123/',
+        '/srv/apps/app_abc123/current/.runtime',
+      ]) {
+        expect(AgentValidators.requireWorkDir(d), d);
+      }
+    });
+
+    test('rejects . and .. segments', () {
+      for (final d in [
+        '/srv/apps/app_abc123/..',
+        '/srv/apps/app_abc123/../app_other99',
+        '/srv/apps/app_abc123/../../../etc',
+        '/srv/apps/app_abc123/./x',
+      ]) {
+        expect(() => AgentValidators.requireWorkDir(d), throwsArgumentError,
+            reason: d);
+      }
+    });
+  });
+
+  group('optionalVersion', () {
+    test('accepts the pins each runtime uses', () {
+      for (final v in [
+        '22.12.0',
+        '3.12',
+        '1',
+        'stable',
+        'nightly-2024-01-01',
+        '3.6.0-216.1.beta',
+        'v20',
+      ]) {
+        expect(AgentValidators.optionalVersion('node-version', v), v);
+      }
+      expect(AgentValidators.optionalVersion('node-version', null), isNull);
+      expect(AgentValidators.optionalVersion('node-version', ' '), isNull);
+    });
+
+    test('rejects paths, URLs and shell syntax', () {
+      for (final v in [
+        '../../etc',
+        '22..1',
+        '/opt/x',
+        '22/../../x',
+        '-rf',
+        r'22;$(id)',
+        '22 12',
+        '22\nExecStartPre=+/bin/id',
+        'a' * 65,
+      ]) {
+        expect(() => AgentValidators.optionalVersion('node-version', v),
+            throwsArgumentError,
+            reason: v);
+      }
+    });
+  });
 }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:gisila/gisila.dart';
+import 'package:gisila_panel/forms/runtime_version.dart';
 
 // systemd's CPUQuota is "percent of one core" — a value above what the host
 // actually has doesn't error, it just can never be reached, so the API caps
@@ -80,7 +81,8 @@ class CreateAppForm extends Form {
   final tasksLimit = IntField(name: 'tasksLimit');
 
   // Python-specific fields.
-  final pythonVersion = StringField(name: 'pythonVersion');
+  final pythonVersion =
+      StringField(name: 'pythonVersion', validators: [validRuntimeVersion]);
   final pythonMode = StringField(name: 'pythonMode'); // wsgi | asgi
   final wsgiApp = StringField(name: 'wsgiApp');
 
@@ -92,11 +94,15 @@ class CreateAppForm extends Form {
   final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
 
   // Runtime version pins.
-  final nodeVersion = StringField(name: 'nodeVersion');
-  final dartVersion = StringField(name: 'dartVersion');
-  final goVersion = StringField(name: 'goVersion');
-  final rustVersion = StringField(name: 'rustVersion');
-  final bunVersion = StringField(name: 'bunVersion');
+  final nodeVersion =
+      StringField(name: 'nodeVersion', validators: [validRuntimeVersion]);
+  final dartVersion =
+      StringField(name: 'dartVersion', validators: [validRuntimeVersion]);
+  final goVersion = StringField(name: 'goVersion', validators: [validRuntimeVersion]);
+  final rustVersion =
+      StringField(name: 'rustVersion', validators: [validRuntimeVersion]);
+  final bunVersion =
+      StringField(name: 'bunVersion', validators: [validRuntimeVersion]);
 
   // Celery-specific fields.
   final celeryApp = StringField(name: 'celeryApp');
@@ -192,7 +198,8 @@ class UpdateAppForm extends Form {
   final cpuQuotaPercent =
       IntField(name: 'cpuQuotaPercent', min: 1, max: _maxCpuQuotaPercent);
   final tasksLimit = IntField(name: 'tasksLimit');
-  final pythonVersion = StringField(name: 'pythonVersion');
+  final pythonVersion =
+      StringField(name: 'pythonVersion', validators: [validRuntimeVersion]);
   final pythonMode = StringField(name: 'pythonMode');
   final wsgiApp = StringField(name: 'wsgiApp');
   final gunicornWorkers = IntField(name: 'gunicornWorkers');
@@ -200,11 +207,15 @@ class UpdateAppForm extends Form {
   final gunicornTimeout = IntField(name: 'gunicornTimeout');
   final gunicornBind = StringField(name: 'gunicornBind');
   final gunicornExtraArgs = StringField(name: 'gunicornExtraArgs');
-  final nodeVersion = StringField(name: 'nodeVersion');
-  final dartVersion = StringField(name: 'dartVersion');
-  final goVersion = StringField(name: 'goVersion');
-  final rustVersion = StringField(name: 'rustVersion');
-  final bunVersion = StringField(name: 'bunVersion');
+  final nodeVersion =
+      StringField(name: 'nodeVersion', validators: [validRuntimeVersion]);
+  final dartVersion =
+      StringField(name: 'dartVersion', validators: [validRuntimeVersion]);
+  final goVersion = StringField(name: 'goVersion', validators: [validRuntimeVersion]);
+  final rustVersion =
+      StringField(name: 'rustVersion', validators: [validRuntimeVersion]);
+  final bunVersion =
+      StringField(name: 'bunVersion', validators: [validRuntimeVersion]);
   final celeryApp = StringField(name: 'celeryApp');
   final celeryWorkerCount = IntField(name: 'celeryWorkerCount');
   final celeryConcurrency = IntField(name: 'celeryConcurrency');

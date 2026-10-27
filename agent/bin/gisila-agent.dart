@@ -292,18 +292,21 @@ Future<void> _build(List<String> args) async {
   // flags today (python/celery share --python-version). Falls back to
   // --version for any future plugin that doesn't need a runtime-specific
   // flag name of its own.
-  final version = <String, String?>{
-        'dart': r['dart-version'] as String?,
-        'go': r['go-version'] as String?,
-        'rust': r['rust-version'] as String?,
-        'node': r['node-version'] as String?,
-        // Static sites with a Node build (Vite/Next export/…) use the same pin.
-        'static': r['node-version'] as String?,
-        'bun': r['bun-version'] as String?,
-        'python': r['python-version'] as String?,
-        'celery': r['python-version'] as String?,
-      }[runtime] ??
-      r['version'] as String?;
+  final ownFlag = const <String, String>{
+    'dart': 'dart-version',
+    'go': 'go-version',
+    'rust': 'rust-version',
+    'node': 'node-version',
+    // Static sites with a Node build (Vite/Next export/…) use the same pin.
+    'static': 'node-version',
+    'bun': 'bun-version',
+    'python': 'python-version',
+    'celery': 'python-version',
+  }[runtime];
+  final versionFlag =
+      ownFlag != null && r[ownFlag] != null ? ownFlag : 'version';
+  final version =
+      AgentValidators.optionalVersion(versionFlag, r[versionFlag] as String?);
 
   await RuntimeRegistry.get(runtime).build(RuntimeBuildContext(
     workDir: workDir,
@@ -398,7 +401,8 @@ Future<void> _runtime(List<String> args) async {
     throw ArgumentError('Unknown --key: $key');
   }
   final plugin = RuntimeRegistry.get(key);
-  final version = r['version'] as String?;
+  final version =
+      AgentValidators.optionalVersion('version', r['version'] as String?);
 
   switch (action) {
     case 'install':

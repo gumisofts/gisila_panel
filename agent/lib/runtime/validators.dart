@@ -32,11 +32,30 @@ class AgentValidators {
     return raw;
   }
 
+  /// Root runs builds in and deletes under this path, so `.`/`..` segments
+  /// (which the character class alone lets through) are refused too.
   static String requireWorkDir(String? raw) {
-    if (raw == null || !_workDirRe.hasMatch(raw)) {
+    if (raw == null ||
+        !_workDirRe.hasMatch(raw) ||
+        raw.split('/').any((s) => s == '.' || s == '..')) {
       throw ArgumentError('Invalid --work-dir: $raw');
     }
     return raw;
+  }
+
+  static final _versionRe = RegExp(r'^[0-9A-Za-z][0-9A-Za-z.+\-]{0,63}$');
+
+  /// A runtime version pin such as `22.12.0`, `3.12`, `stable` or
+  /// `nightly-2024-01-01`; null when unset. Pins become directory names
+  /// under /opt and parts of download URLs, so only a version's own
+  /// characters are allowed, and never `..`.
+  static String? optionalVersion(String option, String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final v = raw.trim();
+    if (!_versionRe.hasMatch(v) || v.contains('..')) {
+      throw ArgumentError('Invalid --$option: $raw');
+    }
+    return v;
   }
 
   static int requirePort(String? raw, {int min = 1024, int max = 65535}) {
