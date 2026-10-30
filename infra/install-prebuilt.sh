@@ -108,76 +108,7 @@ gisila_check_connection_security
 # ── 2. Fetch & unpack the prebuilt release ────────────────────────────────────
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-
-if [[ -n "${RELEASE_FILE:-}" ]]; then
-  echo "==> Using local release artifact: $RELEASE_FILE"
-  [[ -f "$RELEASE_FILE" ]] || { echo "ERROR: $RELEASE_FILE not found" >&2; exit 1; }
-  cp "$RELEASE_FILE" "$STAGE/release.tar.gz"
-else
-  if [[ -n "${RELEASE_URL:-}" ]]; then
-    URL="$RELEASE_URL"
-  elif [[ "$VERSION" == "latest" ]]; then
-    URL="https://github.com/$GITHUB_REPO/releases/latest/download/$ASSET"
-  else
-    URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION#v}/$ASSET"
-  fi
-  echo "==> Downloading $URL"
-  DOWNLOAD_OK=false
-  if curl -fSL "$URL" -o "$STAGE/release.tar.gz"; then
-    DOWNLOAD_OK=true
-  elif [[ "$VERSION" == "latest" && -z "${RELEASE_URL:-}" ]]; then
-    # GitHub's "latest release" endpoint/URL (used above) silently skips
-    # draft *and prerelease* releases — so it 404s whenever the newest
-    # published release was tagged as a prerelease (common for early v0.x
-    # tags). Fall back to the releases API, which lists every release
-    # newest-first regardless of that flag, and retry against its tag
-    # directly instead of making the operator pass an explicit VERSION.
-    echo "    /releases/latest has no asset (likely a prerelease) — checking the releases API"
-    FALLBACK_TAG="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases" 2>/dev/null \
-      | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)"
-    if [[ -n "$FALLBACK_TAG" ]]; then
-      URL="https://github.com/$GITHUB_REPO/releases/download/$FALLBACK_TAG/$ASSET"
-      echo "==> Retrying with newest published release: $FALLBACK_TAG"
-      curl -fSL "$URL" -o "$STAGE/release.tar.gz" && DOWNLOAD_OK=true
-    fi
-  fi
-
-  if ! $DOWNLOAD_OK; then
-    echo >&2
-    echo "ERROR: failed to download the release asset from:" >&2
-    echo "         $URL" >&2
-    echo "       Most likely no GitHub Release has been published for" >&2
-    echo "       $GITHUB_REPO yet, or '$VERSION' doesn't match a published tag." >&2
-    echo "       Publish one with 'bash infra/build-release.sh' + 'gh release create'," >&2
-    echo "       or install from a local artifact with RELEASE_FILE=/path/to/*.tar.gz." >&2
-    exit 1
-  fi
-fi
-
-# Check the download against the checksum published next to it. Releases
-# from before checksums were published have none: warn and go on.
-if [[ -z "${RELEASE_FILE:-}" ]]; then
-  if curl -fsSL "$URL.sha256" -o "$STAGE/release.sha256" 2>/dev/null; then
-    EXPECTED="$(awk '{print $1}' "$STAGE/release.sha256")"
-    ACTUAL="$(sha256sum "$STAGE/release.tar.gz" | awk '{print $1}')"
-    if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ || "$EXPECTED" != "$ACTUAL" ]]; then
-      echo "ERROR: checksum mismatch for $URL" >&2
-      echo "       expected $EXPECTED, got $ACTUAL. Not installing it." >&2
-      exit 1
-    fi
-    echo "    checksum OK ($ACTUAL)"
-  else
-    echo "    WARNING: no $URL.sha256 published; installing without a checksum check" >&2
-  fi
-fi
-
-tar -C "$STAGE" -xzf "$STAGE/release.tar.gz"
-SRC="$(find "$STAGE" -maxdepth 1 -type d -name 'gisila-release*' | head -1)"
-if [[ -z "$SRC" || ! -x "$SRC/bin/gisila-panel" ]]; then
-  echo "ERROR: release archive is missing bin/gisila-panel — wrong/corrupt asset?" >&2
-  exit 1
-fi
-echo "    release version: $(cat "$SRC/VERSION" 2>/dev/null || echo unknown)"
+gisila_fetch_release "$STAGE"
 
 # ── 3. System user + directories ──────────────────────────────────────────────
 echo "==> Creating gisila user and directories"

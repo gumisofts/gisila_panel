@@ -268,6 +268,37 @@ you want a specific one regardless.
 > (`gh release edit v<version> --prerelease=false --latest`) so both GitHub's
 > UI and the plain `.../latest/download/…` URL point at it directly.
 
+### Upgrading
+
+On a host that already runs the panel, upgrade with `infra/upgrade.sh`, not
+the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/upgrade.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/upgrade.sh | sudo env VERSION=0.1.0 bash
+```
+
+It downloads the prebuilt release, checks its checksum, and replaces only the
+panel's own files: the four binaries, the UI, the migrations, and the
+`gisila-*` systemd units when they changed. Then it runs the migrations and
+restarts `gisila-panel` and `gisila-worker`. Hosted apps keep running. It
+leaves apt packages, nginx and TLS, `/etc/gisila` (`.env`, `database.yaml`,
+`secret.key`), Postgres and Redis alone.
+
+Before changing anything it saves the current files and a `pg_dump` of the
+database in `/var/backups/gisila/` (the newest three are kept). If the
+migrations fail or the new version doesn't answer within 30 seconds, it puts
+the old version back. To go back by hand later:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gumisofts/gisila_panel/main/infra/upgrade.sh | sudo env ROLLBACK=1 bash
+```
+
+That restores the files, not the database: the old version runs on the
+newer schema, since migrations only add. Use `SKIP_DB_BACKUP=1` when you
+back up the database yourself or the local `pg_dump` is older than the
+server.
+
 ### Build from source
 
 Prefer this only when you've changed the code and want to compile on the host.
