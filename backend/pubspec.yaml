@@ -10,9 +10,10 @@ dependencies:
   crypto: ^3.0.3
   dart_jsonwebtoken: any
   dotenv: ^4.2.0
-  gisila: ^0.3.0
-  gisila_doc: ^0.3.0
+  gisila: ^0.4.1
+  gisila_doc: ^0.3.1
   gisila_orm: ^0.2.0
+  gisila_redis: ^0.1.0
   gisila_studio: ^0.3.0
   http_parser: ^4.0.2
   logger: ^2.2.0

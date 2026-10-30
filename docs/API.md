@@ -121,7 +121,9 @@ Defaults:
 - `POST /auth/login`: **60 req/min**; `POST /auth/login/mfa`: **30 req/min**.
 - `/auth/totp/*` changes: **10 req/min**.
 
-These limits are counted per API isolate (one per CPU). The failed-login
-throttle above is shared across all of them.
+The limits are kept in Redis (`gisila-panel:rl:*`), so one budget per
+client is shared by every API isolate. If Redis can't be reached, requests
+are let through and a warning is logged, rather than the API failing; the
+failed-login throttle above is separate.
 
 Override per-route via `RouteConfig.rateLimit`.

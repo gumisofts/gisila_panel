@@ -1,7 +1,9 @@
 import 'dart:io';
 
-import 'package:gisila_doc/gisila_doc.dart' hide Query;
+// The panel's own JwtAuthenticator (session revocation, MFA) stays in use.
+import 'package:gisila_doc/gisila_doc.dart' hide JwtAuthenticator, Query;
 import 'package:gisila_orm/gisila.dart' hide PostgresErrorMapper;
+import 'package:gisila_redis/gisila_redis.dart' show RedisRateLimitStore;
 import 'package:shelf/shelf.dart' show HijackException;
 import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
@@ -84,6 +86,15 @@ Future<Handler> application() async {
       dbErrorMapper: const PostgresDbErrorMapper(),
       defaultRouteConfig: const RouteConfig(
         rateLimit: RateLimitConfig(requestsPerMinute: 300),
+      ),
+      // One budget per client across every isolate (the server runs one per
+      // CPU) instead of one per isolate (PNL-20). If Redis is unreachable
+      // requests go through rather than the whole API failing; login
+      // attempts keep their own Redis throttle.
+      rateLimitStore: RedisRateLimitStore(
+        panelRedis(),
+        prefix: 'gisila-panel:rl:',
+        onError: (e) => logger.w('Rate limiting skipped: $e'),
       ),
       // shelf_web_socket upgrades via HijackException (control flow). Gisila's
       // error middleware must not turn that into a JSON 500 — shelf_io handles
