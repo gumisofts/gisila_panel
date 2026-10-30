@@ -76,6 +76,8 @@
 - Built-in HTTP edge cache (Varnish / cache-friendly nginx tier).
 - [x] Cron jobs — per-app schedules run by the worker through the exec
   path (works under systemd and supervisord alike).
+- [x] AI assistants over MCP (`/mcp`), with every API route as a tool
+  call, run with the token owner's permissions.
 - [x] Firewall management — ufw rules from the panel, with changes that
   roll back unless the browser confirms it can still reach the panel.
 - Preview environments per PR.

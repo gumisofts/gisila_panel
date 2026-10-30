@@ -177,6 +177,40 @@ Docker's published ports bypass ufw.
 |---|---|---|
 | `GET` | `/apps/{id}/metrics/?minutes=60` | Recent CPU/memory samples. |
 
+## Logs
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/deployments/{id}/logs` | Build logs of a deployment. |
+| `GET` | `/apps/{id}/runtime-logs/?lines=200` | The last 1-2000 lines of the app's runtime log, in one response. Any team member. The live stream is the `/ws/apps/{id}/logs` WebSocket. |
+
+## AI assistants (MCP)
+
+`POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server (Streamable HTTP, stateless), so AI assistants can work with the
+panel. Authenticate with an API token (`Authorization: Bearer gsl_…`); the
+assistant then acts as the token's owner, with their permissions, and every
+change it makes is in Activity like any other API call. Settings → API
+tokens shows the setup for Claude Code and `mcp.json` clients:
+
+```bash
+claude mcp add --transport http gisila https://panel.example.com/mcp \
+  --header "Authorization: Bearer gsl_…"
+```
+
+The tools are generated from this API's OpenAPI document, so they cover
+every route except signing in and the webhook deliveries:
+
+| Tool | What it does |
+|---|---|
+| `search_api` | Finds routes by words ("deploy", "env vars", "logs"), with their parameters and body. No query lists the route groups. |
+| `api_get` | Calls a GET route. Marked read-only, so clients can allow it without asking. |
+| `api_change` | Calls a POST, PUT, PATCH or DELETE route. Marked destructive, so clients ask before each call. |
+
+Each call is a normal request through the API, with the same validation,
+rate limits and audit. File uploads (binary and ZIP deploys) aren't
+available through MCP. Revoke the token to cut an assistant off.
+
 ## Security (personal)
 
 | Method | Path | Notes |
