@@ -6,6 +6,7 @@ import 'package:gisila_panel/infra/secret_box.dart';
 import 'package:gisila_panel/workers/alert_worker.dart';
 import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
+import 'package:gisila_panel/workers/commit_status_reporter.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
 import 'package:gisila_panel/workers/health_monitor_worker.dart';
@@ -53,6 +54,9 @@ Future<void> main(List<String> args) async {
 
   // Self-driven scheduler that fires due database backups.
   BackupScheduler(database).start();
+
+  // Reports deploy status back on commits pushed through a webhook.
+  CommitStatusReporter(database).start();
 
   // Self-driven whole-host CPU/memory/disk sampler (published to Redis).
   HostStatsSampler().start();

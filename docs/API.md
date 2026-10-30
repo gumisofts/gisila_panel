@@ -66,6 +66,42 @@ way.
 | `POST` | `/apps/{id}/deployments/{depId}/rollback` | Instantly re-activates that deployment's kept build with its recorded env vars and settings (no rebuild). |
 | `GET` | `/apps/{id}/deployments/{depId}/logs` | Persisted build logs. |
 
+## Push to deploy
+
+Git apps can deploy on every push through a webhook.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/apps/{id}/webhook` | Any team member. `{configured, enabled, path, branch, lastDeliveryAt, lastDeliveryResult}`; never the secret. |
+| `POST` | `/apps/{id}/webhook` | Admin. Creates the webhook or rotates its secret; returns `{path, branch, secret}`. The secret is only ever returned here. |
+| `DELETE` | `/apps/{id}/webhook` | Admin. Removes it; deliveries are refused afterwards. |
+| `PUT` | `/apps/{id}/webhook/status-token` | Admin. Body `{token}`. Turns on commit statuses (below). Stored encrypted, never returned. |
+| `DELETE` | `/apps/{id}/webhook/status-token` | Admin. Turns commit statuses off. |
+| `POST` | `/webhooks/apps/{id}` | Called by the repository host, not behind panel login. |
+
+Deliveries are checked with the app's secret: GitHub and Gitea / Forgejo
+sign the body (`X-Hub-Signature-256`), GitLab sends `X-Gitlab-Token`. An
+unknown app, a removed webhook and a bad signature all get the same
+`401 invalid_signature`.
+
+A push to the app's branch (or, with none set, the repository's default
+branch) queues a deployment of that commit (`202 {deploymentId}`). These
+are acknowledged and skipped (`200 {ignored: "..."}`): pings, other
+events, other branches, tags, deleted branches, a redelivered delivery id,
+and pushes while a deployment is still queued (the build clones the
+branch head when it starts, so it already includes them). Limit: 120
+deliveries per minute per source, bodies up to 5 MB.
+
+**Commit statuses.** With a status token set, each deployment queued by a
+push is reported on that commit as `gisila-panel/deploy`: pending while
+queued / building / deploying, then success or failure. The token needs
+"Commit statuses: write" (GitHub fine-grained), `api` (GitLab) or
+`write:repository` (Gitea / Forgejo). The status URL comes from the signed
+push and is only used when it is https on the app's own git host (or
+`api.` + it), so the token is never sent elsewhere. Set `PANEL_PUBLIC_URL`
+(e.g. `https://panel.example.com`) to link each status to the app's page.
+Failed posts are retried up to 5 times.
+
 ## Domains
 
 | Method | Path | Notes |

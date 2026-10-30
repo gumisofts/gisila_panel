@@ -30,6 +30,7 @@ import 'package:gisila_panel/endpoints/mongo.dart';
 import 'package:gisila_panel/endpoints/notifications.dart';
 import 'package:gisila_panel/endpoints/services.dart';
 import 'package:gisila_panel/endpoints/storage.dart';
+import 'package:gisila_panel/endpoints/webhooks.dart';
 import 'package:gisila_panel/endpoints/system.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
 import 'package:gisila_panel/infra/audit_middleware.dart';
@@ -54,6 +55,7 @@ import 'package:gisila_panel/services/postgres_service.dart';
 import 'package:gisila_panel/services/security_service.dart';
 import 'package:gisila_panel/services/storage_service.dart';
 import 'package:gisila_panel/services/teams_service.dart';
+import 'package:gisila_panel/services/webhooks_service.dart';
 
 /// Build the top-level Shelf handler for the gisila-panel control plane.
 Future<Handler> application() async {
@@ -120,6 +122,7 @@ Future<Handler> application() async {
   app.registerService<ApplicationService>(ApplicationService.new);
   app.registerService<EnvsService>(EnvsService.new);
   app.registerService<DeploymentsService>(DeploymentsService.new);
+  app.registerService<WebhooksService>(WebhooksService.new);
   app.registerService<DomainsService>(DomainsService.new);
   app.registerService<LifecycleService>(LifecycleService.new);
   app.registerService<SecurityService>(SecurityService.new);
@@ -145,6 +148,8 @@ Future<Handler> application() async {
       AppsApi().attachToApp(app, router, spec, prefix: prefix);
       ApplicationsApi().attachToApp(app, router, spec, prefix: prefix);
       DeploymentsApi().attachToApp(app, router, spec, prefix: prefix);
+      AppWebhookApi().attachToApp(app, router, spec, prefix: prefix);
+      WebhookDeliveryApi().attachToApp(app, router, spec, prefix: prefix);
       DomainsApi().attachToApp(app, router, spec, prefix: prefix);
       MetricsApi().attachToApp(app, router, spec, prefix: prefix);
       SecurityApi().attachToApp(app, router, spec, prefix: prefix);

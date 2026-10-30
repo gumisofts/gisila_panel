@@ -24,8 +24,9 @@
 - [ ] **Argon2id** password hashing (replace salted SHA-256).
 - [ ] **Refresh tokens** + token revocation list.
 - [ ] **2FA** (TOTP first, WebAuthn later).
-- [ ] **GitHub integration** — webhook receiver auto-triggers
-      deployments on push.
+- [x] **Push to deploy** — per-app webhook for GitHub, Gitea / Forgejo
+      and GitLab queues a deployment on push to the app's branch, and
+      reports deploy status back on the commit when given a token.
 - [ ] **Build artifact storage** — store compiled binaries under
       `/srv/gisila/artifacts/<hash>` so rollbacks don't re-build.
 - [ ] **Metrics collector** — small Dart sidecar that scrapes

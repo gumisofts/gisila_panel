@@ -38,6 +38,10 @@ class SecretBox {
   static const mongoMonitorPassword = 'mongo_instances.monitor_password';
   static const mongoDatabasePassword = 'mongo_databases.password';
   static const storageProviderSecret = 'storage_providers.secret_key';
+  // Always written sealed, and keyed by app_id rather than id, so they stay
+  // out of [sealedColumns] (whose sweep selects by id).
+  static const appWebhookSecret = 'app_webhooks.secret';
+  static const appWebhookStatusToken = 'app_webhooks.status_token';
   static const storageBucketSecret = 'storage_buckets.secret_key';
   static const smtpPassword = 'smtp_configs.smtp_password';
 
