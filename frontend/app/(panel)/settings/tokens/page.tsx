@@ -4,6 +4,7 @@ import { toast } from "@/lib/toast";
 import { Add, Copy, TrashCan } from "@carbon/icons-react";
 import {
   Button,
+  CodeSnippet,
   Form,
   InlineNotification,
   NumberInput,
@@ -142,6 +143,8 @@ export default function TokensPage() {
         </Form>
       </PageSection>
 
+      <AiAssistantSection token={issued} />
+
       <PageSection>
         {data?.results.length ? (
           <TableContainer>
@@ -192,5 +195,38 @@ export default function TokensPage() {
         )}
       </PageSection>
     </Page>
+  );
+}
+
+/// How to connect an AI assistant to the panel's MCP endpoint (`/mcp`).
+/// Fills in the token just issued, if any.
+function AiAssistantSection({ token }: { token: string | null }) {
+  const url = `${window.location.origin}/mcp`;
+  const bearer = token ?? "<token>";
+  const config = JSON.stringify(
+    { mcpServers: { gisila: { url, headers: { Authorization: `Bearer ${bearer}` } } } },
+    null,
+    2,
+  );
+  return (
+    <PageSection
+      title="Connect an AI assistant"
+      description="AI assistants that speak MCP (Claude Code, Cursor and others) can work with the panel through a token: read status and logs, deploy, restart, change settings. They act as you, with your permissions, and their changes appear in Activity. Issue a separate token for each assistant so you can revoke it on its own."
+    >
+      <Stack gap={5}>
+        <div>
+          <p className="gisila-settings__hint">Claude Code</p>
+          <CodeSnippet type="multi" feedback="Copied">
+            {`claude mcp add --transport http gisila ${url} --header "Authorization: Bearer ${bearer}"`}
+          </CodeSnippet>
+        </div>
+        <div>
+          <p className="gisila-settings__hint">Cursor and other clients (mcp.json)</p>
+          <CodeSnippet type="multi" feedback="Copied">
+            {config}
+          </CodeSnippet>
+        </div>
+      </Stack>
+    </PageSection>
   );
 }

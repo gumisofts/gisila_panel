@@ -12,10 +12,12 @@ import 'package:gisila_panel/utils/jwt.dart';
 import 'package:gisila_panel/utils/passwords.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/ui_headers.dart';
+import 'package:gisila_panel/mcp/mcp_server.dart';
 import 'package:gisila_panel/version.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
 import 'package:gisila_panel/endpoints/cron.dart';
 import 'package:gisila_panel/endpoints/firewall.dart';
+import 'package:gisila_panel/endpoints/runtime_logs.dart';
 import 'package:gisila_panel/endpoints/applications.dart';
 import 'package:gisila_panel/endpoints/audit.dart';
 import 'package:gisila_panel/endpoints/auth.dart';
@@ -80,6 +82,7 @@ Future<Handler> application() async {
   await _seedSuperuser(database);
   await _seedSystemInstance(database);
 
+  final authenticator = JwtAuthenticator(database: database);
   final app = GisilaApp(
     config: AppConfig(
       cors: const CorsConfig(),
@@ -87,7 +90,7 @@ Future<Handler> application() async {
       maxRequestBodyBytes: 50 * 1024 * 1024, // 50 MB (artifact uploads)
       serverHeader: 'gisila-panel/$gisilaVersion',
       poweredByHeader: false,
-      authenticator: JwtAuthenticator(database: database),
+      authenticator: authenticator,
       database: GisilaOrmDatabaseProvider(database),
       dbErrorMapper: const PostgresDbErrorMapper(),
       defaultRouteConfig: const RouteConfig(
@@ -158,6 +161,7 @@ Future<Handler> application() async {
       WebhookDeliveryApi().attachToApp(app, router, spec, prefix: prefix);
       CronApi().attachToApp(app, router, spec, prefix: prefix);
       FirewallApi().attachToApp(app, router, spec, prefix: prefix);
+      RuntimeLogsApi().attachToApp(app, router, spec, prefix: prefix);
       DomainsApi().attachToApp(app, router, spec, prefix: prefix);
       MetricsApi().attachToApp(app, router, spec, prefix: prefix);
       SecurityApi().attachToApp(app, router, spec, prefix: prefix);
@@ -190,6 +194,11 @@ Future<Handler> application() async {
   final apiHandler = app.buildHandler();
   final wsRouter = Router()
     ..mount('/ws', live_logs.logsRouter(database: database).call);
+  // AI assistants, over the Model Context Protocol. Outside the pipeline
+  // like /ws: each tool call goes back through [apiHandler] as its own
+  // request, so it gets that pipeline (auth, limits, audit) once.
+  final mcp = McpServer(
+      api: apiHandler, spec: spec, authenticator: authenticator);
 
   // The panel is a client-routed SPA whose routes (`/apps/123`, `/projects`, …)
   // share the URL namespace with the API controllers above. Without this, a
@@ -203,6 +212,7 @@ Future<Handler> application() async {
     final first =
         req.url.pathSegments.isEmpty ? '' : req.url.pathSegments.first;
     if (first == 'ws') return wsRouter.call(req);
+    if (first == 'mcp' && req.url.pathSegments.length == 1) return mcp.call(req);
     return apiHandler(req);
   }));
 }
@@ -239,7 +249,7 @@ bool _isSpaNavigation(Request req) {
   final segments = req.url.pathSegments;
   final first = segments.isEmpty ? '' : segments.first;
   // Tooling / API namespaces that own their own HTML or protocol handlers.
-  const reserved = {'ws', 'admin', 'docs', 'openapi.json', 'assets', 'favicon.ico'};
+  const reserved = {'ws', 'mcp', 'admin', 'docs', 'openapi.json', 'assets', 'favicon.ico'};
   if (reserved.contains(first)) return false;
 
   // A static asset request (the last segment has a file extension) must reach
