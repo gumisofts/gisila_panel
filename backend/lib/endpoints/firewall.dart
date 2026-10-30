@@ -62,6 +62,21 @@ class FirewallApi {
   ) =>
       _request(firewall, ctx, 'delete', form.toRule());
 
+  /// Limit 80 and 443 to some sources, such as Cloudflare's ranges when
+  /// every site is proxied through it, or open them to everyone again.
+  @Post('/web-sources',
+      summary: 'Limit the web ports (80, 443) to some sources, or open them')
+  Future<Map<String, Object?>> webSources(
+    WebSourcesForm form,
+    FirewallService firewall,
+    RequestContext ctx,
+  ) {
+    requireSuperuser(ctx);
+    return _request(firewall, ctx, 'web-sources',
+        FirewallService.validateWebSources(
+            sources: form.sources.value, preset: form.preset.value));
+  }
+
   @Post('/enable', summary: 'Turn the firewall on')
   Future<Map<String, Object?>> enable(
     FirewallService firewall,

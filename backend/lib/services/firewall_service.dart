@@ -103,7 +103,11 @@ class FirewallService extends Service {
       throw BadRequest('Could not tell your IP address, so the firewall '
           'cannot be changed safely from this connection.');
     }
-    final checked = rule == null ? null : validateRule(rule);
+    final checked = rule == null
+        ? null
+        : op == 'web-sources'
+            ? rule
+            : validateRule(rule);
     final rows = await _db.context().execute(
       'INSERT INTO firewall_changes (op, rule, requested_by, requester_ip, '
       'protect_ports) VALUES (\$1, \$2::jsonb, \$3, \$4, \$5::int[]) '
@@ -163,6 +167,76 @@ class FirewallService extends Service {
         'ON CONFLICT (id) DO UPDATE SET refresh_requested_at = now()',
       );
 
+  /// Cloudflare's published ranges (https://www.cloudflare.com/ips/, read
+  /// 2026-10-30), for letting only Cloudflare reach the web ports.
+  static const cloudflareRanges = [
+    '173.245.48.0/20',
+    '103.21.244.0/22',
+    '103.22.200.0/22',
+    '103.31.4.0/22',
+    '141.101.64.0/18',
+    '108.162.192.0/18',
+    '190.93.240.0/20',
+    '188.114.96.0/20',
+    '197.234.240.0/22',
+    '198.41.128.0/17',
+    '162.158.0.0/15',
+    '104.16.0.0/13',
+    '104.24.0.0/14',
+    '172.64.0.0/13',
+    '131.0.72.0/22',
+    '2400:cb00::/32',
+    '2606:4700::/32',
+    '2803:f800::/32',
+    '2405:b500::/32',
+    '2405:8100::/32',
+    '2a06:98c0::/29',
+    '2c0f:f248::/32',
+  ];
+
+  static const presets = {'cloudflare': cloudflareRanges};
+
+  /// The most sources the web ports can be limited to (two ufw rules each).
+  static const maxWebSources = 100;
+
+  /// The `web-sources` change for a [preset] or [sources] (addresses and
+  /// ranges separated by commas, spaces or new lines): empty means
+  /// everyone. Throws [BadRequest].
+  static Map<String, Object?> validateWebSources(
+      {String? sources, String? preset}) {
+    final name = preset?.trim().toLowerCase() ?? '';
+    final raw = name.isNotEmpty
+        ? presets[name] ??
+            (throw BadRequest(
+                'preset must be one of: ${presets.keys.join(', ')}.'))
+        : (sources ?? '').split(RegExp(r'[\s,]+'));
+    final out = <String>[];
+    for (final s in raw) {
+      final from = s.trim();
+      if (from.isEmpty) continue;
+      if (from.toLowerCase() == 'any') return {'sources': const <String>[]};
+      if (!_isSource(from)) {
+        throw BadRequest('"$from" is not an IP address or a CIDR range like '
+            '203.0.113.0/24.');
+      }
+      if (!out.contains(from)) out.add(from);
+    }
+    if (out.length > maxWebSources) {
+      throw BadRequest('At most $maxWebSources sources.');
+    }
+    return {'sources': out, if (name.isNotEmpty) 'preset': name};
+  }
+
+  static bool _isSource(String from) {
+    final slash = from.indexOf('/');
+    final addr =
+        InternetAddress.tryParse(slash < 0 ? from : from.substring(0, slash));
+    final bits = addr == null ? 0 : addr.rawAddress.length * 8;
+    final prefix =
+        slash < 0 ? bits : int.tryParse(from.substring(slash + 1)) ?? -1;
+    return addr != null && prefix >= 0 && prefix <= bits;
+  }
+
   /// Check a rule's shape; the agent decides whether it is safe. Throws
   /// [BadRequest].
   static Map<String, Object?> validateRule(Map<String, Object?> rule) {
@@ -187,17 +261,9 @@ class FirewallService extends Service {
       }
     }
     final from = '${rule['from'] ?? 'any'}'.trim();
-    if (from.isNotEmpty && from.toLowerCase() != 'any') {
-      final slash = from.indexOf('/');
-      final addr = InternetAddress.tryParse(
-          slash < 0 ? from : from.substring(0, slash));
-      final bits = addr == null ? 0 : addr.rawAddress.length * 8;
-      final prefix =
-          slash < 0 ? bits : int.tryParse(from.substring(slash + 1)) ?? -1;
-      if (addr == null || prefix < 0 || prefix > bits) {
-        throw BadRequest('from must be "any", an IP address or a CIDR '
-            'range like 203.0.113.0/24.');
-      }
+    if (from.isNotEmpty && from.toLowerCase() != 'any' && !_isSource(from)) {
+      throw BadRequest('from must be "any", an IP address or a CIDR '
+          'range like 203.0.113.0/24.');
     }
     final note = '${rule['note'] ?? ''}'.trim();
     if (!_noteRe.hasMatch(note)) {

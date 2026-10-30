@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
   Tag,
+  TextArea,
   TextInput,
   Tile,
 } from "@carbon/react";
@@ -37,14 +38,23 @@ interface FirewallRule {
   from: string;
   comment: string;
   families: string[];
-  origin: "panel" | "base" | "other";
+  origin: "panel" | "base" | "web" | "other";
   raw?: string;
+}
+
+interface RuleSpec {
+  action: Action;
+  proto: string;
+  port: string | null;
+  from: string;
+  note?: string;
 }
 
 interface FirewallChange {
   id: number;
-  op: "add" | "delete" | "enable" | "disable";
-  rule: { action: Action; proto: string; port: string | null; from: string; note?: string } | null;
+  op: "add" | "delete" | "enable" | "disable" | "web-sources";
+  // A rule for add / delete; the sources for web-sources.
+  rule: RuleSpec | { sources: string[]; preset?: string } | null;
   status:
     | "queued"
     | "applying"
@@ -69,6 +79,8 @@ interface FirewallOverview {
   defaultIncoming?: "allow" | "deny" | "reject" | null;
   sshPorts?: number[];
   rules?: FirewallRule[];
+  // What 80 and 443 are limited to; empty when open to everyone.
+  webSources?: string[];
   refreshedAt: string | null;
   confirmWindow: number;
   open: FirewallChange | null;
@@ -99,6 +111,10 @@ function describeRule(r: { action: string; proto: string; port: string | null; f
   return `${r.action} ${port} from ${from}`;
 }
 
+function isRuleSpec(r: FirewallChange["rule"]): r is RuleSpec {
+  return !!r && "action" in r;
+}
+
 function describeChange(c: FirewallChange) {
   switch (c.op) {
     case "enable":
@@ -106,14 +122,21 @@ function describeChange(c: FirewallChange) {
     case "disable":
       return "Turn the firewall off";
     case "add":
-      return c.rule ? `Add: ${describeRule(c.rule)}` : "Add a rule";
+      return isRuleSpec(c.rule) ? `Add: ${describeRule(c.rule)}` : "Add a rule";
     case "delete":
-      return c.rule ? `Remove: ${describeRule(c.rule)}` : "Remove a rule";
+      return isRuleSpec(c.rule) ? `Remove: ${describeRule(c.rule)}` : "Remove a rule";
+    case "web-sources": {
+      const r = c.rule && "sources" in c.rule ? c.rule : null;
+      if (!r?.sources.length) return "Open ports 80 and 443 to everyone";
+      if (r.preset === "cloudflare") return "Limit ports 80 and 443 to Cloudflare";
+      return `Limit ports 80 and 443 to ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}`;
+    }
   }
 }
 
 function ruleNote(r: FirewallRule) {
   if (r.origin === "base") return "Kept open by the panel";
+  if (r.origin === "web") return "Web ports limited from the panel";
   if (r.origin === "panel") {
     const note = r.comment.replace(/^gisila-panel:?\s*/, "");
     return note || "Added from the panel";
@@ -130,6 +153,7 @@ export default function FirewallPage() {
     refreshInterval: (d) => (d?.open || watching ? 1500 : 15000),
   });
   const [adding, setAdding] = useState(false);
+  const [limiting, setLimiting] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const open = data?.open ?? null;
@@ -175,6 +199,11 @@ export default function FirewallPage() {
   async function remove(r: FirewallRule) {
     if (!(await confirmDialog(`Remove the rule "${describeRule(r)}"?`, { confirmLabel: "Remove" }))) return;
     await submit("/firewall/rules/remove", { action: r.action, proto: r.proto, port: r.port, from: r.from });
+  }
+
+  async function webSources(body: { preset?: string; sources?: string }, question: string) {
+    if (!(await confirmDialog(question, { danger: false, confirmLabel: "Apply" }))) return false;
+    return submit("/firewall/web-sources", body);
   }
 
   async function refresh() {
@@ -257,6 +286,19 @@ export default function FirewallPage() {
               refused. Docker's published ports bypass ufw.
             </p>
           </PageSection>
+
+          <WebPorts
+            sources={data.webSources ?? []}
+            disabled={busyChange}
+            onCloudflare={() =>
+              webSources(
+                { preset: "cloudflare" },
+                "Let only Cloudflare reach ports 80 and 443? Sites whose DNS record is not proxied through Cloudflare (grey cloud) stop loading, and their HTTP certificate renewals fail.",
+              )
+            }
+            onCustom={() => setLimiting(true)}
+            onOpen={() => webSources({ sources: "" }, "Open ports 80 and 443 to everyone again?")}
+          />
 
           <PageSection
             title="Rules"
@@ -345,6 +387,16 @@ export default function FirewallPage() {
         </>
       )}
 
+      <WebSourcesModal
+        open={limiting}
+        busy={busy}
+        initial={data?.webSources ?? []}
+        onClose={() => setLimiting(false)}
+        onSubmit={async (sources) => {
+          if (await webSources({ sources }, "Limit ports 80 and 443 to these sources? Anything else, including sites not reached through them, is cut off.")) setLimiting(false);
+        }}
+      />
+
       <AddRuleModal
         open={adding}
         busy={busy}
@@ -354,6 +406,99 @@ export default function FirewallPage() {
         }}
       />
     </Page>
+  );
+}
+
+function WebPorts({
+  sources,
+  disabled,
+  onCloudflare,
+  onCustom,
+  onOpen,
+}: {
+  sources: string[];
+  disabled: boolean;
+  onCloudflare: () => void;
+  onCustom: () => void;
+  onOpen: () => void;
+}) {
+  const limited = sources.length > 0;
+  return (
+    <PageSection
+      title="Web ports (80, 443)"
+      description="Who can reach the sites and the panel. When every domain is proxied through Cloudflare, letting only Cloudflare in stops anyone from going around it to this server."
+      actions={
+        <>
+          <Button kind="tertiary" size="sm" disabled={disabled} onClick={onCloudflare}>
+            Only Cloudflare
+          </Button>
+          <Button kind="ghost" size="sm" disabled={disabled} onClick={onCustom}>
+            Custom…
+          </Button>
+          {limited && (
+            <Button kind="danger--ghost" size="sm" disabled={disabled} onClick={onOpen}>
+              Open to everyone
+            </Button>
+          )}
+        </>
+      }
+    >
+      <Tile>
+        {limited ? (
+          <>
+            <Tag type="purple">Limited</Tag> Only {sources.length} source{sources.length === 1 ? "" : "s"} can connect:{" "}
+            <span className="gisila-firewall__note">{sources.join(", ")}</span>
+          </>
+        ) : (
+          <>
+            <Tag type="green">Open</Tag> Anyone can connect.
+          </>
+        )}
+      </Tile>
+    </PageSection>
+  );
+}
+
+function WebSourcesModal({
+  open,
+  busy,
+  initial,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  busy: boolean;
+  initial: string[];
+  onClose: () => void;
+  onSubmit: (sources: string) => void;
+}) {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    if (open) setText(initial.join("\n"));
+    // Only when it opens: the list refreshes in the background.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const empty = text.trim() === "";
+  return (
+    <Modal
+      open={open}
+      modalHeading="Limit ports 80 and 443"
+      primaryButtonText={busy ? "Applying…" : "Limit"}
+      secondaryButtonText="Cancel"
+      primaryButtonDisabled={busy || empty}
+      onRequestClose={onClose}
+      onRequestSubmit={() => onSubmit(text)}
+      size="sm"
+    >
+      <TextArea
+        id="fw-web-sources"
+        labelText="Sources"
+        helperText="IP addresses or ranges, one per line. The address you reach the panel from has to be among them, or the change is refused."
+        rows={8}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+    </Modal>
   );
 }
 

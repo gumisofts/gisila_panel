@@ -24,8 +24,10 @@ Future<void> runFirewall(List<String> args) async {
   }
   final parser = ArgParser()
     ..addOption('change-id')
-    ..addOption('op', allowed: ['add', 'delete', 'enable', 'disable'])
-    ..addOption('rule', help: 'JSON rule for add / delete')
+    ..addOption('op',
+        allowed: ['add', 'delete', 'enable', 'disable', 'web-sources'])
+    ..addOption('rule',
+        help: 'JSON rule for add / delete, {"sources": [...]} for web-sources')
     ..addMultiOption('keep-ip', help: 'Address that must stay able to connect')
     ..addMultiOption('protect-port', help: 'Extra port the panel is reached on')
     ..addOption('confirm-within', defaultsTo: '120');
@@ -132,6 +134,7 @@ class Firewall {
         ?.group(1);
     final version =
         RegExp(r'ufw (\S+)').firstMatch(await Priv.capture('ufw', ['version'], failOk: true))?.group(1);
+    final rules = await _rules();
     return {
       'available': true,
       'active': await _active(),
@@ -143,7 +146,8 @@ class Firewall {
         _ => null,
       },
       'sshPorts': Priv.protectedPorts.toList()..sort(),
-      'rules': [for (final r in await _rules()) r.toJson()],
+      'rules': [for (final r in rules) r.toJson()],
+      'webSources': webSources(rules),
     };
   }
 
@@ -166,6 +170,10 @@ class Firewall {
     );
     final live = await _rules();
     final active = await _active();
+    final sources = op == 'web-sources'
+        ? parseWebSources(
+            rule ?? (throw const FormatException('--rule is required')))
+        : null;
     final FwRule? r = switch (op) {
       'add' || 'delete' => FwRule.request(
           jsonDecode(rule ?? (throw const FormatException('--rule is required')))
@@ -176,6 +184,8 @@ class Firewall {
       'add' => guard.checkAdd(r!),
       'delete' => guard.checkDelete(r!, live, active),
       'enable' => guard.checkEnable(live),
+      'web-sources' => guard.checkWebSources(sources!) ??
+          openWebRule(live, sources, webPorts),
       _ => null,
     };
     if (problem != null) throw StateError(problem);
@@ -185,12 +195,19 @@ class Firewall {
       'delete' => [r!.deleteArgs()],
       'enable' => [
           // Never turn the firewall on without SSH and the panel let in.
+          // The web ports may be limited to some sources, as long as the
+          // requester is among them.
           for (final p in guard.protectedPorts.toList()..sort())
-            if (!live.any((l) => !l.blocks && l.from == 'any' && l.coversTcp(p)))
+            if (!live.any((l) =>
+                !l.blocks &&
+                l.coversTcp(p) &&
+                (l.from == 'any' ||
+                    (l.origin == 'web' && guard.letsIn(l)))))
               ['allow', 'proto', 'tcp', 'from', 'any', 'to', 'any', 'port', '$p',
                   'comment', '${FwRule.baseComment}: ${_portName(p, guard)}'],
           ['--force', 'enable'],
         ],
+      'web-sources' => webSourcesCommands(live, sources!, webPorts),
       _ => [
           ['disable'],
         ],
