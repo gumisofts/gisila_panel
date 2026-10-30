@@ -31,23 +31,19 @@ extension DbEnginesApiGisilaDoc on DbEnginesApi {
       final openApiPath = '$prefix/db-engines/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final result = await this.list();
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final result = await this.list();
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      if (basePath.length > 1) {
+        router.get(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'get',
@@ -61,8 +57,12 @@ extension DbEnginesApiGisilaDoc on DbEnginesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

@@ -58,24 +58,26 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/status';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<MailService>();
-                final result = await this.status(svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<MailService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.status(svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -89,8 +91,12 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -98,24 +104,26 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/install';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<MailService>();
-                final result = await this.install(svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<MailService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.install(svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -129,8 +137,12 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -138,23 +150,16 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/health';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final result = await this.health(ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final result = await this.health(ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -168,8 +173,12 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -177,24 +186,26 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/repair';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<MailService>();
-                final result = await this.repair(svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<MailService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.repair(svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -208,8 +219,12 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -217,24 +232,26 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<MailService>();
-                final result = await this.listDomains(svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<MailService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listDomains(svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -248,8 +265,12 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -257,26 +278,28 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, MailDomainForm.new);
-                final svc = ctx.service<MailService>();
-                final result = await this.addDomain(form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, svc) = await (() async {
+            try {
+              final form = await bindForm(request, MailDomainForm.new);
+              final svc = ctx.service<MailService>();
+              return (form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.addDomain(form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -287,7 +310,11 @@ extension MailApiGisilaDoc on MailApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/MailDomainForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/MailDomainForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -295,8 +322,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -304,28 +338,30 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.patch(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, MailDomainUpdateForm.new);
-                final svc = ctx.service<MailService>();
-                final result = await this.updateDomain(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'PATCH $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, MailDomainUpdateForm.new);
+              final svc = ctx.service<MailService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.updateDomain(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.patch(basePath, __route);
       spec.putOperation(
           openApiPath,
           'patch',
@@ -344,7 +380,11 @@ extension MailApiGisilaDoc on MailApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/MailDomainUpdateForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/MailDomainUpdateForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
@@ -352,8 +392,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -361,27 +408,29 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<MailService>();
-                final result = await this.removeDomain(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<MailService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.removeDomain(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -403,8 +452,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -412,27 +468,29 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}/dns';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<MailService>();
-                final result = await this.domainDns(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<MailService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.domainDns(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -454,8 +512,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -463,27 +528,29 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}/sync';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<MailService>();
-                final result = await this.syncDomain(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<MailService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.syncDomain(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -505,8 +572,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -514,27 +588,29 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}/accounts';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<MailService>();
-                final result = await this.listAccounts(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<MailService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listAccounts(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -556,8 +632,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -565,28 +648,30 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/domains/{id}/accounts';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, MailAccountForm.new);
-                final svc = ctx.service<MailService>();
-                final result = await this.addAccount(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, MailAccountForm.new);
+              final svc = ctx.service<MailService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.addAccount(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -605,7 +690,11 @@ extension MailApiGisilaDoc on MailApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/MailAccountForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/MailAccountForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -613,8 +702,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -622,28 +718,30 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/accounts/{id}/password';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.put(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, MailPasswordForm.new);
-                final svc = ctx.service<MailService>();
-                final result = await this.setPassword(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'PUT $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, MailPasswordForm.new);
+              final svc = ctx.service<MailService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.setPassword(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.put(basePath, __route);
       spec.putOperation(
           openApiPath,
           'put',
@@ -662,7 +760,11 @@ extension MailApiGisilaDoc on MailApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/MailPasswordForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/MailPasswordForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
@@ -670,8 +772,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -679,27 +788,29 @@ extension MailApiGisilaDoc on MailApi {
       final openApiPath = '$prefix/mail/accounts/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<MailService>();
-                final result = await this.removeAccount(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<MailService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.removeAccount(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -721,8 +832,15 @@ extension MailApiGisilaDoc on MailApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

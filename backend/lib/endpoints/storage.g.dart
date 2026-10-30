@@ -73,24 +73,26 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<StorageService>();
-                final result = await this.listProviders(svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<StorageService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listProviders(svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -104,8 +106,12 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -113,26 +119,28 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/garage';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, InstallGarageForm.new);
-                final svc = ctx.service<StorageService>();
-                final result = await this.installGarage(form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, svc) = await (() async {
+            try {
+              final form = await bindForm(request, InstallGarageForm.new);
+              final svc = ctx.service<StorageService>();
+              return (form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.installGarage(form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -143,7 +151,11 @@ extension StorageApiGisilaDoc on StorageApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/InstallGarageForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/InstallGarageForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -151,8 +163,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -160,26 +179,28 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/external';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, AddConnectorForm.new);
-                final svc = ctx.service<StorageService>();
-                final result = await this.addConnector(form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, svc) = await (() async {
+            try {
+              final form = await bindForm(request, AddConnectorForm.new);
+              final svc = ctx.service<StorageService>();
+              return (form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.addConnector(form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -190,7 +211,11 @@ extension StorageApiGisilaDoc on StorageApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/AddConnectorForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/AddConnectorForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -198,8 +223,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -207,27 +239,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.getProvider(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.getProvider(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -249,8 +283,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -258,27 +299,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/start';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.startProvider(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.startProvider(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -300,8 +343,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -309,27 +359,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/stop';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.stopProvider(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.stopProvider(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -351,8 +403,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -360,28 +419,30 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/expose';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, ExposeProviderForm.new);
-                final svc = ctx.service<StorageService>();
-                final result = await this.exposeProvider(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, ExposeProviderForm.new);
+              final svc = ctx.service<StorageService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.exposeProvider(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -400,7 +461,11 @@ extension StorageApiGisilaDoc on StorageApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/ExposeProviderForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/ExposeProviderForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -408,8 +473,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -417,27 +489,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.deleteProvider(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.deleteProvider(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -459,8 +533,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -468,27 +549,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/buckets';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.listBuckets(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listBuckets(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -510,8 +593,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -519,28 +609,30 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/buckets';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, CreateBucketForm.new);
-                final svc = ctx.service<StorageService>();
-                final result = await this.createBucket(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, CreateBucketForm.new);
+              final svc = ctx.service<StorageService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.createBucket(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -559,7 +651,11 @@ extension StorageApiGisilaDoc on StorageApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/CreateBucketForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/CreateBucketForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -567,8 +663,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -576,29 +679,31 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/buckets/{bid}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final bid =
-                    coerce<int>(request.params['bid'], 'bid', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.getBucket(id, bid, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, bid, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final bid =
+                  coerce<int>(request.params['bid'], 'bid', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, bid, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.getBucket(id, bid, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -627,8 +732,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -636,29 +748,31 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/providers/{id}/buckets/{bid}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final bid =
-                    coerce<int>(request.params['bid'], 'bid', required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.deleteBucket(id, bid, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, bid, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final bid =
+                  coerce<int>(request.params['bid'], 'bid', required: true);
+              final svc = ctx.service<StorageService>();
+              return (id, bid, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.deleteBucket(id, bid, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -687,8 +801,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -696,27 +817,29 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/apps/{appId}/links';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.listAppLinks(appId, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, svc) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final svc = ctx.service<StorageService>();
+              return (appId, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listAppLinks(appId, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -738,8 +861,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -747,28 +877,30 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/apps/{appId}/links';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final form = await bindForm(request, LinkBucketForm.new);
-                final svc = ctx.service<StorageService>();
-                final result = await this.linkBucket(appId, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, form, svc) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final form = await bindForm(request, LinkBucketForm.new);
+              final svc = ctx.service<StorageService>();
+              return (appId, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.linkBucket(appId, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -787,7 +919,11 @@ extension StorageApiGisilaDoc on StorageApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/LinkBucketForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/LinkBucketForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -795,8 +931,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -804,29 +947,31 @@ extension StorageApiGisilaDoc on StorageApi {
       final openApiPath = '$prefix/storage/apps/{appId}/links/{linkId}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final linkId = coerce<int>(request.params['linkId'], 'linkId',
-                    required: true);
-                final svc = ctx.service<StorageService>();
-                final result = await this.unlinkBucket(appId, linkId, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, linkId, svc) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final linkId = coerce<int>(request.params['linkId'], 'linkId',
+                  required: true);
+              final svc = ctx.service<StorageService>();
+              return (appId, linkId, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.unlinkBucket(appId, linkId, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -855,8 +1000,15 @@ extension StorageApiGisilaDoc on StorageApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

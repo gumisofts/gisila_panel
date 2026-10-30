@@ -105,24 +105,26 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/settings/smtp';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final notifications = ctx.service<NotificationService>();
-                final result = await this.getSmtpConfig(notifications, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (notifications,) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              return (notifications,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.getSmtpConfig(notifications, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -136,8 +138,12 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -145,27 +151,28 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/settings/smtp';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.put(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, UpdateSmtpConfigForm.new);
-                final notifications = ctx.service<NotificationService>();
-                final result =
-                    await this.updateSmtpConfig(form, notifications, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'PUT $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, notifications) = await (() async {
+            try {
+              final form = await bindForm(request, UpdateSmtpConfigForm.new);
+              final notifications = ctx.service<NotificationService>();
+              return (form, notifications);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.updateSmtpConfig(form, notifications, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.put(basePath, __route);
       spec.putOperation(
           openApiPath,
           'put',
@@ -176,7 +183,11 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/UpdateSmtpConfigForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/UpdateSmtpConfigForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
@@ -184,8 +195,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -193,27 +211,28 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/settings/smtp/test';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, SendTestEmailForm.new);
-                final notifications = ctx.service<NotificationService>();
-                final result =
-                    await this.sendTestEmail(form, notifications, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, notifications) = await (() async {
+            try {
+              final form = await bindForm(request, SendTestEmailForm.new);
+              final notifications = ctx.service<NotificationService>();
+              return (form, notifications);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.sendTestEmail(form, notifications, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -224,7 +243,11 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/SendTestEmailForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/SendTestEmailForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -232,8 +255,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -241,23 +271,16 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/host-stats';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final result = await this.hostStats(ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final result = await this.hostStats(ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -271,8 +294,12 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -280,57 +307,76 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/rules';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final scope = coerce<String?>(
-                    request.url.queryParameters['scope'], 'scope',
-                    required: false);
-                final appId = coerce<int?>(
-                    request.url.queryParameters['appId'], 'appId',
-                    required: false);
-                final postgresInstanceId = coerce<int?>(
-                    request.url.queryParameters['postgresInstanceId'],
-                    'postgresInstanceId',
-                    required: false);
-                final mongoInstanceId = coerce<int?>(
-                    request.url.queryParameters['mongoInstanceId'],
-                    'mongoInstanceId',
-                    required: false);
-                final managedServiceId = coerce<int?>(
-                    request.url.queryParameters['managedServiceId'],
-                    'managedServiceId',
-                    required: false);
-                final applicationId = coerce<int?>(
-                    request.url.queryParameters['applicationId'],
-                    'applicationId',
-                    required: false);
-                final result = await this.listRules(
-                    notifications,
-                    apps,
-                    ctx,
-                    scope,
-                    appId,
-                    postgresInstanceId,
-                    mongoInstanceId,
-                    managedServiceId,
-                    applicationId);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (
+            notifications,
+            apps,
+            scope,
+            appId,
+            postgresInstanceId,
+            mongoInstanceId,
+            managedServiceId,
+            applicationId
+          ) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              final scope = coerce<String?>(
+                  request.url.queryParameters['scope'], 'scope',
+                  required: false);
+              final appId = coerce<int?>(
+                  request.url.queryParameters['appId'], 'appId',
+                  required: false);
+              final postgresInstanceId = coerce<int?>(
+                  request.url.queryParameters['postgresInstanceId'],
+                  'postgresInstanceId',
+                  required: false);
+              final mongoInstanceId = coerce<int?>(
+                  request.url.queryParameters['mongoInstanceId'],
+                  'mongoInstanceId',
+                  required: false);
+              final managedServiceId = coerce<int?>(
+                  request.url.queryParameters['managedServiceId'],
+                  'managedServiceId',
+                  required: false);
+              final applicationId = coerce<int?>(
+                  request.url.queryParameters['applicationId'], 'applicationId',
+                  required: false);
+              return (
+                notifications,
+                apps,
+                scope,
+                appId,
+                postgresInstanceId,
+                mongoInstanceId,
+                managedServiceId,
+                applicationId
+              );
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listRules(
+              notifications,
+              apps,
+              ctx,
+              scope,
+              appId,
+              postgresInstanceId,
+              mongoInstanceId,
+              managedServiceId,
+              applicationId);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -404,8 +450,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -413,29 +466,30 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/rules/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final result =
-                    await this.retrieveRule(id, notifications, apps, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, notifications, apps) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              return (id, notifications, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.retrieveRule(id, notifications, apps, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -457,8 +511,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -466,28 +527,29 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/rules';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, CreateAlertRuleForm.new);
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final result =
-                    await this.createRule(form, notifications, apps, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, notifications, apps) = await (() async {
+            try {
+              final form = await bindForm(request, CreateAlertRuleForm.new);
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              return (form, notifications, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.createRule(form, notifications, apps, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -498,7 +560,11 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/CreateAlertRuleForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/CreateAlertRuleForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -506,8 +572,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -515,30 +588,32 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/rules/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.put(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form = await bindForm(request, UpdateAlertRuleForm.new);
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final result =
-                    await this.updateRule(id, form, notifications, apps, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'PUT $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, notifications, apps) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, UpdateAlertRuleForm.new);
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              return (id, form, notifications, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result =
+              await this.updateRule(id, form, notifications, apps, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.put(basePath, __route);
       spec.putOperation(
           openApiPath,
           'put',
@@ -557,7 +632,11 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/UpdateAlertRuleForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/UpdateAlertRuleForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
@@ -565,8 +644,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -574,29 +660,30 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/rules/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final result =
-                    await this.deleteRule(id, notifications, apps, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, notifications, apps) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              return (id, notifications, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.deleteRule(id, notifications, apps, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -618,8 +705,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -627,61 +721,82 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/events';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final notifications = ctx.service<NotificationService>();
-                final apps = ctx.service<AppsService>();
-                final scope = coerce<String?>(
-                    request.url.queryParameters['scope'], 'scope',
-                    required: false);
-                final appId = coerce<int?>(
-                    request.url.queryParameters['appId'], 'appId',
-                    required: false);
-                final postgresInstanceId = coerce<int?>(
-                    request.url.queryParameters['postgresInstanceId'],
-                    'postgresInstanceId',
-                    required: false);
-                final mongoInstanceId = coerce<int?>(
-                    request.url.queryParameters['mongoInstanceId'],
-                    'mongoInstanceId',
-                    required: false);
-                final managedServiceId = coerce<int?>(
-                    request.url.queryParameters['managedServiceId'],
-                    'managedServiceId',
-                    required: false);
-                final applicationId = coerce<int?>(
-                    request.url.queryParameters['applicationId'],
-                    'applicationId',
-                    required: false);
-                final limit = coerce<int?>(
-                    request.url.queryParameters['limit'], 'limit',
-                    required: false);
-                final result = await this.listEvents(
-                    notifications,
-                    apps,
-                    ctx,
-                    scope,
-                    appId,
-                    postgresInstanceId,
-                    mongoInstanceId,
-                    managedServiceId,
-                    applicationId,
-                    limit);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (
+            notifications,
+            apps,
+            scope,
+            appId,
+            postgresInstanceId,
+            mongoInstanceId,
+            managedServiceId,
+            applicationId,
+            limit
+          ) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              final apps = ctx.service<AppsService>();
+              final scope = coerce<String?>(
+                  request.url.queryParameters['scope'], 'scope',
+                  required: false);
+              final appId = coerce<int?>(
+                  request.url.queryParameters['appId'], 'appId',
+                  required: false);
+              final postgresInstanceId = coerce<int?>(
+                  request.url.queryParameters['postgresInstanceId'],
+                  'postgresInstanceId',
+                  required: false);
+              final mongoInstanceId = coerce<int?>(
+                  request.url.queryParameters['mongoInstanceId'],
+                  'mongoInstanceId',
+                  required: false);
+              final managedServiceId = coerce<int?>(
+                  request.url.queryParameters['managedServiceId'],
+                  'managedServiceId',
+                  required: false);
+              final applicationId = coerce<int?>(
+                  request.url.queryParameters['applicationId'], 'applicationId',
+                  required: false);
+              final limit = coerce<int?>(
+                  request.url.queryParameters['limit'], 'limit',
+                  required: false);
+              return (
+                notifications,
+                apps,
+                scope,
+                appId,
+                postgresInstanceId,
+                mongoInstanceId,
+                managedServiceId,
+                applicationId,
+                limit
+              );
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.listEvents(
+              notifications,
+              apps,
+              ctx,
+              scope,
+              appId,
+              postgresInstanceId,
+              mongoInstanceId,
+              managedServiceId,
+              applicationId,
+              limit);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -765,8 +880,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -774,35 +896,37 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/inbox';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final notifications = ctx.service<NotificationService>();
-                final unreadOnly = coerce<bool?>(
-                    request.url.queryParameters['unreadOnly'], 'unreadOnly',
-                    required: false);
-                final limit = coerce<int?>(
-                    request.url.queryParameters['limit'], 'limit',
-                    required: false);
-                final offset = coerce<int?>(
-                    request.url.queryParameters['offset'], 'offset',
-                    required: false);
-                final result = await this
-                    .inbox(notifications, ctx, unreadOnly, limit, offset);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (notifications, unreadOnly, limit, offset) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              final unreadOnly = coerce<bool?>(
+                  request.url.queryParameters['unreadOnly'], 'unreadOnly',
+                  required: false);
+              final limit = coerce<int?>(
+                  request.url.queryParameters['limit'], 'limit',
+                  required: false);
+              final offset = coerce<int?>(
+                  request.url.queryParameters['offset'], 'offset',
+                  required: false);
+              return (notifications, unreadOnly, limit, offset);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result =
+              await this.inbox(notifications, ctx, unreadOnly, limit, offset);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -846,8 +970,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -855,24 +986,26 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/inbox/unread-count';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final notifications = ctx.service<NotificationService>();
-                final result = await this.unreadCount(notifications, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (notifications,) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              return (notifications,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.unreadCount(notifications, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -886,8 +1019,12 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -895,27 +1032,29 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/inbox/{id}/read';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final notifications = ctx.service<NotificationService>();
-                final result = await this.markRead(id, notifications, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, notifications) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final notifications = ctx.service<NotificationService>();
+              return (id, notifications);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.markRead(id, notifications, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -937,8 +1076,15 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -946,24 +1092,26 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
       final openApiPath = '$prefix/notifications/inbox/read-all';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final notifications = ctx.service<NotificationService>();
-                final result = await this.markAllRead(notifications, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final (notifications,) = await (() async {
+            try {
+              final notifications = ctx.service<NotificationService>();
+              return (notifications,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.markAllRead(notifications, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -977,8 +1125,12 @@ extension NotificationsApiGisilaDoc on NotificationsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

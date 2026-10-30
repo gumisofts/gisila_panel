@@ -45,24 +45,26 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/catalog';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.catalog(svc);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<ManagedServiceService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.catalog(svc);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -76,8 +78,12 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -85,24 +91,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.list(svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final (svc,) = await (() async {
+            try {
+              final svc = ctx.service<ManagedServiceService>();
+              return (svc,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.list(svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      if (basePath.length > 1) {
+        router.get(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'get',
@@ -116,8 +127,12 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -125,26 +140,31 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final form = await bindForm(request, InstallServiceForm.new);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.install(form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, svc) = await (() async {
+            try {
+              final form = await bindForm(request, InstallServiceForm.new);
+              final svc = ctx.service<ManagedServiceService>();
+              return (form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.install(form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
+      if (basePath.length > 1) {
+        router.post(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'post',
@@ -155,7 +175,11 @@ extension ServicesApiGisilaDoc on ServicesApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/InstallServiceForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/InstallServiceForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -163,8 +187,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -172,27 +203,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.retrieve(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.retrieve(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -214,8 +247,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -223,29 +263,30 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/config';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.put(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final form =
-                    await bindForm(request, UpdateServiceConfigForm.new);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.configure(id, form, svc, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'PUT $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, form, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final form = await bindForm(request, UpdateServiceConfigForm.new);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, form, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.configure(id, form, svc, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.put(basePath, __route);
       spec.putOperation(
           openApiPath,
           'put',
@@ -264,7 +305,11 @@ extension ServicesApiGisilaDoc on ServicesApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/UpdateServiceConfigForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/UpdateServiceConfigForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '200': ResponseSpec(description: 'OK', content: {
@@ -272,8 +317,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -281,27 +333,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/start';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.start(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.start(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -323,8 +377,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -332,27 +393,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/retry';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.retryInstall(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.retryInstall(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -374,8 +437,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -383,27 +453,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/stop';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.stop(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.stop(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -425,8 +497,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -434,26 +513,28 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/health';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final result = await this.health(id, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id,) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              return (id,);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.health(id, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -475,8 +556,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -484,27 +572,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}/repair';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.repair(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.repair(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -526,8 +616,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -535,27 +632,29 @@ extension ServicesApiGisilaDoc on ServicesApi {
       final openApiPath = '$prefix/services/{id}';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.delete(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final svc = ctx.service<ManagedServiceService>();
-                final result = await this.uninstall(id, svc, ctx);
-                return jsonResponse(body: result, statusCode: 204);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'DELETE $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, svc) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final svc = ctx.service<ManagedServiceService>();
+              return (id, svc);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.uninstall(id, svc, ctx);
+          return jsonResponse(body: result, statusCode: 204);
+        },
+      );
+      router.delete(basePath, __route);
       spec.putOperation(
           openApiPath,
           'delete',
@@ -577,8 +676,15 @@ extension ServicesApiGisilaDoc on ServicesApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }
