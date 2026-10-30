@@ -11,6 +11,7 @@ import {
   SkipToContent,
 } from "@carbon/react";
 import { ErrorBoundary } from "@/components/error-state";
+import { FirewallConfirmer } from "@/components/firewall-confirmer";
 import { PanelSideNav } from "@/components/sidebar";
 import { PanelHeaderActions } from "@/components/topbar";
 import { getToken } from "@/lib/api";
@@ -45,6 +46,7 @@ export default function PanelLayout() {
               onOverlayClick={onClickSideNavExpand}
             />
           </Header>
+          <FirewallConfirmer />
           <Content>
             {/* Keyed by path: navigating away clears a crashed page. */}
             <ErrorBoundary key={pathname}>

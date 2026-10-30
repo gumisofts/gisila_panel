@@ -76,6 +76,8 @@
 - Built-in HTTP edge cache (Varnish / cache-friendly nginx tier).
 - [x] Cron jobs — per-app schedules run by the worker through the exec
   path (works under systemd and supervisord alike).
+- [x] Firewall management — ufw rules from the panel, with changes that
+  roll back unless the browser confirms it can still reach the panel.
 - Preview environments per PR.
 - Internal `gisila login` CLI that turns a Linux box into a registered
   deploy target via the same tokens.

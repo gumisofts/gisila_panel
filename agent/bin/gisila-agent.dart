@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:args/args.dart';
 import 'package:gisila_agent/databases/mongodb.dart';
+import 'package:gisila_agent/firewall/firewall.dart';
 import 'package:gisila_agent/generators/nginx_vhost.dart';
 import 'package:gisila_agent/generators/supervisor_conf.dart'
     show supervisorLogDir;
@@ -103,6 +104,9 @@ Future<void> main(List<String> args) async {
       case 'mongo':
         await runMongo(rest);
         break;
+      case 'firewall':
+        await runFirewall(rest);
+        return; // runFirewall prints its own JSON line.
       case 'storage':
         await _storage(rest);
         break;
@@ -5550,6 +5554,11 @@ Subcommands:
                    and restore its executable/toolchain/venv — no rebuild)
   expose-port   --port N     (tcp apps: open the port on the host firewall)
   unexpose-port --port N     (tcp apps: close the port on the host firewall)
+  firewall status | apply --change-id N --op add|delete|enable|disable
+                [--rule JSON] [--keep-ip IP]... [--protect-port N]...
+                [--confirm-within SECONDS] | confirm --change-id N
+                | rollback --change-id N
+                             (host firewall; changes roll back unless confirmed)
   issue-cert    --hostname HOSTNAME
   start|stop|restart  --user app_xxx
   app-health    --user app_xxx --runtime RT [--port N] [--health-path PATH] \\

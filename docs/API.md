@@ -125,6 +125,44 @@ down run once. A run is skipped while the previous one is still going, or
 while the app has never been deployed. Runs lost to a worker restart are
 marked failed after their timeout plus 5 minutes.
 
+## Firewall
+
+The host firewall (ufw), for **superusers**. The API only records a change;
+the worker applies it through `gisila-agent firewall`, which is the
+authority on what is safe:
+
+- It refuses changes that would cut off SSH or the panel: blocking the
+  host's SSH ports (22 plus any `Port` in `sshd_config`), 80, 443, or the
+  port the request came in on, for everyone; blocking a source that
+  contains the requester's IP; removing the last allow rule for one of
+  those ports; and turning the firewall on while a rule blocks the
+  requester. Turning it on first adds allow rules for SSH, 80 and 443.
+- Every change is applied with a snapshot of the old rules and a rollback
+  timer that runs outside the panel (a transient systemd timer). The
+  requester's browser confirms the change automatically from any page of
+  the panel once it is applied: that the confirmation gets through proves
+  the panel is still reachable. If the requester doesn't reach the panel
+  within 5 minutes (`FIREWALL_CONFIRM_MINUTES`, 1 to 10), the old rules come
+  back.
+- One change at a time (a rollback restores the rules from before its
+  change, so it would undo later ones too). Only rules added from the panel
+  can be removed here; rules from apps, databases or the shell are listed
+  read-only.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/firewall/` | `available`, `active`, `defaultIncoming`, `sshPorts`, `rules` (each with `action`, `proto`, `port`, `from`, `comment`, `families`, `origin`: `panel`, `base` or `other`), `refreshedAt`, `open` (the change in progress) and the last 20 changes. |
+| `POST` | `/firewall/rules` | Body `{action: allow\|deny\|reject\|limit, proto?: tcp\|udp\|any, port?: "22" or "8000:8100", from?: "any", an IP or a CIDR, note?}`. Returns the change (`201`), or `409` while another is in progress. |
+| `POST` | `/firewall/rules/remove` | Same body, matching a rule with `origin: panel`. |
+| `POST` | `/firewall/enable`, `/firewall/disable` | Turn ufw on or off. |
+| `GET` | `/firewall/changes/{id}` | `status`: `queued`, `applying`, `awaiting_confirmation`, `confirm_requested`, `revert_requested`, `applied`, `rolled_back` or `failed` (refused, with the reason in `error`). |
+| `GET` | `/firewall/pending` | `{open}`: the change in progress, or null. Polled by every page. |
+| `POST` | `/firewall/changes/{id}/confirm` | Only the requester, before `confirmBy`. |
+| `POST` | `/firewall/changes/{id}/revert` | Put the old rules back now. |
+| `POST` | `/firewall/refresh` | Read the firewall again (it is also read every minute). |
+
+Docker's published ports bypass ufw.
+
 ## Domains
 
 | Method | Path | Notes |

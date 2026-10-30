@@ -1,0 +1,45 @@
+// Presentation for the Firewall route.
+//
+// Only Carbon's token modules are loaded here. The root '@carbon/react' entry is
+// emitted once from app/carbon.scss.
+@use '@carbon/react/scss/theme';
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/spacing';
+
+.gisila-firewall__status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: spacing.$spacing-05;
+}
+
+.gisila-firewall__label {
+  @include type.type-style('label-01');
+  color: theme.$text-secondary;
+  margin-block-end: spacing.$spacing-02;
+}
+
+.gisila-firewall__hint {
+  @include type.type-style('helper-text-01');
+  color: theme.$text-secondary;
+  margin-block-start: spacing.$spacing-04;
+  max-inline-size: 48rem;
+}
+
+.gisila-firewall__open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: spacing.$spacing-05;
+  margin-block-end: spacing.$spacing-06;
+}
+
+.gisila-firewall__note {
+  overflow-wrap: anywhere;
+}
+
+.gisila-firewall__error {
+  @include type.type-style('helper-text-01');
+  display: block;
+  color: theme.$text-secondary;
+  margin-block-start: spacing.$spacing-02;
+}
