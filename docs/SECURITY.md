@@ -41,6 +41,11 @@ able to reach the panel's database / Redis directly.
    plus whatever `Port` directive `sshd_config`/`sshd_config.d` declares) —
    so no combination of app config or worker bug can firewall the operator
    out of the box over SSH.
+   Superusers can also manage ufw rules directly on the Firewall page.
+   Those changes go through `gisila-agent firewall`, which refuses to block
+   SSH, 80, 443 or the requester's own address, and rolls every change back
+   unless the requester is back on the panel through the new rules within
+   5 minutes (configurable up to 10; see [API](API.md#firewall)).
 7. **TLS** — Let's Encrypt via `certbot --nginx`. Certs are renewed by
    the standard cron, not by the panel.
 8. **Privilege separation** — the API and worker run as the unprivileged

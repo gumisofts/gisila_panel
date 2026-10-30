@@ -11,6 +11,7 @@ import {
   DataBase,
   Earth,
   Email,
+  FirewallClassic,
   FolderOpen,
   Layers,
   Notification,
@@ -54,6 +55,7 @@ const NAV_SECTIONS = [
       { href: "/databases", label: "Databases", icon: DataBase, superuser: true },
       { href: "/storage", label: "Storage", icon: ObjectStorage, superuser: true },
       { href: "/mail", label: "Mail", icon: Email, superuser: true },
+      { href: "/firewall", label: "Firewall", icon: FirewallClassic, superuser: true },
     ],
   },
   {

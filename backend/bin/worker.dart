@@ -10,6 +10,7 @@ import 'package:gisila_panel/workers/commit_status_reporter.dart';
 import 'package:gisila_panel/workers/cron_scheduler.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
+import 'package:gisila_panel/workers/firewall_worker.dart';
 import 'package:gisila_panel/workers/health_monitor_worker.dart';
 import 'package:gisila_panel/workers/host_stats_sampler.dart';
 import 'package:gisila_panel/workers/job_queue.dart';
@@ -62,6 +63,10 @@ Future<void> main(List<String> args) async {
 
   // Reports deploy status back on commits pushed through a webhook.
   CommitStatusReporter(database).start();
+
+  // Applies host firewall changes made on the Firewall page and rolls back
+  // the ones nobody confirmed.
+  FirewallWorker(database).start();
 
   // Self-driven whole-host CPU/memory/disk sampler (published to Redis).
   HostStatsSampler().start();

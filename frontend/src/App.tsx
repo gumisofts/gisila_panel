@@ -27,6 +27,7 @@ const InstancePage = lazy(() => import("../app/(panel)/databases/[id]/page"));
 const MongoInstancePage = lazy(() => import("../app/(panel)/databases/mongo/[id]/page"));
 const StoragePage = lazy(() => import("../app/(panel)/storage/page"));
 const MailPage = lazy(() => import("../app/(panel)/mail/page"));
+const FirewallPage = lazy(() => import("../app/(panel)/firewall/page"));
 const ActivityPage = lazy(() => import("../app/(panel)/activity/page"));
 const NotificationsPage = lazy(() => import("../app/(panel)/notifications/page"));
 const TeamsPage = lazy(() => import("../app/(panel)/teams/page"));
@@ -99,6 +100,7 @@ export default function App() {
             <Route path="/databases/mongo/:id" element={<MongoInstancePage />} />
             <Route path="/storage" element={<StoragePage />} />
             <Route path="/mail" element={<MailPage />} />
+            <Route path="/firewall" element={<FirewallPage />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/teams" element={<TeamsPage />} />
