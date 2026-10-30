@@ -7,6 +7,7 @@ import 'package:gisila_panel/workers/alert_worker.dart';
 import 'package:gisila_panel/workers/application_worker.dart';
 import 'package:gisila_panel/workers/backup_scheduler.dart';
 import 'package:gisila_panel/workers/commit_status_reporter.dart';
+import 'package:gisila_panel/workers/cron_scheduler.dart';
 import 'package:gisila_panel/workers/deployment_worker.dart';
 import 'package:gisila_panel/workers/exec_worker.dart';
 import 'package:gisila_panel/workers/health_monitor_worker.dart';
@@ -54,6 +55,10 @@ Future<void> main(List<String> args) async {
 
   // Self-driven scheduler that fires due database backups.
   BackupScheduler(database).start();
+
+  // Self-driven scheduler that fires due app cron jobs (through the exec
+  // queue above).
+  CronScheduler(database).start();
 
   // Reports deploy status back on commits pushed through a webhook.
   CommitStatusReporter(database).start();

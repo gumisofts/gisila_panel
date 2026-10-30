@@ -74,7 +74,8 @@
 ## Long-term ideas
 
 - Built-in HTTP edge cache (Varnish / cache-friendly nginx tier).
-- Cron jobs (`systemd-timer` generator).
+- [x] Cron jobs — per-app schedules run by the worker through the exec
+  path (works under systemd and supervisord alike).
 - Preview environments per PR.
 - Internal `gisila login` CLI that turns a Linux box into a registered
   deploy target via the same tokens.

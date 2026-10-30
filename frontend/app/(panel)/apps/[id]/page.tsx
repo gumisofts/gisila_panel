@@ -39,6 +39,7 @@ import { EnvsTab } from "./_tabs/envs";
 import { DomainsTab } from "./_tabs/domains";
 import { LogsTab } from "./_tabs/logs";
 import { ConsoleTab } from "./_tabs/console";
+import { CronTab } from "./_tabs/cron";
 import { MetricsTab } from "./_tabs/metrics";
 import { StorageTab } from "./_tabs/storage";
 import { SettingsTab } from "./_tabs/settings";
@@ -327,6 +328,7 @@ export default function AppDetailPage() {
               : []),
             { label: "Logs", content: <LogsTab appId={appId} /> },
             { label: "Console", content: <ConsoleTab appId={appId} /> },
+            { label: "Cron", content: <CronTab app={app} /> },
             { label: "Metrics", content: <MetricsTab appId={appId} /> },
             { label: "Storage", content: <StorageTab appId={appId} /> },
             {

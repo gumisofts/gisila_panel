@@ -102,6 +102,29 @@ push and is only used when it is https on the app's own git host (or
 (e.g. `https://panel.example.com`) to link each status to the app's page.
 Failed posts are retried up to 5 times.
 
+## Cron jobs
+
+Scheduled commands per app, run like Console commands: as the app's Linux
+user, in its directory, with its env vars and toolchain. Schedules are
+5-field cron expressions (`*/15 * * * *`, `0 3 * * mon-fri`) or `@hourly`,
+`@daily`, `@weekly`, `@monthly`, `@yearly`, in **UTC**.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/apps/{id}/cron/` | Any team member. Jobs with `nextRunAt`, `lastRunAt`, `lastStatus`. |
+| `GET` | `/apps/{id}/cron/preview?schedule=...` | The next 5 run times, or `400 invalid_schedule` with the reason. |
+| `POST` | `/apps/{id}/cron/` | Developer. Body `{name, schedule, command, timeoutSeconds? (1-3600, default 300), enabled?}`. At most 20 per app. |
+| `PATCH` | `/apps/{id}/cron/{jobId}` | Developer. Any of the same fields. |
+| `DELETE` | `/apps/{id}/cron/{jobId}` | Developer. Deletes the job and its runs. |
+| `POST` | `/apps/{id}/cron/{jobId}/run` | Developer. Runs it now; `409` if a run is still going. Returns the run, whose `execId` streams live output like the Console. |
+| `GET` | `/apps/{id}/cron/{jobId}/runs` | Developer (output can hold secrets). The last 50 runs, newest first, with `status` (`running`, `succeeded`, `failed`, `timed_out`, `skipped`), `exitCode` and the last 200 lines of output. |
+
+The worker fires due jobs every 30 seconds. A slot is claimed atomically,
+so several workers never run it twice; slots missed while the worker was
+down run once. A run is skipped while the previous one is still going, or
+while the app has never been deployed. Runs lost to a worker restart are
+marked failed after their timeout plus 5 minutes.
+
 ## Domains
 
 | Method | Path | Notes |
