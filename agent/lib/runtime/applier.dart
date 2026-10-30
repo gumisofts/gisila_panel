@@ -372,6 +372,10 @@ class Applier {
         linuxUser: linuxUser,
         workDir: workDir,
         celeryApp: params.celeryApp,
+        // Beat imports the whole app (Django and all) to read its schedule;
+        // 128M was OOM-killed every few minutes on real apps, skipping
+        // scheduled tasks. Same headroom as Flower.
+        memoryMb: 512,
         envVars: envVars,
       );
       File('$systemdDir/${beat.serviceName}.service')

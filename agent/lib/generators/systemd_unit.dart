@@ -181,7 +181,7 @@ class CeleryBeatUnit {
     required this.linuxUser,
     required this.workDir,
     required this.celeryApp,
-    this.memoryMb = 128,
+    this.memoryMb = 512,
     this.cpuQuotaPercent = 10,
     this.envVars = const {},
   });
