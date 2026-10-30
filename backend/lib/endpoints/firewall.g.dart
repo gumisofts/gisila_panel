@@ -35,6 +35,13 @@ extension FirewallApiGisilaDoc on FirewallApi {
         'note': <String, Object?>{'type': 'string'}
       }
     });
+    spec.putSchema('WebSourcesForm', <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'sources': <String, Object?>{'type': 'string'},
+        'preset': <String, Object?>{'type': 'string'}
+      }
+    });
     spec.putTag('Firewall');
     {
       final basePath = '$prefix/firewall/';
@@ -278,6 +285,67 @@ extension FirewallApiGisilaDoc on FirewallApi {
               'application/x-www-form-urlencoded': MediaType(
                   schema: <String, Object?>{
                     r'$ref': '#/components/schemas/FirewallRuleForm'
+                  })
+            }),
+            responses: <String, ResponseSpec>{
+              '201': ResponseSpec(description: 'Created', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              })
+            },
+            requiresAuth: true,
+          ));
+    }
+    {
+      final basePath = '$prefix/firewall/web-sources';
+      final openApiPath = '$prefix/firewall/web-sources';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (form, firewall) = await (() async {
+            try {
+              final form = await bindForm(request, WebSourcesForm.new);
+              final firewall = ctx.service<FirewallService>();
+              return (form, firewall);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.webSources(form, firewall, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
+      spec.putOperation(
+          openApiPath,
+          'post',
+          Operation(
+            summary:
+                'Limit the web ports (80, 443) to some sources, or open them',
+            tags: <String>['Firewall'],
+            parameters: <Parameter>[],
+            requestBody: RequestBody(required: true, content: {
+              'application/json': MediaType(schema: <String, Object?>{
+                r'$ref': '#/components/schemas/WebSourcesForm'
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/WebSourcesForm'
                   })
             }),
             responses: <String, ResponseSpec>{

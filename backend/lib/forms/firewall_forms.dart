@@ -29,3 +29,18 @@ class FirewallRuleForm extends Form {
         'note': note.value,
       };
 }
+
+/// Which sources may reach the web ports (80 and 443): a [preset] such as
+/// `cloudflare`, or a list of [sources]. Empty or `any` means everyone.
+class WebSourcesForm extends Form {
+  // IP addresses / CIDR ranges, separated by commas, spaces or new lines.
+  final sources = StringField(name: 'sources', maxLength: 5000);
+  // cloudflare, or empty.
+  final preset = StringField(name: 'preset', maxLength: 20);
+
+  @override
+  List<FormField<Object?>> collectFields() => <FormField<Object?>>[
+        sources,
+        preset,
+      ];
+}

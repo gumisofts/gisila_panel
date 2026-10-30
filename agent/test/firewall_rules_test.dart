@@ -161,5 +161,75 @@ void main() {
           contains('blocks your address'));
       expect(guard.checkEnable([live('deny', null, '203.0.113.0/24', '')]), isNull);
     });
+
+    test('web sources: the requester must be among them', () {
+      expect(guard.checkWebSources(['173.245.48.0/20']), contains('cut you off'));
+      expect(guard.checkWebSources(['173.245.48.0/20', '198.51.100.0/24']), isNull);
+      expect(guard.checkWebSources([]), isNull, reason: 'open to everyone');
+    });
+  });
+
+  group('web sources', () {
+    FwRule live(String port, String from, String comment, {String action = 'allow'}) =>
+        FwRule(action: action, proto: 'tcp', port: port, from: from, comment: comment);
+    final base = [
+      live('22', 'any', 'gisila-base: ssh'),
+      live('80', 'any', 'gisila-base: http'),
+      live('443', 'any', 'gisila-base: https'),
+    ];
+    const ports = {80, 443};
+
+    test('parses and normalises the sources', () {
+      expect(parseWebSources('{"sources": ["10.1.2.3/8", "2400:cb00::/32", "10.0.0.0/8"]}'),
+          ['10.0.0.0/8', '2400:cb00::/32']);
+      expect(parseWebSources('{"sources": ["10.0.0.0/8", "any"]}'), isEmpty);
+      expect(() => parseWebSources('{"sources": "10.0.0.0/8"}'), throwsFormatException);
+      expect(() => parseWebSources('{"sources": ["nope"]}'), throwsFormatException);
+    });
+
+    test('limits 80 and 443: adds the new rules, then drops the base ones', () {
+      final cmds = webSourcesCommands(base, ['10.0.0.0/8', '2400:cb00::/32'], ports);
+      expect(cmds, [
+        ['allow', 'proto', 'tcp', 'from', '10.0.0.0/8', 'to', 'any', 'port', '80', 'comment', 'gisila-web: http'],
+        ['allow', 'proto', 'tcp', 'from', '2400:cb00::/32', 'to', 'any', 'port', '80', 'comment', 'gisila-web: http'],
+        ['allow', 'proto', 'tcp', 'from', '10.0.0.0/8', 'to', 'any', 'port', '443', 'comment', 'gisila-web: https'],
+        ['allow', 'proto', 'tcp', 'from', '2400:cb00::/32', 'to', 'any', 'port', '443', 'comment', 'gisila-web: https'],
+        ['delete', 'allow', 'proto', 'tcp', 'from', 'any', 'to', 'any', 'port', '80'],
+        ['delete', 'allow', 'proto', 'tcp', 'from', 'any', 'to', 'any', 'port', '443'],
+      ]);
+    });
+
+    test('changes only what differs, and can open up again', () {
+      final limited = [
+        base[0],
+        live('80', '10.0.0.0/8', 'gisila-web: http'),
+        live('443', '10.0.0.0/8', 'gisila-web: https'),
+        live('80', '192.0.2.0/24', 'gisila-web: http'),
+        live('443', '192.0.2.0/24', 'gisila-web: https'),
+      ];
+      expect(webSources(limited), ['10.0.0.0/8', '192.0.2.0/24']);
+      expect(webSources(base), isEmpty);
+      expect(webSourcesCommands(limited, ['10.0.0.0/8'], ports), [
+        ['delete', 'allow', 'proto', 'tcp', 'from', '192.0.2.0/24', 'to', 'any', 'port', '80'],
+        ['delete', 'allow', 'proto', 'tcp', 'from', '192.0.2.0/24', 'to', 'any', 'port', '443'],
+      ]);
+      final open = webSourcesCommands(limited, [], ports);
+      expect(open.take(2), [
+        ['allow', 'proto', 'tcp', 'from', 'any', 'to', 'any', 'port', '80', 'comment', 'gisila-base: http'],
+        ['allow', 'proto', 'tcp', 'from', 'any', 'to', 'any', 'port', '443', 'comment', 'gisila-base: https'],
+      ]);
+      expect(open.skip(2).every((c) => c.first == 'delete'), isTrue);
+      expect(open, hasLength(6));
+      expect(webSourcesCommands(base, [], ports), isEmpty);
+    });
+
+    test('refuses when another rule keeps a web port open to everyone', () {
+      expect(openWebRule([...base, live('443', 'any', 'gisila-panel')], ['10.0.0.0/8'], ports),
+          contains('port 443'));
+      expect(openWebRule([...base, live('80', 'any', 'gisila-panel', action: 'deny')], ['10.0.0.0/8'], ports),
+          isNull);
+      expect(openWebRule(base, ['10.0.0.0/8'], ports), isNull, reason: 'base rules are swapped out');
+      expect(openWebRule([...base, live('443', 'any', '')], [], ports), isNull);
+    });
   });
 }

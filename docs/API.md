@@ -151,10 +151,11 @@ authority on what is safe:
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/firewall/` | `available`, `active`, `defaultIncoming`, `sshPorts`, `rules` (each with `action`, `proto`, `port`, `from`, `comment`, `families`, `origin`: `panel`, `base` or `other`), `refreshedAt`, `open` (the change in progress) and the last 20 changes. |
+| `GET` | `/firewall/` | `available`, `active`, `defaultIncoming`, `sshPorts`, `rules` (each with `action`, `proto`, `port`, `from`, `comment`, `families`, `origin`: `panel`, `base`, `web` or `other`), `webSources` (what 80 and 443 are limited to, empty when open to everyone), `refreshedAt`, `open` (the change in progress) and the last 20 changes. |
 | `POST` | `/firewall/rules` | Body `{action: allow\|deny\|reject\|limit, proto?: tcp\|udp\|any, port?: "22" or "8000:8100", from?: "any", an IP or a CIDR, note?}`. Returns the change (`201`), or `409` while another is in progress. |
 | `POST` | `/firewall/rules/remove` | Same body, matching a rule with `origin: panel`. |
 | `POST` | `/firewall/enable`, `/firewall/disable` | Turn ufw on or off. |
+| `POST` | `/firewall/web-sources` | Let only some sources reach ports 80 and 443. Body `{preset: "cloudflare"}` or `{sources: "203.0.113.0/24, 2001:db8::/32"}` (separated by commas, spaces or new lines); an empty `sources` or `any` opens them to everyone again. The panel's own allow-from-anywhere rules for 80 and 443 are swapped for `gisila-web` rules. Refused when your own address is not among the sources, or when another rule still lets everyone in on 80 or 443. Sites whose DNS is not proxied through those sources stop loading, and their HTTP certificate renewals fail. |
 | `GET` | `/firewall/changes/{id}` | `status`: `queued`, `applying`, `awaiting_confirmation`, `confirm_requested`, `revert_requested`, `applied`, `rolled_back` or `failed` (refused, with the reason in `error`). |
 | `GET` | `/firewall/pending` | `{open}`: the change in progress, or null. Polled by every page. |
 | `POST` | `/firewall/changes/{id}/confirm` | Only the requester, before `confirmBy`. |

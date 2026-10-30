@@ -47,6 +47,10 @@ class FwRule {
   /// firewall on.
   static const baseComment = 'gisila-base';
 
+  /// The comment on the rules that let only some sources reach the web
+  /// ports, set as a whole with the `web-sources` change.
+  static const webComment = 'gisila-web';
+
   static final _portRe = RegExp(r'^([0-9]{1,5})(?::([0-9]{1,5}))?$');
   static final _noteRe = RegExp(r'^[A-Za-z0-9 ._:#/@()+-]{0,60}$');
 
@@ -56,7 +60,9 @@ class FwRule {
           ? 'panel'
           : comment.startsWith(baseComment)
               ? 'base'
-              : 'other';
+              : comment.startsWith(webComment)
+                  ? 'web'
+                  : 'other';
 
   bool get blocks => action == 'deny' || action == 'reject';
 
@@ -161,6 +167,82 @@ class FwRule {
         'any',
         if (port != null) ...['port', port!],
       ];
+}
+
+/// The `{"sources": [...]}` of a `web-sources` change: normalised and
+/// deduplicated, and empty for everyone. Throws [FormatException].
+List<String> parseWebSources(String rule) {
+  final json = jsonDecode(rule);
+  final list = json is Map ? json['sources'] : null;
+  if (list is! List) {
+    throw const FormatException('--rule needs a "sources" list');
+  }
+  final out = {for (final s in list) normaliseSource('$s')};
+  if (out.contains('any')) return const [];
+  return out.toList()..sort();
+}
+
+/// The sources the web ports are limited to, from the `gisila-web` rules;
+/// empty when they are open to everyone.
+List<String> webSources(List<FwRule> live) => {
+      for (final r in live)
+        if (r.origin == 'web') r.from,
+    }.toList()
+      ..sort();
+
+/// A rule that would still let everyone in on one of [ports] once they are
+/// limited to [sources], which would make the limit pointless. Only the
+/// panel's own base rules are swapped out.
+String? openWebRule(List<FwRule> live, List<String> sources, Set<int> ports) {
+  if (sources.isEmpty) return null;
+  for (final r in live) {
+    if (!r.simple || r.blocks || r.from != 'any' || r.origin == 'base') {
+      continue;
+    }
+    for (final p in ports) {
+      if (r.coversTcp(p)) {
+        return 'Another rule (${r.action} ${r.port ?? 'every port'} from '
+            'anywhere) still lets everyone in on port $p. Remove it first.';
+      }
+    }
+  }
+  return null;
+}
+
+/// The ufw commands that let only [sources] reach [ports] over TCP, or
+/// everyone when it is empty. New rules go in before old ones come out, so
+/// the ports are never closed in between.
+List<List<String>> webSourcesCommands(
+    List<FwRule> live, List<String> sources, Set<int> ports) {
+  String name(int p) => p == 80 ? 'http' : p == 443 ? 'https' : '$p';
+  final wanted = [
+    for (final p in ports.toList()..sort())
+      for (final from in sources.isEmpty ? const ['any'] : sources)
+        FwRule(
+          action: 'allow',
+          proto: 'tcp',
+          port: '$p',
+          from: from,
+          comment: sources.isEmpty
+              ? '${FwRule.baseComment}: ${name(p)}'
+              : '${FwRule.webComment}: ${name(p)}',
+        ),
+  ];
+  final current = [
+    for (final r in live)
+      if (r.simple &&
+          (r.origin == 'web' || r.origin == 'base') &&
+          ports.any((p) => r.port == '$p'))
+        r,
+  ];
+  return [
+    for (final w in wanted)
+      if (!current.any((c) => c.sameAs(w) && c.origin == w.origin))
+        w.addArgs(),
+    for (final c in current)
+      if (!wanted.any((w) => w.sameAs(c) && w.origin == c.origin))
+        c.deleteArgs(),
+  ];
 }
 
 /// `any`, or the canonical text of an address / CIDR. Throws
@@ -377,9 +459,24 @@ class FwGuard {
     if (!active || rule.blocks) return null;
     final rest = live.where((r) => !(r.simple && r.sameAs(rule))).toList();
     for (final p in protectedPorts) {
-      if (!rule.coversTcp(p) || !_letsKeepIpsIn(rule)) continue;
-      if (!rest.any((r) => !r.blocks && r.coversTcp(p) && _letsKeepIpsIn(r))) {
+      if (!rule.coversTcp(p) || !letsIn(rule)) continue;
+      if (!rest.any((r) => !r.blocks && r.coversTcp(p) && letsIn(r))) {
         return '${_whyProtected(p, 'close')} No other rule lets you in on it.';
+      }
+    }
+    return null;
+  }
+
+  /// Before letting only [sources] reach the web ports: every address that
+  /// must keep reaching the panel has to be among them. [sources] are
+  /// normalised, and empty means everyone.
+  String? checkWebSources(List<String> sources) {
+    if (sources.isEmpty) return null;
+    for (final ip in keepIps) {
+      if (!sources.any((s) => Cidr.parse(s).contains(ip))) {
+        return 'Your address (${ip.address}) is not in these ranges, so '
+            'this would cut you off from the panel. If you reach the panel '
+            'through a proxy such as Cloudflare, include its ranges.';
       }
     }
     return null;
@@ -403,7 +500,8 @@ class FwGuard {
     return null;
   }
 
-  bool _letsKeepIpsIn(FwRule r) =>
+  /// Whether [r] lets the addresses that must keep reaching the panel in.
+  bool letsIn(FwRule r) =>
       r.from == 'any' || keepIps.any((ip) => r.fromIncludes(ip));
 
   String _whyProtected(int p, String verb) => sshPorts.contains(p)
