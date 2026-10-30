@@ -15,6 +15,7 @@ import {
   TileGroup,
 } from "@carbon/react";
 import { AlertRulesManager } from "@/components/alert-rules-manager";
+import { PushToDeployCard } from "./push-to-deploy";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -174,6 +175,7 @@ export function SettingsTab({
 }) {
   const { canForProject } = usePermissions();
   const canManageAlerts = canForProject(app.projectId, "developer");
+  const canManageWebhook = canForProject(app.projectId, "admin");
   const sshKeys = useSWR<{ results: SshKey[] }>("/me/security/ssh-keys", fetcher);
   const applications = useSWR<ListResponse<Application>>("/applications/", fetcher);
   const catalog = useSWR<ListResponse<ApplicationDef>>(
@@ -1046,6 +1048,14 @@ export function SettingsTab({
         </div>
       </Stack>
     </Form>
+
+      {/* Push to deploy — outside the Form for the same reason as the
+          alert rules below: it saves through its own API. */}
+      {app.sourceType === "git" && (
+        <div className="gisila-app__alert-rules">
+          <PushToDeployCard app={app} canManage={canManageWebhook} />
+        </div>
+      )}
 
       {/* Alert rules — outside the settings Form since it manages its own
           submission independently via the notifications API. */}

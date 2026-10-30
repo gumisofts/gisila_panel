@@ -90,11 +90,34 @@ class DeploymentsService extends Service {
       throw BadRequest('artifactId only applies to binary and zip apps.');
     }
 
+    return queue(
+      app,
+      triggeredById: actor.id,
+      sourceType: sourceType,
+      gitCommitSha: gitCommitSha,
+      artifactPath: artifactPath,
+      forceRebuild: forceRebuild,
+    );
+  }
+
+  /// Records a `queued` deployment of [app] and hands it to the worker.
+  /// Callers check permissions first; [triggeredById] is null when no user
+  /// started it (a git push webhook). [reason] is appended to the event
+  /// line on the app's timeline.
+  Future<Deployment> queue(
+    App app, {
+    int? triggeredById,
+    required String sourceType,
+    String? gitCommitSha,
+    String? artifactPath,
+    bool forceRebuild = false,
+    String? reason,
+  }) async {
     final now = DateTime.now().toUtc();
     final deployment = await Query<Deployment>(DeploymentTable.metadata)
         .insert(<String, Object?>{
       'appId': app.id,
-      'triggeredById': actor.id,
+      'triggeredById': triggeredById,
       'sourceType': sourceType,
       'gitCommitSha': gitCommitSha,
       'artifactPath': artifactPath,
@@ -109,9 +132,10 @@ class DeploymentsService extends Service {
 
     await Query<AppEvent>(AppEventTable.metadata).insert(<String, Object?>{
       'appId': app.id,
-      'actorId': actor.id,
+      'actorId': triggeredById,
       'kind': 'deploy',
-      'message': 'Deployment #${deployment.id} queued.',
+      'message': 'Deployment #${deployment.id} queued'
+          '${reason == null ? '' : ' $reason'}.',
       'createdAt': now.toIso8601String(),
     }).run(_db.context());
 

@@ -1,7 +1,9 @@
 import 'dart:io';
 
-import 'package:gisila_doc/gisila_doc.dart' hide Query;
+// The panel's own JwtAuthenticator (session revocation, MFA) stays in use.
+import 'package:gisila_doc/gisila_doc.dart' hide JwtAuthenticator, Query;
 import 'package:gisila_orm/gisila.dart' hide PostgresErrorMapper;
+import 'package:gisila_redis/gisila_redis.dart' show RedisRateLimitStore;
 import 'package:shelf/shelf.dart' show HijackException;
 import 'package:shelf_static/shelf_static.dart';
 import 'package:gisila_panel/admin.dart';
@@ -12,6 +14,7 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/ui_headers.dart';
 import 'package:gisila_panel/version.dart';
 import 'package:gisila_panel/endpoints/apps.dart';
+import 'package:gisila_panel/endpoints/cron.dart';
 import 'package:gisila_panel/endpoints/applications.dart';
 import 'package:gisila_panel/endpoints/audit.dart';
 import 'package:gisila_panel/endpoints/auth.dart';
@@ -28,6 +31,7 @@ import 'package:gisila_panel/endpoints/mongo.dart';
 import 'package:gisila_panel/endpoints/notifications.dart';
 import 'package:gisila_panel/endpoints/services.dart';
 import 'package:gisila_panel/endpoints/storage.dart';
+import 'package:gisila_panel/endpoints/webhooks.dart';
 import 'package:gisila_panel/endpoints/system.dart';
 import 'package:gisila_panel/endpoints/teams.dart';
 import 'package:gisila_panel/infra/audit_middleware.dart';
@@ -37,6 +41,7 @@ import 'package:gisila_panel/infra/jwt_authenticator.dart';
 import 'package:gisila_panel/infra/postgres_error_mapper.dart';
 import 'package:gisila_panel/services/application_service.dart';
 import 'package:gisila_panel/services/apps_service.dart';
+import 'package:gisila_panel/services/cron_service.dart';
 import 'package:gisila_panel/services/audit_service.dart';
 import 'package:gisila_panel/services/auth_service.dart';
 import 'package:gisila_panel/services/deployments_service.dart';
@@ -52,6 +57,7 @@ import 'package:gisila_panel/services/postgres_service.dart';
 import 'package:gisila_panel/services/security_service.dart';
 import 'package:gisila_panel/services/storage_service.dart';
 import 'package:gisila_panel/services/teams_service.dart';
+import 'package:gisila_panel/services/webhooks_service.dart';
 
 /// Build the top-level Shelf handler for the gisila-panel control plane.
 Future<Handler> application() async {
@@ -85,6 +91,15 @@ Future<Handler> application() async {
       defaultRouteConfig: const RouteConfig(
         rateLimit: RateLimitConfig(requestsPerMinute: 300),
       ),
+      // One budget per client across every isolate (the server runs one per
+      // CPU) instead of one per isolate (PNL-20). If Redis is unreachable
+      // requests go through rather than the whole API failing; login
+      // attempts keep their own Redis throttle.
+      rateLimitStore: RedisRateLimitStore(
+        panelRedis(),
+        prefix: 'gisila-panel:rl:',
+        onError: (e) => logger.w('Rate limiting skipped: $e'),
+      ),
       // shelf_web_socket upgrades via HijackException (control flow). Gisila's
       // error middleware must not turn that into a JSON 500 — shelf_io handles
       // it. Kept as a safety net even though /ws is mounted outside the app.
@@ -109,6 +124,8 @@ Future<Handler> application() async {
   app.registerService<ApplicationService>(ApplicationService.new);
   app.registerService<EnvsService>(EnvsService.new);
   app.registerService<DeploymentsService>(DeploymentsService.new);
+  app.registerService<WebhooksService>(WebhooksService.new);
+  app.registerService<CronService>(CronService.new);
   app.registerService<DomainsService>(DomainsService.new);
   app.registerService<LifecycleService>(LifecycleService.new);
   app.registerService<SecurityService>(SecurityService.new);
@@ -134,6 +151,9 @@ Future<Handler> application() async {
       AppsApi().attachToApp(app, router, spec, prefix: prefix);
       ApplicationsApi().attachToApp(app, router, spec, prefix: prefix);
       DeploymentsApi().attachToApp(app, router, spec, prefix: prefix);
+      AppWebhookApi().attachToApp(app, router, spec, prefix: prefix);
+      WebhookDeliveryApi().attachToApp(app, router, spec, prefix: prefix);
+      CronApi().attachToApp(app, router, spec, prefix: prefix);
       DomainsApi().attachToApp(app, router, spec, prefix: prefix);
       MetricsApi().attachToApp(app, router, spec, prefix: prefix);
       SecurityApi().attachToApp(app, router, spec, prefix: prefix);

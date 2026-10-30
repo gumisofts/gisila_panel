@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dotenv/dotenv.dart';
 import 'package:gisila_orm/gisila.dart';
+import 'package:gisila_redis/gisila_redis.dart' show GisilaRedis;
 import 'package:logger/logger.dart';
 import 'package:redis/redis.dart';
 
@@ -148,6 +149,18 @@ Future<Command> connectRedis() async {
   }
   return cmd;
 }
+
+/// A self-healing client for the same Redis, with a timeout on every
+/// command, for things on the request path (the shared rate limiter).
+/// Unlike [connectRedis], a dropped connection is re-opened on the next
+/// command.
+GisilaRedis panelRedis() => GisilaRedis(
+      host: redisHost,
+      port: redisPort,
+      username: redisUsername,
+      password: redisPassword,
+      tls: redisTls,
+    );
 
 /// Whether GisilaStudio (the raw database admin UI) is mounted at `/admin`.
 ///

@@ -84,7 +84,11 @@ class User with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -387,7 +391,11 @@ class UserTotp with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -525,7 +533,11 @@ class Team with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -692,7 +704,11 @@ class TeamMember with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -852,7 +868,11 @@ class ApiToken with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -1009,7 +1029,11 @@ class SshKey with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -1173,7 +1197,11 @@ class Project with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -1348,7 +1376,11 @@ class Application with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -1597,7 +1629,11 @@ class ApplicationVersion with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -1939,7 +1975,11 @@ class App with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -2508,7 +2548,11 @@ class EnvVar with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -2676,7 +2720,11 @@ class Deployment with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -2892,7 +2940,11 @@ class BuildLog with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3030,7 +3082,11 @@ class Domain with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3189,7 +3245,11 @@ class MetricSample with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3326,7 +3386,11 @@ class AppEvent with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3496,7 +3560,11 @@ class ManagedService with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3705,7 +3773,11 @@ class PostgresInstance with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -3951,7 +4023,11 @@ class PostgresDatabase with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -4187,7 +4263,11 @@ class PostgresBackupSchedule with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -4396,7 +4476,11 @@ class PostgresBackup with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -4616,7 +4700,11 @@ class MongoInstance with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -4859,7 +4947,11 @@ class MongoDatabase with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -5079,7 +5171,11 @@ class MongoBackupSchedule with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -5287,7 +5383,11 @@ class MongoBackup with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -5510,7 +5610,11 @@ class StorageProvider with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -5734,7 +5838,11 @@ class StorageBucket with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -5904,7 +6012,11 @@ class AppStorageLink with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -6048,7 +6160,11 @@ class MailDomain with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -6214,7 +6330,11 @@ class MailAccount with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -6389,7 +6509,11 @@ class SmtpConfig with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -6607,7 +6731,11 @@ class AlertRule with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -6954,7 +7082,11 @@ class AlertEvent with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -7258,7 +7390,11 @@ class Notification with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
@@ -7433,7 +7569,11 @@ class AuditLog with Preloadable {
     List<String> exclude = const [],
     List<String> only = const [],
   }) {
-    final row = toRow();
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
     if (only.isNotEmpty) return {for (final k in only) k: row[k]};
     if (exclude.isEmpty) return row;
     return Map.of(row)..removeWhere((k, _) => exclude.contains(k));

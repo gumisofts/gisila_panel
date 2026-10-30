@@ -40,28 +40,33 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       final openApiPath = '$prefix/apps/{appId}/deployments/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final deployments = ctx.service<DeploymentsService>();
-                final apps = ctx.service<AppsService>();
-                final result = await this.list(appId, deployments, apps, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, deployments, apps) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final deployments = ctx.service<DeploymentsService>();
+              final apps = ctx.service<AppsService>();
+              return (appId, deployments, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.list(appId, deployments, apps, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      if (basePath.length > 1) {
+        router.get(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'get',
@@ -83,8 +88,15 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -92,29 +104,33 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       final openApiPath = '$prefix/apps/{appId}/deployments/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final form = await bindForm(request, TriggerDeploymentForm.new);
-                final deployments = ctx.service<DeploymentsService>();
-                final result =
-                    await this.trigger(appId, form, deployments, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, form, deployments) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final form = await bindForm(request, TriggerDeploymentForm.new);
+              final deployments = ctx.service<DeploymentsService>();
+              return (appId, form, deployments);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.trigger(appId, form, deployments, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
+      if (basePath.length > 1) {
+        router.post(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'post',
@@ -133,7 +149,11 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
             requestBody: RequestBody(required: true, content: {
               'application/json': MediaType(schema: <String, Object?>{
                 r'$ref': '#/components/schemas/TriggerDeploymentForm'
-              })
+              }),
+              'application/x-www-form-urlencoded': MediaType(
+                  schema: <String, Object?>{
+                    r'$ref': '#/components/schemas/TriggerDeploymentForm'
+                  })
             }),
             responses: <String, ResponseSpec>{
               '201': ResponseSpec(description: 'Created', content: {
@@ -141,8 +161,15 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -150,27 +177,29 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       final openApiPath = '$prefix/apps/{appId}/deployments/artifacts';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final apps = ctx.service<AppsService>();
-                final result = await this.uploadArtifact(appId, apps, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, apps) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final apps = ctx.service<AppsService>();
+              return (appId, apps);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.uploadArtifact(appId, apps, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -192,8 +221,15 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -201,29 +237,31 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       final openApiPath = '$prefix/apps/{appId}/deployments/{id}/rollback';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.post(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final deployments = ctx.service<DeploymentsService>();
-                final result = await this.rollback(appId, id, deployments, ctx);
-                return jsonResponse(body: result, statusCode: 201);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'POST $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, id, deployments) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final deployments = ctx.service<DeploymentsService>();
+              return (appId, id, deployments);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.rollback(appId, id, deployments, ctx);
+          return jsonResponse(body: result, statusCode: 201);
+        },
+      );
+      router.post(basePath, __route);
       spec.putOperation(
           openApiPath,
           'post',
@@ -252,8 +290,15 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
     {
@@ -261,29 +306,31 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
       final openApiPath = '$prefix/apps/{appId}/deployments/{id}/logs';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final id =
-                    coerce<int>(request.params['id'], 'id', required: true);
-                final deployments = ctx.service<DeploymentsService>();
-                final result = await this.logs(appId, id, deployments, ctx);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, id, deployments) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final deployments = ctx.service<DeploymentsService>();
+              return (appId, id, deployments);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.logs(appId, id, deployments, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
       spec.putOperation(
           openApiPath,
           'get',
@@ -312,8 +359,15 @@ extension DeploymentsApiGisilaDoc on DeploymentsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

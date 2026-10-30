@@ -32,9 +32,9 @@ Future<void> main(List<String> args) async {
 
   logger.i('gisila-panel: HTTP server listening on :$port'
       '${isDev ? ' (hot-reload)' : ''}');
-  logger.i('  docs       → http://localhost:$port/docs');
+  logger.i('  docs       → http://localhost:$port/docs/docs');
   logger.i('  admin      → http://localhost:$port/admin');
-  logger.i('  openapi    → http://localhost:$port/openapi.json');
+  logger.i('  openapi    → http://localhost:$port/docs/openapi.json');
 }
 
 Future<void> _createProdServer(int port) async {
@@ -46,7 +46,8 @@ Future<void> _createProdServer(int port) async {
         await init();
         await SecretBox.load();
         final handler = await application();
-        final server = await serve(handler, '0.0.0.0', p, shared: true);
+        final server = await serve(handler, '0.0.0.0', p,
+            shared: true, poweredByHeader: null);
         server.autoCompress = true;
       },
       port,
@@ -54,11 +55,13 @@ Future<void> _createProdServer(int port) async {
   }
 
   final handler = await application();
-  final server = await serve(handler, '0.0.0.0', port, shared: true);
+  final server = await serve(handler, '0.0.0.0', port,
+      shared: true, poweredByHeader: null);
   server.autoCompress = true;
 }
 
 void _createDevServer(int port) => withHotreload(() async {
       final handler = await application();
-      return serve(handler, '0.0.0.0', port, shared: true);
+      return serve(handler, '0.0.0.0', port,
+          shared: true, poweredByHeader: null);
     });

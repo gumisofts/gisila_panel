@@ -31,31 +31,36 @@ extension AuditApiGisilaDoc on AuditApi {
       final openApiPath = '$prefix/audit/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final audit = ctx.service<AuditService>();
-                final limit = coerce<int?>(
-                    request.url.queryParameters['limit'], 'limit',
-                    required: false);
-                final offset = coerce<int?>(
-                    request.url.queryParameters['offset'], 'offset',
-                    required: false);
-                final result = await this.list(audit, ctx, limit, offset);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (audit, limit, offset) = await (() async {
+            try {
+              final audit = ctx.service<AuditService>();
+              final limit = coerce<int?>(
+                  request.url.queryParameters['limit'], 'limit',
+                  required: false);
+              final offset = coerce<int?>(
+                  request.url.queryParameters['offset'], 'offset',
+                  required: false);
+              return (audit, limit, offset);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.list(audit, ctx, limit, offset);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      if (basePath.length > 1) {
+        router.get(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'get',
@@ -90,8 +95,15 @@ extension AuditApiGisilaDoc on AuditApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }

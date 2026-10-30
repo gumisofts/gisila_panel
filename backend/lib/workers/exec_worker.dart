@@ -6,6 +6,7 @@ import 'package:gisila_orm/gisila.dart';
 import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
+import 'package:gisila_panel/services/cron_service.dart';
 
 /// Runs one-off commands inside an app's environment (queue `gisila:queue:exec`).
 ///
@@ -24,6 +25,10 @@ class ExecWorker {
     final execId = payload['execId'] as String?;
     final command = payload['command'] as String?;
     if (appId == null || execId == null || command == null) return;
+    // Set for runs of a cron job (see CronService.startRun).
+    final cronRunId = payload['cronRunId'] as int?;
+    final timeoutSeconds = payload['timeoutSeconds'] as int?;
+    final output = cronRunId == null ? null : <String>[];
 
     final app = await Query<App>(AppTable.metadata)
         .where(AppTable.id.eq(appId))
@@ -35,6 +40,9 @@ class ExecWorker {
       await _log(execId, 'stderr',
           'App is not provisioned yet — deploy it before running commands.');
       await _exit(execId, 1);
+      if (cronRunId != null) {
+        await _finishCron(cronRunId, 1, ['App is not deployed yet.']);
+      }
       return;
     }
 
@@ -69,21 +77,53 @@ class ExecWorker {
           '--python-version',
           app.pythonVersion!,
         ],
+        if (timeoutSeconds != null) ...['--timeout', '$timeoutSeconds'],
         '--command', command,
-      ], execId);
+      ], execId, output);
       await _exit(execId, exit);
+      if (cronRunId != null) await _finishCron(cronRunId, exit, output!);
     } catch (e) {
       await _log(execId, 'stderr', 'Execution failed: $e');
       await _exit(execId, 1);
+      if (cronRunId != null) {
+        await _finishCron(cronRunId, 1, [...?output, 'Execution failed: $e']);
+      }
+    }
+  }
+
+  /// Lines of output kept with a cron run once the live log expires.
+  static const _cronOutputLines = 200;
+
+  Future<void> _finishCron(int runId, int exit, List<String> output) async {
+    final timedOut =
+        output.any((l) => l.startsWith('[exec] command timed out'));
+    try {
+      await CronService.finishRun(
+        database,
+        runId,
+        status: timedOut ? 'timed_out' : (exit == 0 ? 'succeeded' : 'failed'),
+        exitCode: exit,
+        output: output.join('\n'),
+      );
+    } catch (e) {
+      logger.w('exec_worker: could not record cron run #$runId: $e');
     }
   }
 
   /// Run the agent, streaming each output line to the exec log channel.
   /// Returns the agent's exit code.
-  Future<int> _runAgent(List<String> args, String execId) async {
+  Future<int> _runAgent(
+      List<String> args, String execId, List<String>? output) async {
+    void keep(String line) {
+      if (output == null) return;
+      output.add(line);
+      if (output.length > _cronOutputLines) output.removeAt(0);
+    }
+
     if (hostConfig.agentMode == 'dev') {
-      await _log(execId, 'stdout',
-          '(dev mode) would run: gisila-agent ${args.join(' ')}');
+      final line = '(dev mode) would run: gisila-agent ${args.join(' ')}';
+      keep(line);
+      await _log(execId, 'stdout', line);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       return 0;
     }
@@ -97,11 +137,17 @@ class ExecWorker {
       process.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .forEach((line) => _log(execId, 'stdout', line)),
+          .forEach((line) {
+        keep(line);
+        unawaited(_log(execId, 'stdout', line));
+      }),
       process.stderr
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .forEach((line) => _log(execId, 'stderr', line)),
+          .forEach((line) {
+        keep(line);
+        unawaited(_log(execId, 'stderr', line));
+      }),
     ]);
 
     return process.exitCode;

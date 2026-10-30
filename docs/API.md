@@ -66,6 +66,65 @@ way.
 | `POST` | `/apps/{id}/deployments/{depId}/rollback` | Instantly re-activates that deployment's kept build with its recorded env vars and settings (no rebuild). |
 | `GET` | `/apps/{id}/deployments/{depId}/logs` | Persisted build logs. |
 
+## Push to deploy
+
+Git apps can deploy on every push through a webhook.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/apps/{id}/webhook` | Any team member. `{configured, enabled, path, branch, lastDeliveryAt, lastDeliveryResult}`; never the secret. |
+| `POST` | `/apps/{id}/webhook` | Admin. Creates the webhook or rotates its secret; returns `{path, branch, secret}`. The secret is only ever returned here. |
+| `DELETE` | `/apps/{id}/webhook` | Admin. Removes it; deliveries are refused afterwards. |
+| `PUT` | `/apps/{id}/webhook/status-token` | Admin. Body `{token}`. Turns on commit statuses (below). Stored encrypted, never returned. |
+| `DELETE` | `/apps/{id}/webhook/status-token` | Admin. Turns commit statuses off. |
+| `POST` | `/webhooks/apps/{id}` | Called by the repository host, not behind panel login. |
+
+Deliveries are checked with the app's secret: GitHub and Gitea / Forgejo
+sign the body (`X-Hub-Signature-256`), GitLab sends `X-Gitlab-Token`. An
+unknown app, a removed webhook and a bad signature all get the same
+`401 invalid_signature`.
+
+A push to the app's branch (or, with none set, the repository's default
+branch) queues a deployment of that commit (`202 {deploymentId}`). These
+are acknowledged and skipped (`200 {ignored: "..."}`): pings, other
+events, other branches, tags, deleted branches, a redelivered delivery id,
+and pushes while a deployment is still queued (the build clones the
+branch head when it starts, so it already includes them). Limit: 120
+deliveries per minute per source, bodies up to 5 MB.
+
+**Commit statuses.** With a status token set, each deployment queued by a
+push is reported on that commit as `gisila-panel/deploy`: pending while
+queued / building / deploying, then success or failure. The token needs
+"Commit statuses: write" (GitHub fine-grained), `api` (GitLab) or
+`write:repository` (Gitea / Forgejo). The status URL comes from the signed
+push and is only used when it is https on the app's own git host (or
+`api.` + it), so the token is never sent elsewhere. Set `PANEL_PUBLIC_URL`
+(e.g. `https://panel.example.com`) to link each status to the app's page.
+Failed posts are retried up to 5 times.
+
+## Cron jobs
+
+Scheduled commands per app, run like Console commands: as the app's Linux
+user, in its directory, with its env vars and toolchain. Schedules are
+5-field cron expressions (`*/15 * * * *`, `0 3 * * mon-fri`) or `@hourly`,
+`@daily`, `@weekly`, `@monthly`, `@yearly`, in **UTC**.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/apps/{id}/cron/` | Any team member. Jobs with `nextRunAt`, `lastRunAt`, `lastStatus`. |
+| `GET` | `/apps/{id}/cron/preview?schedule=...` | The next 5 run times, or `400 invalid_schedule` with the reason. |
+| `POST` | `/apps/{id}/cron/` | Developer. Body `{name, schedule, command, timeoutSeconds? (1-3600, default 300), enabled?}`. At most 20 per app. |
+| `PATCH` | `/apps/{id}/cron/{jobId}` | Developer. Any of the same fields. |
+| `DELETE` | `/apps/{id}/cron/{jobId}` | Developer. Deletes the job and its runs. |
+| `POST` | `/apps/{id}/cron/{jobId}/run` | Developer. Runs it now; `409` if a run is still going. Returns the run, whose `execId` streams live output like the Console. |
+| `GET` | `/apps/{id}/cron/{jobId}/runs` | Developer (output can hold secrets). The last 50 runs, newest first, with `status` (`running`, `succeeded`, `failed`, `timed_out`, `skipped`), `exitCode` and the last 200 lines of output. |
+
+The worker fires due jobs every 30 seconds. A slot is claimed atomically,
+so several workers never run it twice; slots missed while the worker was
+down run once. A run is skipped while the previous one is still going, or
+while the app has never been deployed. Runs lost to a worker restart are
+marked failed after their timeout plus 5 minutes.
+
 ## Domains
 
 | Method | Path | Notes |
@@ -121,7 +180,9 @@ Defaults:
 - `POST /auth/login`: **60 req/min**; `POST /auth/login/mfa`: **30 req/min**.
 - `/auth/totp/*` changes: **10 req/min**.
 
-These limits are counted per API isolate (one per CPU). The failed-login
-throttle above is shared across all of them.
+The limits are kept in Redis (`gisila-panel:rl:*`), so one budget per
+client is shared by every API isolate. If Redis can't be reached, requests
+are let through and a warning is logged, rather than the API failing; the
+failed-login throttle above is separate.
 
 Override per-route via `RouteConfig.rateLimit`.

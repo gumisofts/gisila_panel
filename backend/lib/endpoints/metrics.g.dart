@@ -31,30 +31,35 @@ extension MetricsApiGisilaDoc on MetricsApi {
       final openApiPath = '$prefix/apps/{appId}/metrics/';
       final RouteConfig __cfg =
           RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
-      router.get(
-          basePath,
-          gisilaRoute(
-            app: app,
-            config: __cfg,
-            handler: (RequestContext ctx) async {
-              try {
-                final request = ctx.request;
-                final appId = coerce<int>(request.params['appId'], 'appId',
-                    required: true);
-                final apps = ctx.service<AppsService>();
-                final minutes = coerce<int?>(
-                    request.url.queryParameters['minutes'], 'minutes',
-                    required: false);
-                final result = await this.recent(appId, apps, ctx, minutes);
-                return jsonResponse(body: result, statusCode: 200);
-              } on TypeError catch (e) {
-                throw BadRequestException('Invalid request payload ($e)');
-              } on FormatException catch (e) {
-                throw BadRequestException(
-                    'Invalid request format: ${e.message}');
-              }
-            },
-          ));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (appId, apps, minutes) = await (() async {
+            try {
+              final appId =
+                  coerce<int>(request.params['appId'], 'appId', required: true);
+              final apps = ctx.service<AppsService>();
+              final minutes = coerce<int?>(
+                  request.url.queryParameters['minutes'], 'minutes',
+                  required: false);
+              return (appId, apps, minutes);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.recent(appId, apps, ctx, minutes);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      if (basePath.length > 1) {
+        router.get(basePath.substring(0, basePath.length - 1), __route);
+      }
       spec.putOperation(
           openApiPath,
           'get',
@@ -86,8 +91,15 @@ extension MetricsApiGisilaDoc on MetricsApi {
                   'type': 'object',
                   'additionalProperties': <String, Object?>{}
                 })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
               })
             },
+            requiresAuth: true,
           ));
     }
   }
