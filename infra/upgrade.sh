@@ -134,7 +134,9 @@ healthy() {
 }
 
 installed_version() {
-  /usr/local/bin/gisila-agent version 2>/dev/null |
+  # Builds older than the `version` subcommand print usage and exit non-zero;
+  # under pipefail that would abort the upgrade, so treat it as "unknown".
+  { /usr/local/bin/gisila-agent version 2>/dev/null || true; } |
     sed -nE 's/.*"version":"([^"]*)".*/\1/p' | head -1
 }
 
