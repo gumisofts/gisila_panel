@@ -84,6 +84,9 @@ export function ConsoleTab({ appId }: { appId: number }) {
           });
           return;
         }
+        // The `{ready: true}` auth ack (and any other frame without a
+        // payload) is not a line of output.
+        if (data.ready || data.message == null) return;
         const raw =
           typeof data.message === "string"
             ? data.message
@@ -94,7 +97,7 @@ export function ConsoleTab({ appId }: { appId: number }) {
         } catch {
           parsed = { line: raw };
         }
-        const line = parsed.line ?? raw;
+        const line = String(parsed?.line ?? raw);
         // Completion is its own frame from the exec worker, not a line of
         // output, so a command can't print its way to "finished".
         if (typeof parsed.exit === "number") {
