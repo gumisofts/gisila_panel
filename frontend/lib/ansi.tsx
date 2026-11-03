@@ -17,7 +17,9 @@ const CSI = /\x1b\[([0-9;?]*)([A-Za-z])/g;
 
 /// Renders [text] with its ANSI colours and bold as styled spans. The text
 /// stays text: nothing is interpreted as HTML.
-export function renderAnsi(text: string): ReactNode {
+export function renderAnsi(text: string | null | undefined): ReactNode {
+  if (text == null) return null;
+  if (typeof text !== "string") text = String(text);
   if (!text.includes("\x1b")) return text;
   const out: ReactNode[] = [];
   let style: CSSProperties = {};
