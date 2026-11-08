@@ -64,12 +64,17 @@ class CeleryWorkerUnit {
     this.cpuQuotaPercent = 50,
     this.tasksMax = 512,
     this.envVars = const {},
+    this.workingDirectory,
   });
 
   final int appId;
   final String linuxUser;
   final String workDir;
   final String celeryApp;
+  /// The directory the process starts in, which `-A <celery app>` is imported
+  /// from. Defaults to `<workDir>/current/src`; a monorepo app passes
+  /// `Builders.resolveRunSrc` with its source subdirectory.
+  final String? workingDirectory;
   final int workerIndex;
   final int concurrency;
   final String? queues;
@@ -83,7 +88,7 @@ class CeleryWorkerUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/current/src';
+    final src = workingDirectory ?? '$workDir/current/src';
     final queuesArg =
         (queues != null && queues!.isNotEmpty) ? ' -Q $queues' : '';
     final extraArgsStr =
@@ -184,12 +189,17 @@ class CeleryBeatUnit {
     this.memoryMb = 512,
     this.cpuQuotaPercent = 10,
     this.envVars = const {},
+    this.workingDirectory,
   });
 
   final int appId;
   final String linuxUser;
   final String workDir;
   final String celeryApp;
+  /// The directory the process starts in, which `-A <celery app>` is imported
+  /// from. Defaults to `<workDir>/current/src`; a monorepo app passes
+  /// `Builders.resolveRunSrc` with its source subdirectory.
+  final String? workingDirectory;
   final int memoryMb;
   final int cpuQuotaPercent;
   final Map<String, String> envVars;
@@ -198,7 +208,7 @@ class CeleryBeatUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/current/src';
+    final src = workingDirectory ?? '$workDir/current/src';
     final tmp = '$workDir/tmp';
     // Persist the schedule under shared/ — the release the app runs from is
     // replaced on every deploy, and a truncated celerybeat-schedule shelve
@@ -274,12 +284,17 @@ class CeleryFlowerUnit {
     this.memoryMb = 128,
     this.cpuQuotaPercent = 10,
     this.envVars = const {},
+    this.workingDirectory,
   });
 
   final int appId;
   final String linuxUser;
   final String workDir;
   final String celeryApp;
+  /// The directory the process starts in, which `-A <celery app>` is imported
+  /// from. Defaults to `<workDir>/current/src`; a monorepo app passes
+  /// `Builders.resolveRunSrc` with its source subdirectory.
+  final String? workingDirectory;
   final int port;
   final int memoryMb;
   final int cpuQuotaPercent;
@@ -289,7 +304,7 @@ class CeleryFlowerUnit {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/current/src';
+    final src = workingDirectory ?? '$workDir/current/src';
 
     // Flower has no auth of its own and is reverse-proxied at the app's domain,
     // so it must run with HTTP basic-auth. The credentials live in the app's

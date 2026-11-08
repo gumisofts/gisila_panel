@@ -21,6 +21,7 @@ class CeleryUnitParams {
     this.beatEnabled = false,
     this.memoryMb = 512,
     this.cpuQuotaPercent = 50,
+    this.sourceSubdir,
   });
 
   final String celeryApp;
@@ -31,6 +32,10 @@ class CeleryUnitParams {
   final bool beatEnabled;
   final int memoryMb;
   final int cpuQuotaPercent;
+
+  /// Monorepo subdirectory of the release the Celery project lives in; the
+  /// units start there, like the web unit and the build step do.
+  final String? sourceSubdir;
 }
 
 /// Writes the generated process-manager / nginx / apparmor artifacts to disk
@@ -290,6 +295,8 @@ class Applier {
     required CeleryUnitParams params,
     Map<String, String> envVars = const {},
   }) async {
+    final workingDirectory =
+        Builders.resolveRunSrc(workDir, params.sourceSubdir);
     if (isDocker) {
       final conf = CeleryWorkerSupervisorConf(
         appId: appId,
@@ -303,6 +310,7 @@ class Applier {
         extraArgs: params.extraArgs,
         beatEnabled: params.beatEnabled,
         envVars: envVars,
+        workingDirectory: workingDirectory,
       );
       Directory(supervisorConfDir).createSync(recursive: true);
       Directory(supervisorLogDir(linuxUser)).createSync(recursive: true);
@@ -360,6 +368,7 @@ class Applier {
         memoryMb: perWorkerMemory,
         cpuQuotaPercent: perWorkerCpu,
         envVars: envVars,
+        workingDirectory: workingDirectory,
       );
       File('$systemdDir/${unit.serviceName}.service')
           .writeAsStringSync(unit.render());
@@ -377,6 +386,7 @@ class Applier {
         // scheduled tasks. Same headroom as Flower.
         memoryMb: 512,
         envVars: envVars,
+        workingDirectory: workingDirectory,
       );
       File('$systemdDir/${beat.serviceName}.service')
           .writeAsStringSync(beat.render());
@@ -394,6 +404,7 @@ class Applier {
       memoryMb: 512,
       cpuQuotaPercent: 10,
       envVars: envVars,
+      workingDirectory: workingDirectory,
     );
     File('$systemdDir/${flower.serviceName}.service')
         .writeAsStringSync(flower.render());
