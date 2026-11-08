@@ -15,12 +15,17 @@ class CeleryWorkerSupervisorConf {
     this.extraArgs,
     this.beatEnabled = false,
     this.envVars = const {},
+    this.workingDirectory,
   });
 
   final int appId;
   final String linuxUser;
   final String workDir;
   final String celeryApp;
+  /// The directory the process starts in, which `-A <celery app>` is imported
+  /// from. Defaults to `<workDir>/current/src`; a monorepo app passes
+  /// `Builders.resolveRunSrc` with its source subdirectory.
+  final String? workingDirectory;
   final int port;
   final int workerCount;
   final int concurrency;
@@ -44,7 +49,7 @@ class CeleryWorkerSupervisorConf {
 
   String render() {
     final venv = '$workDir/current/.venv';
-    final src = '$workDir/current/src';
+    final src = workingDirectory ?? '$workDir/current/src';
     final logs = '$workDir/logs';
     final tmp = '$workDir/tmp';
     final queuesArg =

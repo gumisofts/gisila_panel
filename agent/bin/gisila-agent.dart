@@ -574,6 +574,10 @@ Future<void> _applyUnit(List<String> args) async {
         memoryMb: AgentValidators.requireMemoryMb(r['memory-mb'] as String?),
         cpuQuotaPercent:
             AgentValidators.requireCpuQuota(r['cpu-quota'] as String?),
+        // The units must start where the build ran migrate/collectstatic, or
+        // `celery -A <app>` cannot import a project kept in a subdirectory.
+        sourceSubdir: AgentValidators.optionalSourceSubdir(
+            r['source-subdir'] as String?),
       ),
       envVars: envVars,
     );
