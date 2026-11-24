@@ -8,6 +8,7 @@ import 'package:gisila_panel/config.dart';
 import 'package:gisila_panel/infra/redis_client.dart';
 import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/infra/secret_box.dart';
+import 'package:gisila_panel/services/stacks_service.dart';
 
 /// The outcome of the agent's post-restart readiness probe.
 class _HealthVerdict {
@@ -133,7 +134,13 @@ class DeploymentWorker {
           .where(EnvVarTable.appId.eq(app.id!))
           .all(database.context())
           .then((rows) => [for (final e in rows) e.opened()]);
-      final envMap = {for (final e in appEnvVars) e.name: e.value ?? ''};
+      // An app in a stack also gets the stack's shared vars. Its own win.
+      final envMap = mergeStackEnv(
+        app.stackId == null
+            ? const <String, String>{}
+            : await loadStackEnv(database, app.stackId!),
+        {for (final e in appEnvVars) e.name: e.value ?? ''},
+      );
 
       // Model A: when local disk media is enabled, expose the upload root and
       // URL so the app (and a developer sourcing .env for console commands) can

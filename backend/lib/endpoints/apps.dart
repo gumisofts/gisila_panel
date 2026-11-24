@@ -10,6 +10,7 @@ import 'package:gisila_panel/models/models.dart';
 import 'package:gisila_panel/services/apps_service.dart';
 import 'package:gisila_panel/services/envs_service.dart';
 import 'package:gisila_panel/services/lifecycle_service.dart';
+import 'package:gisila_panel/services/stacks_service.dart';
 import 'package:uuid/uuid.dart';
 
 part 'apps.g.dart';
@@ -79,6 +80,7 @@ class AppsApi {
       mediaEnabled: form.mediaEnabled.value,
       mediaMaxUploadMb: form.mediaMaxUploadMb.value,
       deployKeyId: form.deployKeyId.value,
+      stackId: form.stackId.value,
       exposeMode: form.exposeMode.value,
       publiclyReachable: form.publiclyReachable.value,
     );
@@ -162,6 +164,9 @@ class AppsApi {
     final patch = <String, Object?>{
       if (form.name.value != null) 'name': form.name.value,
       if (form.projectId.value != null) 'projectId': form.projectId.value,
+      // 0 takes the app out of its stack.
+      if (form.stackId.value != null)
+        'stackId': form.stackId.value == 0 ? null : form.stackId.value,
       if (form.gitUrl.value != null) 'gitUrl': form.gitUrl.value,
       if (form.gitBranch.value != null) 'gitBranch': form.gitBranch.value,
       // An empty directory clears the subdir (null = repo root).
@@ -386,6 +391,30 @@ class AppsApi {
       'results': result
           .map((e) => e.toJson(exclude: e.isSecret == true ? ['value'] : []))
           .toList(),
+    };
+  }
+
+  /// The env vars the app gets from its stack, on top of which its own are
+  /// applied. `overridden` marks a var the app's own env replaces. `stack` is
+  /// null and `results` empty for an app that is in no stack.
+  @Get('/{id}/envs/inherited',
+      summary: 'List the env vars an app inherits from its stack')
+  Future<Map<String, Object?>> inheritedEnvs(
+    int id,
+    StacksService stacks,
+    RequestContext ctx,
+  ) async {
+    final user = ctx.principal!.claims['user'] as User;
+    final inherited = await stacks.inheritedForApp(user, id);
+    return <String, Object?>{
+      'stack': inherited?.stack.toJson(),
+      'results': [
+        for (final e in inherited?.vars ?? const <StackEnvVar>[])
+          <String, Object?>{
+            ...e.toJson(exclude: e.isSecret == true ? ['value'] : []),
+            'overridden': inherited!.overridden.contains(e.name),
+          },
+      ],
     };
   }
 

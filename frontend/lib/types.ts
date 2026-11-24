@@ -60,6 +60,17 @@ export interface Project {
   createdAt: string;
 }
 
+// A group of apps in one project that share a set of env vars.
+export interface Stack {
+  id: ID;
+  projectId: ID;
+  name: string;
+  slug: string;
+  description?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
 export type AppStatus =
   | "created"
   | "building"
@@ -72,6 +83,8 @@ export type AppStatus =
 export interface App {
   id: ID;
   projectId: ID;
+  // The stack whose env vars this app inherits, if any.
+  stackId?: ID | null;
   name: string;
   slug: string;
   linuxUser: string;
@@ -146,6 +159,12 @@ export interface EnvVar {
   value?: string | null;
   isSecret: boolean;
   updatedAt: string;
+}
+
+// GET /apps/{id}/envs/inherited: the vars an app gets from its stack.
+export interface InheritedEnvs {
+  stack: Stack | null;
+  results: (Omit<EnvVar, "appId"> & { stackId: ID; overridden: boolean })[];
 }
 
 export type DeploymentStatus =

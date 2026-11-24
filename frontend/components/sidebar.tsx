@@ -12,6 +12,7 @@ import {
   Earth,
   Email,
   FirewallClassic,
+  Category,
   FolderOpen,
   Layers,
   Notification,
@@ -43,6 +44,7 @@ const NAV_SECTIONS = [
     label: "Deploy",
     items: [
       { href: "/projects", label: "Projects", icon: FolderOpen },
+      { href: "/stacks", label: "Stacks", icon: Category },
       { href: "/apps", label: "Apps", icon: Application },
       { href: "/domains", label: "Domains", icon: Earth },
     ],

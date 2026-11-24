@@ -56,6 +56,23 @@ way.
 | `POST` | `/apps/{id}/start\|stop\|restart` | Lifecycle. |
 | `GET`/`POST` | `/apps/{id}/envs` | List + upsert. `value` is hidden if `isSecret`. |
 | `DELETE` | `/apps/{id}/envs/{envId}` | Delete. |
+| `GET` | `/apps/{id}/envs/inherited` | Vars the app gets from its stack. `overridden` marks one the app's own env replaces. |
+
+## Stacks
+
+A stack groups apps of one project and holds env vars they share. An app in a
+stack is deployed with the stack's vars plus its own, and its own value wins on
+a name clash. Put an app in a stack with `stackId` on `POST /apps/` or
+`PATCH /apps/{id}` (`0` takes it out).
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET`/`POST` | `/stacks/?projectId=` | List + create (`projectId`, `name`, `description`). |
+| `GET`/`PATCH`/`DELETE` | `/stacks/{id}` | CRUD. Deleting keeps the apps, ungrouped. |
+| `GET` | `/stacks/{id}/apps` | Apps in the stack. |
+| `GET`/`POST` | `/stacks/{id}/envs` | List + upsert, same shape as app envs. |
+| `POST` | `/stacks/{id}/envs/bulk` | Bulk upsert from a parsed `.env`. |
+| `DELETE` | `/stacks/{id}/envs/{envId}` | Delete. |
 
 ## Deployments
 

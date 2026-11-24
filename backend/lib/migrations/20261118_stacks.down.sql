@@ -1,0 +1,3 @@
+ALTER TABLE "apps" DROP COLUMN IF EXISTS "stack_id";
+DROP TABLE IF EXISTS "stack_env_vars";
+DROP TABLE IF EXISTS "stacks";

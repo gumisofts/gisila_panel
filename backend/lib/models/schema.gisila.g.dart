@@ -1240,6 +1240,15 @@ class Project with Preloadable {
     childMeta: TeamTable.metadata,
   );
 
+  static final Relation<Project, Stack> stacks =
+      HasManyRelation<Project, Stack>(
+        parentTable: 'projects',
+        childTable: 'stacks',
+        name: 'stacks',
+        childForeignKey: 'project_id',
+        childMeta: StackTable.metadata,
+      );
+
   static final Relation<Project, App> apps = HasManyRelation<Project, App>(
     parentTable: 'projects',
     childTable: 'apps',
@@ -1250,6 +1259,9 @@ class Project with Preloadable {
 
   /// Preloaded team; null when not preloaded or absent.
   Team? get teamLoaded => preloaded<Team>('team');
+
+  /// Preloaded stacks; empty list when not preloaded.
+  List<Stack> get stacksList => preloaded<List<Stack>>('stacks') ?? const [];
 
   /// Preloaded apps; empty list when not preloaded.
   List<App> get appsList => preloaded<List<App>>('apps') ?? const [];
@@ -1291,6 +1303,180 @@ class ProjectTable {
 }
 
 Query<Project> projects() => Query<Project>(ProjectTable.metadata);
+
+class Stack with Preloadable {
+  final int? id;
+  final int projectId;
+  final String name;
+  final String? slug;
+  final String? description;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  Stack({
+    this.id,
+    required this.projectId,
+    required this.name,
+    this.slug,
+    this.description,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory Stack.fromRow(Map<String, dynamic> row) => Stack(
+    id: row['id'] as int?,
+    projectId: row['project_id'] as int,
+    name: row['name'] as String,
+    slug: row['slug'] as String?,
+    description: row['description'] as String?,
+    createdAt: row['created_at'] is DateTime
+        ? row['created_at'] as DateTime
+        : DateTime.parse(row['created_at'].toString()),
+    updatedAt: row['updated_at'] == null
+        ? null
+        : (row['updated_at'] is DateTime
+              ? row['updated_at'] as DateTime
+              : DateTime.parse(row['updated_at'].toString())),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'project_id': projectId,
+    'name': name,
+    'slug': slug,
+    'description': description,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+  };
+
+  factory Stack.fromJson(Map<String, dynamic> json) => Stack.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  Stack copyWith({
+    int? id,
+    int? projectId,
+    String? name,
+    String? slug,
+    String? description,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => Stack(
+    id: id ?? this.id,
+    projectId: projectId ?? this.projectId,
+    name: name ?? this.name,
+    slug: slug ?? this.slug,
+    description: description ?? this.description,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<Stack, Project> project =
+      BelongsToRelation<Stack, Project>(
+        parentTable: 'stacks',
+        childTable: 'projects',
+        name: 'project',
+        parentForeignKey: 'project_id',
+        childMeta: ProjectTable.metadata,
+      );
+
+  static final Relation<Stack, App> apps = HasManyRelation<Stack, App>(
+    parentTable: 'stacks',
+    childTable: 'apps',
+    name: 'apps',
+    childForeignKey: 'stack_id',
+    childMeta: AppTable.metadata,
+  );
+
+  static final Relation<Stack, StackEnvVar> envVars =
+      HasManyRelation<Stack, StackEnvVar>(
+        parentTable: 'stacks',
+        childTable: 'stack_env_vars',
+        name: 'envVars',
+        childForeignKey: 'stack_id',
+        childMeta: StackEnvVarTable.metadata,
+      );
+
+  /// Preloaded project; null when not preloaded or absent.
+  Project? get projectLoaded => preloaded<Project>('project');
+
+  /// Preloaded apps; empty list when not preloaded.
+  List<App> get appsList => preloaded<List<App>>('apps') ?? const [];
+
+  /// Preloaded envVars; empty list when not preloaded.
+  List<StackEnvVar> get envVarsList =>
+      preloaded<List<StackEnvVar>>('envVars') ?? const [];
+}
+
+class StackTable {
+  StackTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'stacks',
+    column: 'id',
+  );
+  static const ColumnRef<int> projectId = ColumnRef<int>(
+    table: 'stacks',
+    column: 'project_id',
+  );
+  static const ColumnRef<String> name = ColumnRef<String>(
+    table: 'stacks',
+    column: 'name',
+  );
+  static const ColumnRef<String?> slug = ColumnRef<String?>(
+    table: 'stacks',
+    column: 'slug',
+  );
+  static const ColumnRef<String?> description = ColumnRef<String?>(
+    table: 'stacks',
+    column: 'description',
+  );
+  static const ColumnRef<DateTime> createdAt = ColumnRef<DateTime>(
+    table: 'stacks',
+    column: 'created_at',
+  );
+  static const ColumnRef<DateTime?> updatedAt = ColumnRef<DateTime?>(
+    table: 'stacks',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<Stack> metadata = TableMeta<Stack>(
+    tableName: 'stacks',
+    primaryKey: 'id',
+    columnNames: [
+      'id',
+      'project_id',
+      'name',
+      'slug',
+      'description',
+      'created_at',
+      'updated_at',
+    ],
+    fromRow: Stack.fromRow,
+  );
+}
+
+Query<Stack> stacks() => Query<Stack>(StackTable.metadata);
 
 class Application with Preloadable {
   final int? id;
@@ -1747,6 +1933,7 @@ Query<ApplicationVersion> applicationVersions() =>
 class App with Preloadable {
   final int? id;
   final int projectId;
+  final int? stackId;
   final String name;
   final String? slug;
   final String? linuxUser;
@@ -1800,6 +1987,7 @@ class App with Preloadable {
   App({
     this.id,
     required this.projectId,
+    this.stackId,
     required this.name,
     this.slug,
     this.linuxUser,
@@ -1854,6 +2042,7 @@ class App with Preloadable {
   factory App.fromRow(Map<String, dynamic> row) => App(
     id: row['id'] as int?,
     projectId: row['project_id'] as int,
+    stackId: row['stack_id'] as int?,
     name: row['name'] as String,
     slug: row['slug'] as String?,
     linuxUser: row['linux_user'] as String?,
@@ -1918,6 +2107,7 @@ class App with Preloadable {
   Map<String, dynamic> toRow() => {
     'id': id,
     'project_id': projectId,
+    'stack_id': stackId,
     'name': name,
     'slug': slug,
     'linux_user': linuxUser,
@@ -1988,6 +2178,7 @@ class App with Preloadable {
   App copyWith({
     int? id,
     int? projectId,
+    int? stackId,
     String? name,
     String? slug,
     String? linuxUser,
@@ -2040,6 +2231,7 @@ class App with Preloadable {
   }) => App(
     id: id ?? this.id,
     projectId: projectId ?? this.projectId,
+    stackId: stackId ?? this.stackId,
     name: name ?? this.name,
     slug: slug ?? this.slug,
     linuxUser: linuxUser ?? this.linuxUser,
@@ -2106,6 +2298,14 @@ class App with Preloadable {
     name: 'project',
     parentForeignKey: 'project_id',
     childMeta: ProjectTable.metadata,
+  );
+
+  static final Relation<App, Stack> stack = BelongsToRelation<App, Stack>(
+    parentTable: 'apps',
+    childTable: 'stacks',
+    name: 'stack',
+    parentForeignKey: 'stack_id',
+    childMeta: StackTable.metadata,
   );
 
   static final Relation<App, Application> application =
@@ -2197,6 +2397,9 @@ class App with Preloadable {
   /// Preloaded project; null when not preloaded or absent.
   Project? get projectLoaded => preloaded<Project>('project');
 
+  /// Preloaded stack; null when not preloaded or absent.
+  Stack? get stackLoaded => preloaded<Stack>('stack');
+
   /// Preloaded application; null when not preloaded or absent.
   Application? get applicationLoaded => preloaded<Application>('application');
 
@@ -2245,6 +2448,10 @@ class AppTable {
   static const ColumnRef<int> projectId = ColumnRef<int>(
     table: 'apps',
     column: 'project_id',
+  );
+  static const ColumnRef<int?> stackId = ColumnRef<int?>(
+    table: 'apps',
+    column: 'stack_id',
   );
   static const ColumnRef<String> name = ColumnRef<String>(
     table: 'apps',
@@ -2449,6 +2656,7 @@ class AppTable {
     columnNames: [
       'id',
       'project_id',
+      'stack_id',
       'name',
       'slug',
       'linux_user',
@@ -2631,6 +2839,136 @@ class EnvVarTable {
 }
 
 Query<EnvVar> envVars() => Query<EnvVar>(EnvVarTable.metadata);
+
+class StackEnvVar with Preloadable {
+  final int? id;
+  final int stackId;
+  final String name;
+  final String? value;
+  final bool? isSecret;
+  final DateTime updatedAt;
+
+  StackEnvVar({
+    this.id,
+    required this.stackId,
+    required this.name,
+    this.value,
+    this.isSecret,
+    required this.updatedAt,
+  });
+
+  factory StackEnvVar.fromRow(Map<String, dynamic> row) => StackEnvVar(
+    id: row['id'] as int?,
+    stackId: row['stack_id'] as int,
+    name: row['name'] as String,
+    value: row['value'] as String?,
+    isSecret: row['is_secret'] as bool?,
+    updatedAt: row['updated_at'] is DateTime
+        ? row['updated_at'] as DateTime
+        : DateTime.parse(row['updated_at'].toString()),
+  );
+
+  Map<String, dynamic> toRow() => {
+    'id': id,
+    'stack_id': stackId,
+    'name': name,
+    'value': value,
+    'is_secret': isSecret,
+    'updated_at': updatedAt,
+  };
+
+  factory StackEnvVar.fromJson(Map<String, dynamic> json) =>
+      StackEnvVar.fromRow(json);
+
+  Map<String, dynamic> toJson({
+    List<String> exclude = const [],
+    List<String> only = const [],
+  }) {
+    final row = {
+      ...toRow().map(
+        (k, v) => MapEntry(k, v is DateTime ? v.toUtc().toIso8601String() : v),
+      ),
+    };
+    if (only.isNotEmpty) return {for (final k in only) k: row[k]};
+    if (exclude.isEmpty) return row;
+    return Map.of(row)..removeWhere((k, _) => exclude.contains(k));
+  }
+
+  StackEnvVar copyWith({
+    int? id,
+    int? stackId,
+    String? name,
+    String? value,
+    bool? isSecret,
+    DateTime? updatedAt,
+  }) => StackEnvVar(
+    id: id ?? this.id,
+    stackId: stackId ?? this.stackId,
+    name: name ?? this.name,
+    value: value ?? this.value,
+    isSecret: isSecret ?? this.isSecret,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Returns validation errors for this instance.
+  ///
+  /// Currently checks `allow_blank: false` string columns; empty
+  /// when every such field is non-blank (or null).
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+
+  static final Relation<StackEnvVar, Stack> stack =
+      BelongsToRelation<StackEnvVar, Stack>(
+        parentTable: 'stack_env_vars',
+        childTable: 'stacks',
+        name: 'stack',
+        parentForeignKey: 'stack_id',
+        childMeta: StackTable.metadata,
+      );
+
+  /// Preloaded stack; null when not preloaded or absent.
+  Stack? get stackLoaded => preloaded<Stack>('stack');
+}
+
+class StackEnvVarTable {
+  StackEnvVarTable._();
+  static const ColumnRef<int?> id = ColumnRef<int?>(
+    table: 'stack_env_vars',
+    column: 'id',
+  );
+  static const ColumnRef<int> stackId = ColumnRef<int>(
+    table: 'stack_env_vars',
+    column: 'stack_id',
+  );
+  static const ColumnRef<String> name = ColumnRef<String>(
+    table: 'stack_env_vars',
+    column: 'name',
+  );
+  static const ColumnRef<String?> value = ColumnRef<String?>(
+    table: 'stack_env_vars',
+    column: 'value',
+  );
+  static const ColumnRef<bool?> isSecret = ColumnRef<bool?>(
+    table: 'stack_env_vars',
+    column: 'is_secret',
+  );
+  static const ColumnRef<DateTime> updatedAt = ColumnRef<DateTime>(
+    table: 'stack_env_vars',
+    column: 'updated_at',
+  );
+
+  static const TableMeta<StackEnvVar> metadata = TableMeta<StackEnvVar>(
+    tableName: 'stack_env_vars',
+    primaryKey: 'id',
+    columnNames: ['id', 'stack_id', 'name', 'value', 'is_secret', 'updated_at'],
+    fromRow: StackEnvVar.fromRow,
+  );
+}
+
+Query<StackEnvVar> stackEnvVars() =>
+    Query<StackEnvVar>(StackEnvVarTable.metadata);
 
 class Deployment with Preloadable {
   final int? id;
