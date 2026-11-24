@@ -167,12 +167,15 @@ class AppsService extends Service {
     int? mediaMaxUploadMb,
     // SSH deploy key (for git source)
     int? deployKeyId,
+    // Stack (in the same project) whose env vars the app inherits.
+    int? stackId,
   }) async {
     final projectsSvc = ProjectsService()..attach(ctx);
     final project = await projectsSvc.findForUser(actor, projectId);
     // Creating an app is a developer-level action.
     await requireTeamRole(_db, actor, project.teamId, TeamRole.developer);
     if (deployKeyId != null) await _authorizeDeployKey(actor, deployKeyId);
+    if (stackId != null) await _requireStackInProject(stackId, projectId);
     await TeamQuotas(_db).check(project.teamId,
         apps: 1,
         memoryMb: memoryMbLimit ?? 256,
@@ -298,6 +301,7 @@ class AppsService extends Service {
       if (mediaEnabled != null) 'mediaEnabled': mediaEnabled,
       if (mediaMaxUploadMb != null) 'mediaMaxUploadMb': mediaMaxUploadMb,
       if (deployKeyId != null) 'deployKeyId': deployKeyId,
+      if (stackId != null) 'stackId': stackId,
       'status': 'created',
       'createdAt': now.toIso8601String(),
     }).one(_db.context());
@@ -347,6 +351,13 @@ class AppsService extends Service {
     if (patch['projectId'] case final int targetId
         when targetId != app.projectId) {
       await _authorizeMove(actor, app, targetId);
+      // A stack belongs to one project, so the app leaves its stack unless
+      // the same request names one in the new project.
+      patch.putIfAbsent('stackId', () => null);
+    }
+    if (patch['stackId'] case final int stackId) {
+      await _requireStackInProject(
+          stackId, patch['projectId'] as int? ?? app.projectId);
     }
     // Only a newly chosen key is checked, so a teammate can still edit an app
     // whose existing key belongs to someone else.
@@ -400,6 +411,18 @@ class AppsService extends Service {
     if (key == null ||
         (key.userId != actor.id && actor.isSuperuser != true)) {
       throw NotFound('SSH key #$keyId not found.');
+    }
+  }
+
+  /// An app can only join a stack of its own project: the project is the
+  /// access boundary, and a stack's env vars must not reach an app whose team
+  /// can't see that stack.
+  Future<void> _requireStackInProject(int stackId, int projectId) async {
+    final stack = await Query<Stack>(StackTable.metadata)
+        .where(StackTable.id.eq(stackId))
+        .first(_db.context());
+    if (stack == null || stack.projectId != projectId) {
+      throw BadRequest('Stack #$stackId is not in this app\'s project.');
     }
   }
 

@@ -14,6 +14,8 @@ import PanelLayout from "../app/(panel)/layout";
 // Pages load on first visit; the shell and sign-in stay in the main bundle.
 const DashboardPage = lazy(() => import("../app/(panel)/dashboard/page"));
 const ProjectsPage = lazy(() => import("../app/(panel)/projects/page"));
+const StacksPage = lazy(() => import("../app/(panel)/stacks/page"));
+const StackDetailPage = lazy(() => import("../app/(panel)/stacks/[id]/page"));
 const AppsPage = lazy(() => import("../app/(panel)/apps/page"));
 const NewAppPage = lazy(() => import("../app/(panel)/apps/new/page"));
 const AppDetailPage = lazy(() => import("../app/(panel)/apps/[id]/page"));
@@ -68,6 +70,8 @@ export default function App() {
           <Route element={<PanelLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/stacks" element={<StacksPage />} />
+            <Route path="/stacks/:id" element={<StackDetailPage />} />
             <Route path="/apps" element={<AppsPage />} />
             <Route path="/apps/new" element={<NewAppPage />} />
             <Route path="/apps/:id" element={<AppDetailPage />} />

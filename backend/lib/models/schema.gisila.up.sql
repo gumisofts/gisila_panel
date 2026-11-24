@@ -86,6 +86,17 @@ CREATE TABLE "projects" (
 );
 
 
+CREATE TABLE "stacks" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "project_id" BIGINT NOT NULL,
+  "name" VARCHAR(255) NOT NULL,
+  "slug" VARCHAR(255),
+  "description" TEXT,
+  "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+  "updated_at" TIMESTAMP WITH TIME ZONE
+);
+
+
 CREATE TABLE "applications" (
   "id" BIGSERIAL PRIMARY KEY,
   "key" VARCHAR(255) UNIQUE,
@@ -120,6 +131,7 @@ CREATE TABLE "application_versions" (
 CREATE TABLE "apps" (
   "id" BIGSERIAL PRIMARY KEY,
   "project_id" BIGINT NOT NULL,
+  "stack_id" BIGINT,
   "name" VARCHAR(255) NOT NULL,
   "slug" VARCHAR(255),
   "linux_user" VARCHAR(255) UNIQUE,
@@ -175,6 +187,16 @@ CREATE TABLE "apps" (
 CREATE TABLE "env_vars" (
   "id" BIGSERIAL PRIMARY KEY,
   "app_id" BIGINT NOT NULL,
+  "name" VARCHAR(255) NOT NULL,
+  "value" TEXT,
+  "is_secret" BOOLEAN DEFAULT FALSE,
+  "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+
+CREATE TABLE "stack_env_vars" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "stack_id" BIGINT NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   "value" TEXT,
   "is_secret" BOOLEAN DEFAULT FALSE,
@@ -556,13 +578,18 @@ ALTER TABLE "ssh_keys" ADD CONSTRAINT "ssh_keys_user_fkey" FOREIGN KEY ("user_id
 
 ALTER TABLE "projects" ADD CONSTRAINT "projects_team_fkey" FOREIGN KEY ("team_id") REFERENCES "teams" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+ALTER TABLE "stacks" ADD CONSTRAINT "stacks_project_fkey" FOREIGN KEY ("project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 ALTER TABLE "application_versions" ADD CONSTRAINT "application_versions_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "apps" ADD CONSTRAINT "apps_project_fkey" FOREIGN KEY ("project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "apps" ADD CONSTRAINT "apps_stack_fkey" FOREIGN KEY ("stack_id") REFERENCES "stacks" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "apps" ADD CONSTRAINT "apps_application_fkey" FOREIGN KEY ("application_id") REFERENCES "applications" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "apps" ADD CONSTRAINT "apps_deploy_key_fkey" FOREIGN KEY ("deploy_key_id") REFERENCES "ssh_keys" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "env_vars" ADD CONSTRAINT "env_vars_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "stack_env_vars" ADD CONSTRAINT "stack_env_vars_stack_fkey" FOREIGN KEY ("stack_id") REFERENCES "stacks" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "deployments" ADD CONSTRAINT "deployments_app_fkey" FOREIGN KEY ("app_id") REFERENCES "apps" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "deployments" ADD CONSTRAINT "deployments_triggered_by_fkey" FOREIGN KEY ("triggered_by_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -618,6 +645,8 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_team_fkey" FOREIGN KEY ("tea
 CREATE INDEX "idx_api_tokens_prefix" ON "api_tokens" ("prefix");
 
 CREATE INDEX "idx_projects_slug" ON "projects" ("slug");
+
+CREATE INDEX "idx_stacks_slug" ON "stacks" ("slug");
 
 CREATE INDEX "idx_application_versions_version" ON "application_versions" ("version");
 

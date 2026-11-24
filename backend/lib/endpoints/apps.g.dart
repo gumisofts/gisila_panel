@@ -29,6 +29,7 @@ extension AppsApiGisilaDoc on AppsApi {
       'type': 'object',
       'properties': <String, Object?>{
         'projectId': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'stackId': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'name': <String, Object?>{'type': 'string'},
         'applicationId': <String, Object?>{
           'type': 'integer',
@@ -104,6 +105,7 @@ extension AppsApiGisilaDoc on AppsApi {
       'properties': <String, Object?>{
         'name': <String, Object?>{'type': 'string'},
         'projectId': <String, Object?>{'type': 'integer', 'format': 'int64'},
+        'stackId': <String, Object?>{'type': 'integer', 'format': 'int64'},
         'gitUrl': <String, Object?>{'type': 'string'},
         'gitBranch': <String, Object?>{'type': 'string'},
         'sourceSubdir': <String, Object?>{},
@@ -950,6 +952,66 @@ extension AppsApiGisilaDoc on AppsApi {
           'get',
           Operation(
             summary: 'List env vars',
+            tags: <String>['Apps'],
+            parameters: <Parameter>[
+              Parameter(
+                name: 'id',
+                location: 'path',
+                required: true,
+                description: null,
+                schema: <String, Object?>{'type': 'integer', 'format': 'int64'},
+              )
+            ],
+            responses: <String, ResponseSpec>{
+              '200': ResponseSpec(description: 'OK', content: {
+                'application/json': MediaType(schema: <String, Object?>{
+                  'type': 'object',
+                  'additionalProperties': <String, Object?>{}
+                })
+              }),
+              '400': ResponseSpec(description: 'Bad Request', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              }),
+              '401': ResponseSpec(description: 'Unauthorized', content: {
+                'application/json': MediaType(schema: errorEnvelopeSchema)
+              })
+            },
+            requiresAuth: true,
+          ));
+    }
+    {
+      final basePath = '$prefix/apps/<id>/envs/inherited';
+      final openApiPath = '$prefix/apps/{id}/envs/inherited';
+      final RouteConfig __cfg =
+          RouteConfig.empty.merge(const RouteConfig(requireAuth: true));
+      final __route = gisilaRoute(
+        app: app,
+        config: __cfg,
+        routeId: 'GET $basePath',
+        handler: (RequestContext ctx) async {
+          final request = ctx.request;
+          final (id, stacks) = await (() async {
+            try {
+              final id =
+                  coerce<int>(request.params['id'], 'id', required: true);
+              final stacks = ctx.service<StacksService>();
+              return (id, stacks);
+            } on TypeError catch (e) {
+              throw BadRequestException('Invalid request payload ($e)');
+            } on FormatException catch (e) {
+              throw BadRequestException('Invalid request format: ${e.message}');
+            }
+          })();
+          final result = await this.inheritedEnvs(id, stacks, ctx);
+          return jsonResponse(body: result, statusCode: 200);
+        },
+      );
+      router.get(basePath, __route);
+      spec.putOperation(
+          openApiPath,
+          'get',
+          Operation(
+            summary: 'List the env vars an app inherits from its stack',
             tags: <String>['Apps'],
             parameters: <Parameter>[
               Parameter(

@@ -30,6 +30,7 @@ class SecretBox {
 
   // Column labels, used as associated data.
   static const envVarValue = 'env_vars.value';
+  static const stackEnvVarValue = 'stack_env_vars.value';
   static const totpSecret = 'user_totps.secret';
   static const deployConfig = 'deployments.deploy_config';
   static const pgMonitorPassword = 'postgres_instances.monitor_password';
@@ -48,6 +49,7 @@ class SecretBox {
   /// Every sealed column, as (table, column, label).
   static const sealedColumns = [
     ('env_vars', 'value', envVarValue),
+    ('stack_env_vars', 'value', stackEnvVarValue),
     ('user_totps', 'secret', totpSecret),
     ('deployments', 'deploy_config', deployConfig),
     ('postgres_instances', 'monitor_password', pgMonitorPassword),
@@ -262,6 +264,18 @@ extension EnvVarSecret on EnvVar {
         appId: appId,
         name: name,
         value: SecretBox.instance.openOrNull(value, SecretBox.envVarValue),
+        isSecret: isSecret,
+        updatedAt: updatedAt,
+      );
+}
+
+extension StackEnvVarSecret on StackEnvVar {
+  /// This row with its value decrypted.
+  StackEnvVar opened() => StackEnvVar(
+        id: id,
+        stackId: stackId,
+        name: name,
+        value: SecretBox.instance.openOrNull(value, SecretBox.stackEnvVarValue),
         isSecret: isSecret,
         updatedAt: updatedAt,
       );

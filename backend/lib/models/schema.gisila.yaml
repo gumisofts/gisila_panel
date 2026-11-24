@@ -216,6 +216,34 @@ Project:
       type: timestamp
       is_null: false
 
+# A group of apps inside a project that are deployed together and share one
+# set of env vars (StackEnvVar), such as an API, its worker and its frontend.
+# An app in a stack gets the stack's vars plus its own, and its own win on a
+# name clash.
+Stack:
+  columns:
+    project:
+      type: foreign_key
+      references: Project
+      is_null: false
+      reverse_name: stacks
+      on_delete: cascade
+    name:
+      type: varchar
+      is_null: false
+    slug:
+      type: varchar
+      is_index: true
+    description:
+      type: text
+      is_null: true
+    created_at:
+      type: timestamp
+      is_null: false
+    updated_at:
+      type: timestamp
+      is_null: true
+
 # An installable runtime/language stack (Python, Dart, Node, …) that the panel
 # can deploy apps against. Applications are managed independently of the panel
 # itself — installed, updated, or removed on a given host without touching
@@ -324,6 +352,13 @@ App:
       is_null: false
       reverse_name: apps
       on_delete: cascade
+    # Optional Stack (in the same project) whose env vars this app inherits.
+    stack:
+      type: foreign_key
+      references: Stack
+      is_null: true
+      reverse_name: apps
+      on_delete: set null
     name:
       type: varchar
       is_null: false
@@ -527,6 +562,29 @@ EnvVar:
     app:
       type: foreign_key
       references: App
+      is_null: false
+      reverse_name: env_vars
+      on_delete: cascade
+    name:
+      type: varchar
+      is_null: false
+    value:
+      type: text
+      is_null: true
+    is_secret:
+      type: boolean
+      default: false
+    updated_at:
+      type: timestamp
+      is_null: false
+
+# Env vars shared by every app in a Stack. Same shape as EnvVar. Unique per
+# (stack, name) - see the migration.
+StackEnvVar:
+  columns:
+    stack:
+      type: foreign_key
+      references: Stack
       is_null: false
       reverse_name: env_vars
       on_delete: cascade

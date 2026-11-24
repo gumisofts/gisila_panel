@@ -26,7 +26,8 @@ import {
 } from "@carbon/icons-react";
 import { toast } from "@/lib/toast";
 import { api, fetcher } from "@/lib/api";
-import type { EnvVar, ListResponse } from "@/lib/types";
+import RouterLink from "@/compat/link";
+import type { EnvVar, InheritedEnvs, ListResponse } from "@/lib/types";
 import "../_app-detail.scss";
 import { confirmDialog } from "@/components/confirm-dialog";
 
@@ -82,10 +83,131 @@ function parseDotEnv(raw: string): ParsedEntry[] {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EnvsTab({ appId }: { appId: number }) {
-  const { data, mutate } = useSWR<ListResponse<EnvVar>>(
-    `/apps/${appId}/envs`,
+  const inherited = useSWR<InheritedEnvs>(
+    `/apps/${appId}/envs/inherited`,
     fetcher,
   );
+  const stack = inherited.data?.stack;
+  return (
+    <Stack gap={7}>
+      <EnvEditor
+        basePath={`/apps/${appId}`}
+        onChanged={() => inherited.mutate()}
+        hint={
+          stack
+            ? `Changes apply on the next restart or deployment. A variable set here overrides the one with the same name from the ${stack.name} stack.`
+            : undefined
+        }
+      />
+      {stack && (
+        <InheritedEnvsTable stackId={stack.id} stackName={stack.name} vars={inherited.data?.results ?? []} />
+      )}
+    </Stack>
+  );
+}
+
+// ── Vars inherited from the app's stack (read-only here) ─────────────────────
+
+function InheritedEnvsTable({
+  stackId,
+  stackName,
+  vars,
+}: {
+  stackId: number;
+  stackName: string;
+  vars: InheritedEnvs["results"];
+}) {
+  return (
+    <Stack gap={4}>
+      <div className="gisila-app__toolbar">
+        <span className="gisila-app__label">
+          Inherited from the <strong>{stackName}</strong> stack. Shared by every
+          app in it.
+        </span>
+        <Button
+          as={RouterLink}
+          href={`/stacks/${stackId}`}
+          kind="tertiary"
+          size="sm"
+          renderIcon={Edit}
+        >
+          Edit stack variables
+        </Button>
+      </div>
+      {vars.length > 0 ? (
+        <TableContainer className="gisila-app__envs">
+          <Table size="sm">
+            <TableHead>
+              <TableRow>
+                <TableHeader>Variable</TableHeader>
+                <TableHeader>Value</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {vars.map((env) => (
+                <TableRow key={env.id}>
+                  <TableCell>
+                    <span className="gisila-app__mono gisila-app__env-value">
+                      {env.name}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="gisila-app__inline">
+                      <span className="gisila-app__mono gisila-app__env-value">
+                        {env.overridden ? (
+                          <s>{env.isSecret ? "••••••••" : env.value || "empty"}</s>
+                        ) : env.isSecret ? (
+                          "••••••••"
+                        ) : (
+                          env.value || <em>empty</em>
+                        )}
+                      </span>
+                      {env.isSecret && (
+                        <Tag type="warm-gray" size="sm">
+                          secret
+                        </Tag>
+                      )}
+                      {env.overridden && (
+                        <Tag type="blue" size="sm">
+                          overridden by this app
+                        </Tag>
+                      )}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      ) : (
+        <Tile className="gisila-empty">
+          This stack has no shared variables yet.
+        </Tile>
+      )}
+    </Stack>
+  );
+}
+
+// ── Editor for one set of env vars: an app's own, or a stack's ───────────────
+
+/** [basePath] is `/apps/{id}` or `/stacks/{id}`: both expose the same routes. */
+export function EnvEditor({
+  basePath,
+  hint,
+  onChanged,
+}: {
+  basePath: string;
+  hint?: string;
+  onChanged?: () => void;
+}) {
+  const { data, mutate: mutateOwn } = useSWR<ListResponse<EnvVar>>(
+    `${basePath}/envs`,
+    fetcher,
+  );
+  const mutate = () => {
+    mutateOwn();
+    onChanged?.();
+  };
 
   // Single-add form.
   const [name, setName]       = useState("");
@@ -105,7 +227,7 @@ export function EnvsTab({ appId }: { appId: number }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api(`/apps/${appId}/envs`, {
+      await api(`${basePath}/envs`, {
         method: "POST",
         body: JSON.stringify({ name, value, isSecret }),
       });
@@ -121,7 +243,7 @@ export function EnvsTab({ appId }: { appId: number }) {
 
   async function remove(envId: number) {
     if (!(await confirmDialog("Delete this env var?"))) return;
-    await api(`/apps/${appId}/envs/${envId}`, { method: "DELETE" });
+    await api(`${basePath}/envs/${envId}`, { method: "DELETE" });
     mutate();
   }
 
@@ -142,7 +264,7 @@ export function EnvsTab({ appId }: { appId: number }) {
     if (parsed.length === 0) return;
     setImporting(true);
     try {
-      const res = await api<{ imported: number }>(`/apps/${appId}/envs/bulk`, {
+      const res = await api<{ imported: number }>(`${basePath}/envs/bulk`, {
         method: "POST",
         body: JSON.stringify({ entries: parsed }),
       });
@@ -340,7 +462,7 @@ export function EnvsTab({ appId }: { appId: number }) {
           </form>
 
           <p className="gisila-app__hint">
-            Changes apply on the next restart or deployment.
+            {hint ?? "Changes apply on the next restart or deployment."}
           </p>
         </Stack>
       </Tile>
@@ -361,7 +483,7 @@ export function EnvsTab({ appId }: { appId: number }) {
                 <EnvRow
                   key={env.id}
                   env={env}
-                  appId={appId}
+                  basePath={basePath}
                   onDelete={() => remove(env.id)}
                   onSaved={() => mutate()}
                 />
@@ -382,12 +504,12 @@ export function EnvsTab({ appId }: { appId: number }) {
 
 function EnvRow({
   env,
-  appId,
+  basePath,
   onDelete,
   onSaved,
 }: {
   env: EnvVar;
-  appId: number;
+  basePath: string;
   onDelete: () => void;
   onSaved: () => void;
 }) {
@@ -402,7 +524,7 @@ function EnvRow({
   async function save() {
     setSaving(true);
     try {
-      await api(`/apps/${appId}/envs`, {
+      await api(`${basePath}/envs`, {
         method: "POST",
         body: JSON.stringify({
           name: env.name,

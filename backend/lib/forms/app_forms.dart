@@ -66,6 +66,8 @@ String? _validGitRef(String v) {
 /// `POST /apps`
 class CreateAppForm extends Form {
   final projectId = IntField(name: 'projectId', required: true);
+  // Optional stack (in that project) whose env vars the app inherits.
+  final stackId = IntField(name: 'stackId');
   final name = StringField(name: 'name', required: true, maxLength: 60);
   // Preferred: pick an installed Application by id. `runtime` is kept as a
   // deprecated free-text alias for backward compatibility — when
@@ -190,6 +192,7 @@ class CreateAppForm extends Form {
         mediaEnabled,
         mediaMaxUploadMb,
         deployKeyId,
+        stackId,
         internalPort,
         exposeMode,
         publiclyReachable,
@@ -200,6 +203,8 @@ class UpdateAppForm extends Form {
   final name = StringField(name: 'name', maxLength: 60);
   // Moves the app to another project (see AppsService._authorizeMove).
   final projectId = IntField(name: 'projectId');
+  // Puts the app in a stack of its project. 0 takes it out of its stack.
+  final stackId = IntField(name: 'stackId', min: 0);
   final gitUrl = StringField(name: 'gitUrl', validators: [_validGitUrl]);
   final gitBranch =
       StringField(name: 'gitBranch', validators: [_validGitRef]);
@@ -285,6 +290,7 @@ class UpdateAppForm extends Form {
         mediaEnabled,
         mediaMaxUploadMb,
         deployKeyId,
+        stackId,
         internalPort,
       ];
 }

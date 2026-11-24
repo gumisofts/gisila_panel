@@ -17,10 +17,16 @@ import {
 import RouterLink from "@/compat/link";
 import { useSearchParams } from "@/compat/navigation";
 import { ErrorState } from "@/components/error-state";
-import { Page, PageHeader } from "@/components/page";
+import { Page, PageHeader, PageSection } from "@/components/page";
 import { fetcher } from "@/lib/api";
 import { formatRelative } from "@/lib/utils";
-import type { App, AppStatus, ListResponse, Project } from "@/lib/types";
+import type {
+  App,
+  AppStatus,
+  ListResponse,
+  Project,
+  Stack,
+} from "@/lib/types";
 import "./_apps.scss";
 
 // ClickableTile renders through Carbon's polymorphic Link and forwards unknown
@@ -48,6 +54,7 @@ export default function AppsPage() {
     fetcher,
   );
   const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
+  const stacks = useSWR<ListResponse<Stack>>("/stacks/", fetcher);
   // Kept in the URL so the Projects page's "apps" link lands pre-filtered and
   // a filtered view survives a reload.
   const [params, setParams] = useSearchParams();
@@ -59,6 +66,17 @@ export default function AppsPage() {
   const apps = (data?.results ?? []).filter(
     (a) => !projectId || String(a.projectId) === projectId,
   );
+
+  // Apps in a stack are listed together under it, ahead of the ungrouped ones.
+  // Without any stack in view the list stays one flat grid, as before.
+  const groups = (stacks.data?.results ?? [])
+    .map((stack) => ({
+      stack,
+      apps: apps.filter((a) => a.stackId === stack.id),
+    }))
+    .filter((g) => g.apps.length > 0);
+  const grouped = new Set(groups.flatMap((g) => g.apps.map((a) => a.id)));
+  const ungrouped = apps.filter((a) => !grouped.has(a.id));
 
   function setProject(id: string) {
     setParams(
@@ -107,56 +125,31 @@ export default function AppsPage() {
       ) : error && !data ? (
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : apps.length ? (
-        <Grid narrow className="gisila-apps__grid">
-          {apps.map((app) => (
-            <Column
-              key={app.id}
-              sm={4}
-              md={8}
-              lg={8}
-              className="gisila-apps__column"
-            >
-              <RouterTile
-                as={RouterLink}
-                href={`/apps/${app.id}`}
-                className="gisila-app-tile"
+        groups.length === 0 ? (
+          <AppGrid apps={apps} projectName={projectName} />
+        ) : (
+          <>
+            {groups.map(({ stack, apps: members }) => (
+              <PageSection
+                key={stack.id}
+                title={stack.name}
+                description={`Stack · ${members.length} app${members.length === 1 ? "" : "s"} sharing its variables`}
+                actions={
+                  <CarbonLink as={RouterLink} href={`/stacks/${stack.id}`} size="sm">
+                    Stack variables
+                  </CarbonLink>
+                }
               >
-                <div className="gisila-app-tile__head">
-                  <div>
-                    <div className="gisila-app-tile__identity">
-                      <span className="gisila-app-tile__name">{app.name}</span>
-                      <Tag type="cool-gray" size="sm">
-                        {app.runtime}
-                      </Tag>
-                    </div>
-                    <p className="gisila-app-tile__endpoint">
-                      {projectName.get(String(app.projectId)) && (
-                        <>{projectName.get(String(app.projectId))} · </>
-                      )}
-                      {app.linuxUser}
-                      {app.internalPort
-                        ? ` → 127.0.0.1:${app.internalPort}`
-                        : app.exposeMode === "process"
-                          ? " · background process"
-                          : ""}
-                    </p>
-                  </div>
-                  <Tag type={STATUS_TAG[app.status] ?? "gray"} size="sm">
-                    {app.status}
-                  </Tag>
-                </div>
-                <div className="gisila-app-tile__meta">
-                  <Meta label="Memory" value={`${app.memoryMbLimit} MB`} />
-                  <Meta label="CPU" value={`${app.cpuQuotaPercent}%`} />
-                  <Meta
-                    label="Deployed"
-                    value={formatRelative(app.lastDeployedAt)}
-                  />
-                </div>
-              </RouterTile>
-            </Column>
-          ))}
-        </Grid>
+                <AppGrid apps={members} projectName={projectName} />
+              </PageSection>
+            ))}
+            {ungrouped.length > 0 && (
+              <PageSection title="Not in a stack">
+                <AppGrid apps={ungrouped} projectName={projectName} />
+              </PageSection>
+            )}
+          </>
+        )
       ) : projectId && data?.results.length ? (
         <Tile className="gisila-empty">
           No apps in this project —{" "}
@@ -175,6 +168,67 @@ export default function AppsPage() {
         </Tile>
       )}
     </Page>
+  );
+}
+
+function AppGrid({
+  apps,
+  projectName,
+}: {
+  apps: App[];
+  projectName: Map<string, string>;
+}) {
+  return (
+    <Grid narrow className="gisila-apps__grid">
+      {apps.map((app) => (
+        <Column
+          key={app.id}
+          sm={4}
+          md={8}
+          lg={8}
+          className="gisila-apps__column"
+        >
+          <RouterTile
+            as={RouterLink}
+            href={`/apps/${app.id}`}
+            className="gisila-app-tile"
+          >
+            <div className="gisila-app-tile__head">
+              <div>
+                <div className="gisila-app-tile__identity">
+                  <span className="gisila-app-tile__name">{app.name}</span>
+                  <Tag type="cool-gray" size="sm">
+                    {app.runtime}
+                  </Tag>
+                </div>
+                <p className="gisila-app-tile__endpoint">
+                  {projectName.get(String(app.projectId)) && (
+                    <>{projectName.get(String(app.projectId))} · </>
+                  )}
+                  {app.linuxUser}
+                  {app.internalPort
+                    ? ` → 127.0.0.1:${app.internalPort}`
+                    : app.exposeMode === "process"
+                      ? " · background process"
+                      : ""}
+                </p>
+              </div>
+              <Tag type={STATUS_TAG[app.status] ?? "gray"} size="sm">
+                {app.status}
+              </Tag>
+            </div>
+            <div className="gisila-app-tile__meta">
+              <Meta label="Memory" value={`${app.memoryMbLimit} MB`} />
+              <Meta label="CPU" value={`${app.cpuQuotaPercent}%`} />
+              <Meta
+                label="Deployed"
+                value={formatRelative(app.lastDeployedAt)}
+              />
+            </div>
+          </RouterTile>
+        </Column>
+      ))}
+    </Grid>
   );
 }
 

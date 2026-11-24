@@ -26,6 +26,7 @@ import type {
   ApplicationDef,
   ListResponse,
   Project,
+  Stack as StackModel,
   SshKey,
   Team,
 } from "@/lib/types";
@@ -184,6 +185,7 @@ export function SettingsTab({
   );
   const limits = useSWR<AppLimits>("/apps/limits", fetcher);
   const projects = useSWR<ListResponse<Project>>("/projects/", fetcher);
+  const stacks = useSWR<ListResponse<StackModel>>("/stacks/", fetcher);
   const teams = useSWR<ListResponse<Team>>("/teams/", fetcher);
   const teamName = new Map(
     (teams.data?.results ?? []).map((t) => [t.id, t.name]),
@@ -197,6 +199,7 @@ export function SettingsTab({
   const [form, setForm] = useState({
     name: app.name,
     projectId: String(app.projectId),
+    stackId: app.stackId != null ? String(app.stackId) : "",
     gitUrl: app.gitUrl ?? "",
     gitBranch: app.gitBranch ?? "",
     sourceSubdir: app.sourceSubdir ?? "",
@@ -243,6 +246,7 @@ export function SettingsTab({
     setForm({
       name: app.name,
       projectId: String(app.projectId),
+    stackId: app.stackId != null ? String(app.stackId) : "",
       gitUrl: app.gitUrl ?? "",
       gitBranch: app.gitBranch ?? "",
       sourceSubdir: app.sourceSubdir ?? "",
@@ -342,6 +346,11 @@ export function SettingsTab({
         ...(form.projectId !== String(app.projectId)
           ? { projectId: Number(form.projectId) }
           : {}),
+        // 0 takes the app out of its stack. A project move without a stack
+        // chosen in the new project clears it on the server.
+        ...(form.stackId !== (app.stackId != null ? String(app.stackId) : "")
+          ? { stackId: Number(form.stackId || 0) }
+          : {}),
         gitUrl: form.gitUrl || undefined,
         gitBranch: form.gitBranch || undefined,
         // Always sent: "" clears it back to the repo root.
@@ -438,7 +447,10 @@ export function SettingsTab({
               id="s-project"
               labelText="Project"
               value={form.projectId}
-              onChange={(e) => set("projectId", e.target.value)}
+              onChange={(e) => {
+                // A stack belongs to one project, so the choice can't carry over.
+                setForm((f) => ({ ...f, projectId: e.target.value, stackId: "" }));
+              }}
               helperText="Moving an app only changes where it is listed and who can access it — nothing is redeployed. Moving to another team's project requires admin in both teams."
             >
               {/* Keep the current project selectable even before the list loads. */}
@@ -456,6 +468,20 @@ export function SettingsTab({
                   }
                 />
               ))}
+            </Select>
+            <Select
+              id="s-stack"
+              labelText="Stack"
+              value={form.stackId}
+              onChange={(e) => set("stackId", e.target.value)}
+              helperText="An app in a stack also gets the stack's shared variables. Its own variables win when both set the same name. Takes effect on the next deployment."
+            >
+              <SelectItem value="" text="No stack" />
+              {(stacks.data?.results ?? [])
+                .filter((s) => String(s.projectId) === form.projectId)
+                .map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)} text={s.name} />
+                ))}
             </Select>
             {app.exposeMode !== "process" && (
               <TextInput
